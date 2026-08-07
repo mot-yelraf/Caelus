@@ -1,0 +1,163 @@
+import json
+import logging
+from dataclasses import dataclass, fields
+from pathlib import Path
+from typing import Any, ClassVar
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from zoneinfo import ZoneInfo
+
+logger = logging.getLogger(__name__)
+
+SCENE_THEMES = {"garden", "island", "river", "desert"}
+LEGACY_THEME_MAP = {"light": "garden", "dark": "river", "midnight": "island"}
+ALLOWED_THEMES = SCENE_THEMES | set(LEGACY_THEME_MAP)
+ALLOWED_EXPORT_FORMATS = {"csv", "json"}
+ALLOWED_FORECAST_PROVIDERS = {"met_no", "open_meteo", "us"}
+
+
+def normalize_theme(value: str) -> str:
+    """Return a supported scene theme, migrating legacy palette names."""
+    if value not in ALLOWED_THEMES:
+        raise ValueError("unsupported theme")
+    return LEGACY_THEME_MAP.get(value, value)
+
+
+def validate_gateway_url(value: str) -> str:
+    """Validate a configurable HTTP(S) Ecowitt gateway URL."""
+    parsed = urlsplit(value.strip())
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise ValueError("gateway URL must be an absolute HTTP(S) URL")
+    if parsed.username is not None or parsed.password is not None or parsed.fragment:
+        raise ValueError("gateway URL cannot contain credentials or a fragment")
+    return value.strip()
+
+
+def validate_windy_iframe_url(value: str) -> str:
+    """Restrict the dashboard iframe to Windy's HTTPS embed endpoint."""
+    parsed = urlsplit(value.strip())
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname != "embed.windy.com"
+        or parsed.path != "/embed2.html"
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.fragment
+    ):
+        raise ValueError("Windy URL must use https://embed.windy.com/embed2.html")
+    return value.strip()
+
+
+def build_windy_iframe_url(value: str, latitude: float, longitude: float) -> str:
+    """Center the supported Windy embed and enable its station marker."""
+    validated = validate_windy_iframe_url(value)
+    parsed = urlsplit(validated)
+    query = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    coordinate = {"lat": f"{latitude:.4f}", "lon": f"{longitude:.4f}"}
+    query.update(
+        coordinate,
+        detailLat=coordinate["lat"],
+        detailLon=coordinate["lon"],
+        marker="true",
+        location="coordinates",
+        type="map",
+    )
+    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, urlencode(query), ""))
+
+
+@dataclass
+class AppSettings:
+    settings_path: ClassVar[Path] = Path(__file__).resolve().parent.parent / "data" / "settings.json"
+    gateway_url: str = "http://192.168.1.100/weatherstation"
+    poll_interval_seconds: int = 300
+    location_name: str = ""
+    latitude: float = 0.0
+    longitude: float = 0.0
+    use_ip_location: bool = True
+    timezone: str = "UTC"
+    location_source: str = ""
+    location_provider: str = ""
+    forecast_provider: str = "met_no"
+    theme: str = "garden"
+    retention_days: int = 366
+    export_format: str = "csv"
+    windy_iframe_url: str = "https://embed.windy.com/embed2.html"
+
+    @classmethod
+    def load(cls) -> "AppSettings":
+        cls.settings_path.parent.mkdir(parents=True, exist_ok=True)
+        if not cls.settings_path.exists():
+            return cls()
+        try:
+            with cls.settings_path.open("r", encoding="utf-8") as handle:
+                data = json.load(handle)
+            if not isinstance(data, dict):
+                raise TypeError("settings document must be an object")
+        except (OSError, json.JSONDecodeError, TypeError) as exc:
+            logger.warning("Could not load settings from %s: %s", cls.settings_path, exc)
+            return cls()
+
+        known_fields = {item.name for item in fields(cls)}
+        unknown_fields = sorted(set(data) - known_fields)
+        if unknown_fields:
+            logger.warning("Ignoring unknown settings: %s", ", ".join(unknown_fields))
+
+        settings = cls()
+        for name in known_fields & set(data):
+            try:
+                setattr(settings, name, cls._validate_value(name, data[name]))
+            except (TypeError, ValueError) as exc:
+                logger.warning("Ignoring invalid setting %s: %s", name, exc)
+        return settings
+
+    @staticmethod
+    def _validate_value(name: str, value: Any) -> Any:
+        if name == "gateway_url":
+            return validate_gateway_url(str(value))
+        if name == "windy_iframe_url":
+            return validate_windy_iframe_url(str(value))
+        if name == "theme":
+            return normalize_theme(value)
+        if name == "export_format":
+            if value not in ALLOWED_EXPORT_FORMATS:
+                raise ValueError("unsupported export format")
+            return value
+        if name == "forecast_provider":
+            if value not in ALLOWED_FORECAST_PROVIDERS:
+                raise ValueError("unsupported weather forecast provider")
+            return value
+        if name in {"poll_interval_seconds", "retention_days"}:
+            if isinstance(value, bool) or not isinstance(value, int):
+                raise TypeError("must be an integer")
+            if name == "poll_interval_seconds":
+                return max(30, value)
+            return min(max(30, value), 366)
+        if name in {"latitude", "longitude"}:
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise TypeError("must be numeric")
+            numeric = float(value)
+            limit = 90 if name == "latitude" else 180
+            if not -limit <= numeric <= limit:
+                raise ValueError(f"must be between {-limit} and {limit}")
+            return numeric
+        if name == "use_ip_location":
+            if not isinstance(value, bool):
+                raise TypeError("must be a boolean")
+            return value
+        if name in {"location_name", "location_source", "location_provider"}:
+            if not isinstance(value, str):
+                raise TypeError("must be a string")
+            return value
+        if name == "timezone":
+            if not isinstance(value, str):
+                raise TypeError("must be a string")
+            try:
+                ZoneInfo(value)
+            except Exception as exc:
+                raise ValueError("unknown timezone") from exc
+            return value
+        return value
+
+    def save(self) -> None:
+        self.settings_path.parent.mkdir(parents=True, exist_ok=True)
+        with self.settings_path.open("w", encoding="utf-8") as handle:
+            json.dump(self.__dict__, handle, indent=2)
