@@ -77,13 +77,18 @@ def test_dashboard_includes_scene_themes_settings_modal_and_lunar_cycle() -> Non
         assert f'name="theme" value="{theme}"' in response.text
     for phase in ("New moon", "First quarter", "Full moon", "Last quarter"):
         assert phase in response.text
-    for heading in ("Current readings", "Today’s forecast", "Environmental decisions", "Regional radar"):
+    for heading in ("Current readings", "Today’s forecast", "Sunlight today", "Regional radar"):
         assert heading in response.text
+    conditions_position = response.text.index('class="conditions-row"')
+    map_position = response.text.index('class="map-row"')
+    moon_position = response.text.index('class="glass-card lunar-header"')
+    assert conditions_position < map_position < moon_position
+    assert 'class="glass-card map-card full-width-map"' in response.text
+    assert "Environmental decisions" not in response.text
     assert 'id="currentMoonDisk"' in response.text
     assert response.text.count("data-phase-moon") == 8
     assert "🌒" not in response.text
     assert "Observer-local orientation" in response.text
-    assert "Sunlight today" in response.text
     assert "hours between sunrise and sunset" in response.text
     assert '<footer class="site-footer"><p>Created by Peace Hill Studios</p></footer>' in response.text
     assert "data-reset-windy" in response.text
