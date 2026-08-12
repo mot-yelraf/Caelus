@@ -267,6 +267,19 @@ def register_routes(app: FastAPI) -> None:
     async def get_astronomy() -> Dict[str, Any]:
         return await asyncio.to_thread(astronomy_context, app.state.settings)
 
+    @app.get("/api/readings/current")
+    async def get_current_reading() -> Dict[str, Any]:
+        """Return the latest stored Ecowitt reading for dashboard refreshes."""
+        settings: AppSettings = app.state.settings
+        latest = await asyncio.to_thread(app.state.data_logger.get_latest) or {}
+        return {
+            "reading": latest,
+            "latest_observation_time": format_observation_time(
+                latest.get("timestamp"), settings.timezone
+            ),
+            "poll_interval_seconds": settings.poll_interval_seconds,
+        }
+
     @app.get("/api/metrics/24h")
     async def get_24_hour_metrics() -> Dict[str, Any]:
         """Return valid Ecowitt metric series and statistics for the last day."""

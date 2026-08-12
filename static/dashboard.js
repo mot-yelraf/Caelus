@@ -133,6 +133,9 @@
         originalTheme = themeInputs.find((input) => input.checked)?.value || originalTheme;
       }
       if (settingsStatus) settingsStatus.textContent = `${originalLabel.replace("Save ", "")} saved.`;
+      if (paneName === "station") {
+        setDashboardRefreshInterval(Number(ecowittInterval?.value));
+      }
     } catch (error) {
       if (settingsStatus) {
         settingsStatus.textContent = error.message || "Settings could not be saved.";
@@ -219,6 +222,7 @@
       });
       renderEcowittInventory(result.inventory);
       if (ecowittStatus) ecowittStatus.textContent = `${result.gateway_model} saved; Ecowitt polling is enabled.`;
+      setDashboardRefreshInterval(Number(result.poll_interval_seconds));
     } catch (error) {
       if (ecowittStatus) ecowittStatus.textContent = error.message || "Gateway could not be saved.";
       ecowittSaveButton.disabled = false;
@@ -694,6 +698,79 @@
 
   loadWeatherHistory();
 
+  function renderCurrentReading(reading, observationTime) {
+    const available = reading && Object.keys(reading).length > 0;
+    document.querySelectorAll("[data-reading-field]").forEach((element) => {
+      const value = reading?.[element.dataset.readingField];
+      element.textContent = value == null ? "—" : `${value}${element.dataset.readingSuffix || ""}`;
+    });
+    const observationStatus = document.querySelector("[data-observation-status]");
+    if (observationStatus) {
+      observationStatus.replaceChildren();
+      if (available) {
+        observationStatus.append("Last observation ");
+        const time = document.createElement("time");
+        time.dateTime = String(reading.timestamp || "");
+        time.textContent = observationTime || "just now";
+        observationStatus.append(time);
+      } else {
+        observationStatus.textContent = "Waiting for the first gateway observation";
+      }
+    }
+    const stationState = document.querySelector("[data-station-state]");
+    stationState?.classList.toggle("is-live", available);
+    stationState?.classList.toggle("is-waiting", !available);
+    const stationStateLabel = document.querySelector("[data-station-state-label]");
+    if (stationStateLabel) stationStateLabel.textContent = available ? "Station reporting" : "Gateway standing by";
+  }
+
+  async function refreshEcowittDashboard() {
+    if (document.hidden) return;
+    try {
+      const response = await fetch("/api/readings/current", {cache: "no-store"});
+      if (!response.ok) throw new Error("current reading unavailable");
+      const payload = await response.json();
+      renderCurrentReading(payload.reading, payload.latest_observation_time);
+      setDashboardRefreshInterval(Number(payload.poll_interval_seconds), false);
+    } catch (_error) {
+      // Keep the last displayed reading when a transient refresh fails.
+    }
+    await loadWeatherHistory();
+  }
+
+  let dashboardRefreshTimer = null;
+  let dashboardRefreshSeconds = 0;
+  function setDashboardRefreshInterval(seconds, restart = true) {
+    const safeSeconds = Math.min(3600, Math.max(60, Number(seconds) || 300));
+    if (!restart && safeSeconds === dashboardRefreshSeconds) return;
+    dashboardRefreshSeconds = safeSeconds;
+    if (dashboardRefreshTimer) window.clearInterval(dashboardRefreshTimer);
+    dashboardRefreshTimer = window.setInterval(refreshEcowittDashboard, safeSeconds * 1000);
+  }
+  setDashboardRefreshInterval(Number(body.dataset.pollIntervalSeconds));
+
+  let forecastRefreshDue = false;
+  async function refreshForecastOnTheHour() {
+    if (document.hidden) {
+      forecastRefreshDue = true;
+      return;
+    }
+    forecastRefreshDue = false;
+    try {
+      await fetch("/api/forecast?force=true", {cache: "no-store"});
+    } finally {
+      window.location.reload();
+    }
+  }
+
+  function scheduleForecastRefresh() {
+    const now = new Date();
+    const nextHour = new Date(now);
+    nextHour.setMinutes(60, 1, 0);
+    window.setTimeout(refreshForecastOnTheHour, nextHour.getTime() - now.getTime());
+  }
+  scheduleForecastRefresh();
+
   async function refreshAstronomy() {
     if (document.hidden) return;
     try {
@@ -753,5 +830,9 @@
   }
 
   window.setInterval(refreshAstronomy, 5 * 60 * 1000);
-  document.addEventListener("visibilitychange", refreshAstronomy);
+  document.addEventListener("visibilitychange", () => {
+    refreshAstronomy();
+    refreshEcowittDashboard();
+    if (!document.hidden && forecastRefreshDue) refreshForecastOnTheHour();
+  });
 })();

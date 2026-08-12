@@ -61,7 +61,7 @@ def test_dashboard_displays_zero_values() -> None:
     response = TestClient(make_app()).get("/")
 
     assert response.status_code == 200
-    assert 'class="temperature-number">0.0</span>' in response.text
+    assert 'data-reading-field="temperature">0.0</span>' in response.text
     assert "0.0 mph" in response.text
 
 
@@ -93,6 +93,39 @@ def test_dashboard_renders_local_observation_time() -> None:
         '<time datetime="2026-08-12T06:35:15.584178-06:00">'
         "Aug 12, 2026 · 6:35 AM</time>"
     ) in response.text
+
+
+def test_current_reading_api_uses_configured_refresh_interval() -> None:
+    app = make_app()
+    app.state.settings.poll_interval_seconds = 120
+    app.state.settings.timezone = "America/Denver"
+    app.state.data_logger.get_latest = lambda: {
+        "timestamp": "2026-08-12T12:35:15",
+        "temperature": 71.5,
+    }
+
+    response = TestClient(app).get("/api/readings/current")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "reading": {
+            "timestamp": "2026-08-12T12:35:15",
+            "temperature": 71.5,
+        },
+        "latest_observation_time": "Aug 12, 2026 · 6:35 AM",
+        "poll_interval_seconds": 120,
+    }
+
+
+def test_dashboard_refresh_timers_follow_station_and_forecast_contract() -> None:
+    root = Path(__file__).resolve().parents[1]
+    script = (root / "static" / "dashboard.js").read_text(encoding="utf-8")
+
+    assert 'fetch("/api/readings/current", {cache: "no-store"})' in script
+    assert "window.setInterval(refreshEcowittDashboard, safeSeconds * 1000)" in script
+    assert 'fetch("/api/forecast?force=true", {cache: "no-store"})' in script
+    assert "nextHour.setMinutes(60, 1, 0)" in script
+    assert "window.setInterval(refreshAstronomy, 5 * 60 * 1000)" in script
 
 
 def test_dashboard_includes_scene_themes_settings_modal_and_lunar_cycle() -> None:

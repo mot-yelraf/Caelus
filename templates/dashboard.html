@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="/static/styles.css?v={{ version }}" />
     <script src="/static/dashboard.js?v={{ version }}" defer></script>
   </head>
-  <body class="theme-{{ settings.theme }}">
+  <body class="theme-{{ settings.theme }}" data-poll-interval-seconds="{{ settings.poll_interval_seconds }}">
     {% macro reading(value, suffix='') -%}{{ value if value is not none else '—' }}{{ suffix if value is not none else '' }}{%- endmacro %}
     <div class="world-scene" aria-hidden="true"><span class="scene-sun"></span><span class="scene-ridge scene-ridge-far"></span><span class="scene-ridge scene-ridge-near"></span></div>
 
@@ -22,21 +22,21 @@
 
     <main id="top" class="dashboard-shell">
       <section class="station-intro" aria-labelledby="station-title">
-        <div><p class="eyebrow">Personal weather station</p><h1 id="station-title">{{ settings.location_name or 'Your weather, alive.' }}</h1><p class="station-subtitle">{% if latest %}Last observation <time datetime="{{ latest.get('timestamp', '') }}">{{ latest_observation_time }}</time>{% else %}Waiting for the first gateway observation{% endif %}</p></div>
-        <div class="station-state {{ 'is-live' if latest else 'is-waiting' }}"><span class="status-dot"></span>{{ 'Station reporting' if latest else 'Gateway standing by' }}</div>
+        <div><p class="eyebrow">Personal weather station</p><h1 id="station-title">{{ settings.location_name or 'Your weather, alive.' }}</h1><p class="station-subtitle" data-observation-status>{% if latest %}Last observation <time datetime="{{ latest.get('timestamp', '') }}">{{ latest_observation_time }}</time>{% else %}Waiting for the first gateway observation{% endif %}</p></div>
+        <div class="station-state {{ 'is-live' if latest else 'is-waiting' }}" data-station-state><span class="status-dot"></span><span data-station-state-label>{{ 'Station reporting' if latest else 'Gateway standing by' }}</span></div>
       </section>
 
       <section class="conditions-row" id="conditions" aria-label="Weather overview">
         <article class="glass-card readings-panel">
           <div class="card-heading"><div><p class="eyebrow">Current readings</p><h2>Right outside</h2></div><span class="weather-badge">Live</span></div>
-          <div class="reading-hero"><div class="weather-symbol compact-symbol" aria-hidden="true"><span class="symbol-sun"></span><span class="symbol-cloud"></span></div><div><span class="temperature-number">{{ reading(latest.get('temperature')) }}</span><span class="temperature-unit">°F</span><p>Outdoor temperature</p></div></div>
+          <div class="reading-hero"><div class="weather-symbol compact-symbol" aria-hidden="true"><span class="symbol-sun"></span><span class="symbol-cloud"></span></div><div><span class="temperature-number" data-reading-field="temperature">{{ reading(latest.get('temperature')) }}</span><span class="temperature-unit">°F</span><p>Outdoor temperature</p></div></div>
           <div class="current-reading-list">
-            <div><span>Humidity</span><strong>{{ reading(latest.get('humidity'), '%') }}</strong></div>
-            <div><span>Pressure</span><strong>{{ reading(latest.get('pressure'), ' inHg') }}</strong></div>
-            <div><span>Wind</span><strong>{{ reading(latest.get('wind_speed'), ' mph') }}</strong></div>
-            <div><span>Gust</span><strong>{{ reading(latest.get('wind_gust'), ' mph') }}</strong></div>
-            <div><span>Rain today</span><strong>{{ reading(latest.get('rain_total'), ' in') }}</strong></div>
-            <div><span>UV / Solar</span><strong>{{ reading(latest.get('uv')) }} · {{ reading(latest.get('solar_radiation')) }}</strong></div>
+            <div><span>Humidity</span><strong data-reading-field="humidity" data-reading-suffix="%">{{ reading(latest.get('humidity'), '%') }}</strong></div>
+            <div><span>Pressure</span><strong data-reading-field="pressure" data-reading-suffix=" inHg">{{ reading(latest.get('pressure'), ' inHg') }}</strong></div>
+            <div><span>Wind</span><strong data-reading-field="wind_speed" data-reading-suffix=" mph">{{ reading(latest.get('wind_speed'), ' mph') }}</strong></div>
+            <div><span>Gust</span><strong data-reading-field="wind_gust" data-reading-suffix=" mph">{{ reading(latest.get('wind_gust'), ' mph') }}</strong></div>
+            <div><span>Rain today</span><strong data-reading-field="rain_total" data-reading-suffix=" in">{{ reading(latest.get('rain_total'), ' in') }}</strong></div>
+            <div><span>UV / Solar</span><strong><span data-reading-field="uv">{{ reading(latest.get('uv')) }}</span> · <span data-reading-field="solar_radiation">{{ reading(latest.get('solar_radiation')) }}</span></strong></div>
           </div>
         </article>
 
