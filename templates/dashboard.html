@@ -5,15 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#123c45" />
     <title>Caelus · Living Weather</title>
-    <link rel="stylesheet" href="/static/styles.css?v=22" />
-    <script src="/static/dashboard.js?v=22" defer></script>
+    <link rel="stylesheet" href="/static/styles.css?v={{ version }}" />
+    <script src="/static/dashboard.js?v={{ version }}" defer></script>
   </head>
   <body class="theme-{{ settings.theme }}">
     {% macro reading(value, suffix='') -%}{{ value if value is not none else '—' }}{{ suffix if value is not none else '' }}{%- endmacro %}
     <div class="world-scene" aria-hidden="true"><span class="scene-sun"></span><span class="scene-ridge scene-ridge-far"></span><span class="scene-ridge scene-ridge-near"></span></div>
 
     <header class="site-header">
-      <a class="brand" href="#top" aria-label="Caelus home"><span class="brand-mark">C</span><span><span class="brand-title-row"><strong>Caelus</strong><em class="brand-version">{{ version | default('restart needed', true) }}</em></span><small>living weather</small></span></a>
+      <a class="brand" href="#top" aria-label="Caelus home"><img class="brand-mark" src="/static/icons/caelus-weather-compass-titled.png" alt="" width="512" height="512" /><span><span class="brand-title-row"><strong>Caelus</strong><em class="brand-version">{{ version | default('restart needed', true) }}</em></span><small>living weather</small></span></a>
       <nav class="primary-nav" aria-label="Dashboard sections">
         <a href="#moon">Moon</a><a href="#conditions">Conditions</a><a href="#map">Map</a>
         <button class="settings-trigger" type="button" data-open-settings><span aria-hidden="true">⚙</span> System Settings</button>
@@ -22,7 +22,7 @@
 
     <main id="top" class="dashboard-shell">
       <section class="station-intro" aria-labelledby="station-title">
-        <div><p class="eyebrow">Personal weather station</p><h1 id="station-title">{{ settings.location_name or 'Your weather, alive.' }}</h1><p class="station-subtitle">{% if latest %}Last observation <time>{{ latest.get('timestamp', 'just now') | replace('T', ' · ') }}</time>{% else %}Waiting for the first gateway observation{% endif %}</p></div>
+        <div><p class="eyebrow">Personal weather station</p><h1 id="station-title">{{ settings.location_name or 'Your weather, alive.' }}</h1><p class="station-subtitle">{% if latest %}Last observation <time datetime="{{ latest.get('timestamp', '') }}">{{ latest_observation_time }}</time>{% else %}Waiting for the first gateway observation{% endif %}</p></div>
         <div class="station-state {{ 'is-live' if latest else 'is-waiting' }}"><span class="status-dot"></span>{{ 'Station reporting' if latest else 'Gateway standing by' }}</div>
       </section>
 
@@ -43,12 +43,18 @@
         <article class="glass-card forecast-panel">
           <div class="card-heading"><div><p class="eyebrow">Today’s forecast</p><h2>{{ forecast.condition if forecast.ok else 'Forecast standing by' }}</h2></div><span class="provider-label">{{ forecast.provider_label or settings.forecast_provider | replace('_', ' ') }}</span></div>
           {% if forecast.ok %}
-            <div class="forecast-summary"><span class="forecast-main-icon" aria-hidden="true">{{ forecast.icon }}</span><div><span><strong>{{ forecast.high_f }}°</strong> high</span><span><strong>{{ forecast.low_f }}°</strong> low</span><span><strong>{{ forecast.precip_probability }}%</strong> rain</span></div></div>
-            <div class="hourly-strip">
-              {% for hour in forecast.hours %}<div class="forecast-hour"><time>{{ hour.label }}</time><span aria-hidden="true">{{ hour.icon }}</span><strong>{{ hour.temperature_f }}°</strong><small>{{ hour.precip_probability }}%</small></div>{% endfor %}
+            <div class="forecast-summary"><span class="forecast-main-icon" aria-hidden="true">{{ forecast.icon }}</span><div><span><strong>{{ forecast.high_f }}°</strong> high</span><span><strong>{{ forecast.low_f }}°</strong> low</span><span><strong>{{ forecast.precip_probability }}%</strong> {{ forecast.precip_label }}</span></div></div>
+            {% set hour_count = forecast.hours | length %}
+            <div class="hourly-carousel" data-hourly-carousel data-page-size="8">
+              <button class="hourly-page-button hourly-page-previous" type="button" data-hourly-previous aria-label="Show previous forecast hour" hidden>&lt;</button>
+              <div class="hourly-strip">
+                {% for hour in forecast.hours %}<div class="forecast-hour" data-hourly-index="{{ loop.index0 }}"{% if loop.index0 >= 8 %} hidden{% endif %}><time>{{ hour.label }}</time><span aria-hidden="true">{{ hour.icon }}</span><strong>{{ hour.temperature_f }}°</strong><small>{{ hour.precip_probability }}% {{ hour.precip_label | lower }}</small></div>{% endfor %}
+              </div>
+              <button class="hourly-page-button hourly-page-next" type="button" data-hourly-next aria-label="Show next forecast hour"{% if hour_count <= 8 %} hidden{% endif %}>&gt;</button>
             </div>
+            <p class="hourly-page-status" data-hourly-status aria-live="polite">Hours 1–{{ 8 if hour_count > 8 else hour_count }} of {{ hour_count }}</p>
             <p class="forecast-meta">{{ 'Cached forecast · provider temporarily unavailable' if forecast.stale else 'Updated from ' ~ forecast.provider_label }}</p>
-            {% if forecast.days %}<div class="future-heading"><span>Looking ahead</span><button type="button" data-open-forecast>6-day details</button></div><div class="daily-strip">{% for day in forecast.days %}<article class="forecast-day"><time datetime="{{ day.date }}">{{ day.label }}</time><span aria-hidden="true">{{ day.icon }}</span><strong>{{ day.high_f }}° <em>{{ day.low_f }}°</em></strong><small>{{ day.precip_probability }}% rain</small></article>{% endfor %}</div>{% endif %}
+            {% if forecast.days %}<div class="future-heading"><span>Looking ahead</span><button type="button" data-open-forecast>6-day details</button></div><div class="daily-strip">{% for day in forecast.days %}<article class="forecast-day"><time datetime="{{ day.date }}">{{ day.label }}</time><span aria-hidden="true">{{ day.icon }}</span><strong>{{ day.high_f }}° <em>{{ day.low_f }}°</em></strong><small>{{ day.precip_probability }}% {{ day.precip_label | lower }}</small></article>{% endfor %}</div>{% endif %}
           {% else %}
             <div class="forecast-empty"><span>◌</span><p>{{ forecast.reason or 'Set a location to load today’s forecast.' }}</p></div>
           {% endif %}
@@ -57,12 +63,10 @@
         <article class="glass-card daylight-card">
           <div class="card-heading compact"><div><p class="eyebrow">Sunlight today</p><h2 id="daylightDuration">{{ moon.get('daylight_duration', '—') }}</h2></div><span class="sun-state" id="sunState">{{ 'Sun above horizon' if moon.get('sun_is_up', false) else 'Sun below horizon' }}</span></div>
           <div class="daylight-orbit" aria-hidden="true"><span class="daylight-sun" id="daylightSun" data-daylight-progress="{{ moon.get('daylight_progress', 0) }}">☀</span></div>
-          <dl class="daylight-times">
-            <div><dt>Sunrise</dt><dd id="mapSunriseTime">{{ moon.sunrise }}</dd></div>
-            <div><dt>Solar noon</dt><dd id="solarNoonTime">{{ moon.get('solar_noon', '—') }}</dd></div>
-            <div><dt>Sunset</dt><dd id="mapSunsetTime">{{ moon.sunset }}</dd></div>
-          </dl>
-          <p class="daylight-note"><strong id="daylightHours">{{ moon.get('daylight_hours') if moon.get('daylight_hours') is not none else '—' }}</strong> hours between sunrise and sunset · {{ moon.timezone }}</p>
+          <dl class="daylight-times"><div><dt>Sunrise</dt><dd id="mapSunriseTime">{{ moon.get('sunrise_display', moon.sunrise) }}</dd></div><div><dt>Solar noon</dt><dd id="solarNoonTime">{{ moon.get('solar_noon_display', moon.get('solar_noon', '—')) }}</dd></div><div><dt>Sunset</dt><dd id="mapSunsetTime">{{ moon.get('sunset_display', moon.sunset) }}</dd></div></dl>
+          <p class="polar-daylight-note"><span><strong id="northPoleDaylight">{{ moon.get('north_pole_daylight', '—') }}</strong> North Pole</span><span><strong id="southPoleDaylight">{{ moon.get('south_pole_daylight', '—') }}</strong> South Pole</span></p>
+          <section class="daylight-detail-section" aria-labelledby="nextSeasonHeading"><h3 id="nextSeasonHeading">Next seasonal event</h3><p class="next-season-note"><strong id="nextSeasonLabel">{{ moon.get('next_season_label', '—') }}</strong><time id="nextSeasonDate" datetime="{{ moon.get('next_season_at', '') }}">{{ moon.get('next_season_date', '—') }}</time></p></section>
+          <section class="daylight-detail-section eclipse-section" aria-labelledby="nextEclipseHeading"><h3 id="nextEclipseHeading">Next eclipse for your location</h3><ul class="eclipse-list" id="nextEclipseList">{% for eclipse in moon.get('next_eclipses', []) %}<li><strong>{{ eclipse.kind }}</strong><time datetime="{{ eclipse.at }}">{{ eclipse.date }}</time></li>{% else %}<li class="eclipse-empty">{{ 'No visible eclipses for the next 12 months' if moon.get('eclipse_calculation_available') else 'Eclipse calculations unavailable · rerun the Caelus installer' }}</li>{% endfor %}</ul></section>
         </article>
       </section>
 
@@ -72,8 +76,21 @@
             <div><p class="eyebrow">Weather in motion</p><h2>Regional radar</h2></div>
             <div class="map-tools"><button type="button" data-reset-windy title="Close Windy's forecast panel and return to the station map">× Close forecast</button><span>Windy</span></div>
           </div>
-          <iframe data-windy-map src="{{ windy_iframe_url }}" title="Regional Windy weather map" loading="lazy" sandbox="allow-scripts allow-same-origin" referrerpolicy="no-referrer"></iframe>
+          <div class="windy-map-interaction" data-windy-interaction>
+            <iframe data-windy-map src="{{ windy_iframe_url }}" title="Regional Windy radar map" loading="lazy" sandbox="allow-scripts allow-same-origin" referrerpolicy="no-referrer" tabindex="-1"></iframe>
+            <button class="windy-map-guard" type="button" data-windy-guard aria-label="Activate the Windy weather map"><span>Click to interact with map</span></button>
+          </div>
         </article>
+      </section>
+
+      <section class="weather-history" id="weather-history" aria-labelledby="weatherHistoryTitle" data-weather-history data-timezone="{{ settings.timezone }}">
+        <div class="weather-history-heading">
+          <div><p class="eyebrow">Ecowitt weather history</p><h2 id="weatherHistoryTitle">24-hour sensor metrics</h2></div>
+          <p>Valid stored readings · Min, average, and max use the complete 24-hour window</p>
+        </div>
+        <div class="weather-metric-grid" data-weather-metric-grid aria-live="polite">
+          <p class="metric-loading">Loading 24-hour weather sensor history…</p>
+        </div>
       </section>
 
       <section class="glass-card lunar-header" id="moon" data-lunar-header>
@@ -98,12 +115,12 @@
       <section class="glass-card data-card"><div><p class="eyebrow">Weather archive</p><h2>Take your observations with you.</h2><p>Exports follow your {{ settings.retention_days }}-day retention window.</p></div><div class="data-actions"><a href="/export?format=csv">Download CSV</a><a href="/export?format=json">Download JSON</a></div></section>
     </main>
 
-    <footer class="site-footer"><p>Created by Peace Hill Studios</p></footer>
+    <footer class="site-footer"><p>Created By Peace Hill Studios</p></footer>
 
     <dialog class="forecast-dialog" id="forecastDialog" aria-labelledby="forecastDialogTitle">
       <header><div><p class="eyebrow">Weather outlook</p><h2 id="forecastDialogTitle">6-day forecast</h2></div><button type="button" data-close-forecast aria-label="Close six-day forecast">×</button></header>
       <p class="forecast-dialog-meta">Forecast from {{ forecast.provider_label or settings.forecast_provider | replace('_', ' ') }} · {{ '%.4f' | format(settings.latitude) }}, {{ '%.4f' | format(settings.longitude) }}</p>
-      {% if forecast.days %}<div class="forecast-detail-grid">{% for day in forecast.days %}<article><h3>{{ day.label }}</h3><p>{{ day.summary }}</p><dl><dt>Temp</dt><dd>{{ day.low_c }}–{{ day.high_c }}°C / {{ day.low_f }}–{{ day.high_f }}°F</dd><dt>RH</dt><dd>{% if day.humidity_low is not none %}{{ day.humidity_low }}–{{ day.humidity_high }}%{% else %}—{% endif %}</dd><dt>Wind</dt><dd>Mostly {{ day.wind_descriptor }}<br />{{ day.wind_low_mps }}–{{ day.wind_high_mps }} m/s / {{ day.wind_low_mph }}–{{ day.wind_high_mph }} mph</dd></dl></article>{% endfor %}</div>{% else %}<p class="forecast-dialog-empty">Future forecast data is not available yet.</p>{% endif %}
+      {% if forecast.days %}<div class="forecast-detail-grid">{% for day in forecast.days %}<article><h3>{{ day.label }}</h3><p>{{ day.summary }}</p><dl><dt>Temp</dt><dd>{{ day.low_c }}–{{ day.high_c }}°C / {{ day.low_f }}–{{ day.high_f }}°F</dd><dt>RH</dt><dd>{% if day.humidity_low is not none %}{{ day.humidity_low }}–{{ day.humidity_high }}%{% else %}—{% endif %}</dd><dt>Wind</dt><dd>Mostly {{ day.wind_descriptor }}<br />{{ day.wind_low_mps }}–{{ day.wind_high_mps }} m/s / {{ day.wind_low_mph }}–{{ day.wind_high_mph }} mph</dd><dt>{{ day.precip_label }}</dt><dd>{{ day.precip_probability }}%</dd></dl></article>{% endfor %}</div>{% else %}<p class="forecast-dialog-empty">Future forecast data is not available yet.</p>{% endif %}
     </dialog>
 
     <dialog class="settings-dialog" id="settingsDialog" aria-labelledby="settingsTitle">
@@ -113,7 +130,7 @@
         <div class="modal-layout">
           <nav class="settings-menu" aria-label="System Settings sections" role="tablist" aria-orientation="vertical"><button type="button" class="settings-tab is-active" data-settings-pane="station">Station</button><button type="button" class="settings-tab" data-settings-pane="location">Location</button><button type="button" class="settings-tab" data-settings-pane="forecast">Forecast</button><button type="button" class="settings-tab" data-settings-pane="appearance">Appearance</button><button type="button" class="settings-tab" data-settings-pane="data-map">Data &amp; Map</button></nav>
           <div class="settings-content">
-            <section class="settings-pane is-active" data-pane="station"><div class="pane-heading"><span>01</span><div><h3>Weather station</h3><p>Connect Caelus to the gateway on your local network.</p></div></div><div class="field-grid"><label class="field wide"><span>Gateway URL</span><input type="url" name="gateway_url" value="{{ settings.gateway_url }}" required /></label><label class="field"><span>Poll interval</span><div class="input-unit"><input type="number" name="poll_interval_seconds" min="30" value="{{ settings.poll_interval_seconds }}" required /><em>seconds</em></div></label></div><div class="pane-actions"><button type="button" data-save-pane="station">Save Station</button></div></section>
+            <section class="settings-pane is-active" data-pane="station"><div class="pane-heading"><span>01</span><div><h3>Ecowitt weather station</h3><p>Discover one GW1100-compatible gateway and its paired 7-in-1 weather array over the local network.</p></div></div><div class="field-grid"><label class="field wide"><span>Gateway base URL</span><input id="ecowittGatewayUrl" type="url" name="gateway_url" value="{{ settings.gateway_url }}" placeholder="http://192.168.1.100" required /></label><label class="field"><span>Data retrieval interval</span><div class="input-unit"><input id="ecowittPollInterval" type="number" name="poll_interval_seconds" min="60" max="3600" value="{{ settings.poll_interval_seconds }}" required /><em>seconds</em></div></label></div><div class="ecowitt-actions"><button type="button" class="button-secondary" data-ecowitt-discover>Find Sensors</button><button type="button" class="button-primary" data-ecowitt-save disabled>Save Gateway</button><button type="button" class="button-secondary" data-ecowitt-disable>Disable</button></div><p class="ecowitt-status" data-ecowitt-status aria-live="polite">{{ settings.gateway_model or ('Ecowitt polling enabled' if settings.gateway_enabled else 'Ecowitt polling disabled') }}</p><div class="ecowitt-inventory" data-ecowitt-inventory>{% for sensor in settings.gateway_inventory %}<div><strong>{{ sensor.name }}</strong><span>{{ sensor.family or 'Ecowitt' }} · ID {{ sensor.id }} · signal {{ sensor.signal }}</span></div>{% endfor %}</div><p class="settings-tip"><span>ⓘ</span><span>Caelus uses read-only Ecowitt LAN endpoints. Configure Wi-Fi and pair the outdoor array in Ecowitt first; no Nodus sensors or switches are supported.</span></p></section>
             <section class="settings-pane" data-pane="location" hidden><div class="pane-heading"><span>02</span><div><h3>Place &amp; coordinates</h3><p>IP detection fills these values; manual edits remain available.</p></div></div><div class="field-grid"><label class="field wide"><span>Location name</span><input id="locationName" type="text" name="location_name" value="{{ settings.location_name }}" placeholder="Garden Ridge" /></label><label class="field"><span>Latitude</span><input id="locationLatitude" type="number" step="0.0001" min="-90" max="90" name="latitude" value="{{ settings.latitude }}" /></label><label class="field"><span>Longitude</span><input id="locationLongitude" type="number" step="0.0001" min="-180" max="180" name="longitude" value="{{ settings.longitude }}" /></label><label class="field wide"><span>Timezone</span><input id="locationTimezone" type="text" name="timezone_name" value="{{ settings.timezone }}" required /></label><label class="toggle-field wide"><input id="autoLocation" type="checkbox" name="use_ip_location" {% if settings.use_ip_location %}checked{% endif %} /><span class="toggle-track"></span><span><strong>Use IP location</strong><small>Sends the server's public IP to ipapi.co or ipwho.is for an approximate location.</small></span></label></div><button class="detect-location-button" type="button" data-detect-location>⌖ Detect &amp; fill from IP</button><p class="detect-status" data-location-status></p><div class="pane-actions"><button type="button" data-save-pane="location">Save Location</button></div></section>
             <section class="settings-pane" data-pane="forecast" hidden><div class="pane-heading"><span>03</span><div><h3>Forecast source</h3><p>All providers are normalized into the same dashboard view.</p></div></div><div class="provider-picker">{% for value, label, detail in [('met_no','MET Norway','Global nine-day location forecast.'),('open_meteo','Open-Meteo','Global best-match weather models.'),('us','US · NWS','National Weather Service; US locations only.')] %}<label class="provider-option"><input type="radio" name="forecast_provider" value="{{ value }}" {% if settings.forecast_provider == value %}checked{% endif %}/><span><strong>{{ label }}</strong><small>{{ detail }}</small></span></label>{% endfor %}</div><div class="pane-actions"><button type="button" data-save-pane="forecast">Save Forecast</button></div></section>
             <section class="settings-pane" data-pane="appearance" hidden><div class="pane-heading"><span>04</span><div><h3>Choose your world</h3><p>The dashboard scenery changes while your data stays put.</p></div></div><div class="theme-picker">{% for value, label, icon, description in [('garden','Mountain Garden','🌿','Greenhouse glass, forest ridges and rain.'),('island','Ocean Island','🏝️','Blue horizons, warm sun and salt air.'),('river','Forest River','🏞️','Cool water winding through deep woodland.'),('desert','Desert Bloom','🌵','Golden mesas, dusk light and clear skies.')] %}<label class="theme-option theme-swatch-{{ value }}"><input type="radio" name="theme" value="{{ value }}" {% if settings.theme == value %}checked{% endif %}/><span class="theme-preview"><b>{{ icon }}</b></span><span><strong>{{ label }}</strong><small>{{ description }}</small></span></label>{% endfor %}</div><div class="pane-actions"><button type="button" data-save-pane="appearance">Save Appearance</button></div></section>

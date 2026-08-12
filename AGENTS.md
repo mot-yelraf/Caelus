@@ -29,8 +29,11 @@ project-specific conventions.
 - Syntax check: `python3 -m compileall -q Caelus.py caelus tests`
 - When verifying behavior, prefer `pytest`, `curl`, or terminal-based checks
   over ad hoc GUI interaction.
-- This repository snapshot does not currently contain `install.sh` or
-  `deploy_scripts/`. Do not document or invoke them unless they are added.
+- Standalone install: `./install.sh` on macOS/Linux/Raspberry Pi or
+  `install.ps1` on Windows. Both create a user-owned runtime and `.venv` while
+  preserving installed `data/` state.
+- This repository does not currently contain `deploy_scripts/`. Do not
+  document or invoke them unless they are added.
 
 ## Project Context
 

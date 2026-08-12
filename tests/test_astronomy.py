@@ -1,6 +1,8 @@
+import sys
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
+import caelus.astronomy as astronomy_module
 from caelus.astronomy import astronomy_context, moon_phase_context
 
 
@@ -51,6 +53,78 @@ def test_astronomy_context_includes_local_daylight_duration() -> None:
     assert result["sunset"] == "20:05"
     assert result["daylight_duration"] == "13h 34m"
     assert result["daylight_hours"] == 13.57
+    assert result["sunrise_display"] == "6:31 AM"
+    assert result["solar_noon_display"].endswith(" PM")
+    assert result["sunset_display"] == "8:05 PM"
+
+
+def test_sunlight_context_includes_poles_season_and_eclipse_contract() -> None:
+    settings = SimpleNamespace(
+        timezone="America/Denver",
+        location_name="Silver City",
+        latitude=32.77,
+        longitude=-108.28,
+    )
+
+    result = astronomy_context(
+        settings, datetime(2026, 8, 10, 18, 0, tzinfo=timezone.utc)
+    )
+
+    assert result["north_pole_daylight"] == "24h 00m"
+    assert result["south_pole_daylight"] == "0h 00m"
+    assert result["next_season_label"] == "September Equinox"
+    assert result["next_season_date"] == "Sep 22, 2026"
+    assert isinstance(result["next_eclipses"], list)
+    assert len(result["next_eclipses"]) <= 3
+
+
+def test_sunlight_context_reports_available_eclipse_details(monkeypatch) -> None:
+    settings = SimpleNamespace(
+        timezone="America/Denver",
+        location_name="Silver City",
+        latitude=32.77,
+        longitude=-108.28,
+    )
+    eclipse = {
+        "kind": "Partial lunar eclipse",
+        "date": "Aug 27, 2026",
+        "at": "2026-08-27T22:12:54-06:00",
+    }
+    monkeypatch.setattr(
+        astronomy_module, "_skyfield_runtime_if_installed", lambda: (object(), object())
+    )
+    monkeypatch.setattr(
+        astronomy_module, "_next_visible_eclipses", lambda *_args: [eclipse]
+    )
+
+    result = astronomy_context(
+        settings, datetime(2026, 8, 12, 18, 0, tzinfo=timezone.utc)
+    )
+
+    assert result["eclipse_calculation_available"] is True
+    assert result["next_eclipses"] == [eclipse]
+
+
+def test_skyfield_uses_packaged_ephemeris_when_runtime_file_is_missing(
+    monkeypatch, tmp_path
+) -> None:
+    packaged_data = tmp_path / "skyfield-data"
+    packaged_data.mkdir()
+    ephemeris = packaged_data / "de421.bsp"
+    ephemeris.write_bytes(b"test ephemeris")
+    fake_package = SimpleNamespace(
+        get_skyfield_data_path=lambda: str(packaged_data)
+    )
+    monkeypatch.setattr(
+        astronomy_module, "SKYFIELD_EPHEMERIS_PATH", tmp_path / "missing" / "de421.bsp"
+    )
+    monkeypatch.setitem(sys.modules, "skyfield_data", fake_package)
+    astronomy_module._skyfield_ephemeris_path.cache_clear()
+
+    try:
+        assert astronomy_module._skyfield_ephemeris_path() == ephemeris
+    finally:
+        astronomy_module._skyfield_ephemeris_path.cache_clear()
 
 
 def test_waxing_and_waning_local_views_have_opposite_light_polarity() -> None:

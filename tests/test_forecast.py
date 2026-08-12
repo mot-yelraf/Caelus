@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from caelus.forecast import (
+    MET_URL,
     ForecastService,
     build_decisions,
     build_forecast,
@@ -23,6 +24,7 @@ def test_provider_names_are_normalized() -> None:
     assert normalize_forecast_provider("MET Norway") == "met_no"
     assert normalize_forecast_provider("Open-Meteo") == "open_meteo"
     assert normalize_forecast_provider("NWS") == "us"
+    assert MET_URL.endswith("/complete")
 
 
 def test_open_meteo_builds_today_forecast_and_decisions() -> None:
@@ -44,7 +46,10 @@ def test_open_meteo_builds_today_forecast_and_decisions() -> None:
 
     assert forecast["ok"] is True
     assert forecast["condition"] == "Rain"
-    assert len(forecast["hours"]) <= 8
+    assert forecast["precip_label"] == "Rain chance"
+    assert len(forecast["hours"]) == 24
+    assert [hour["label"] for hour in forecast["hours"]] == [hour["label"] for hour in rows[:24]]
+    assert forecast["hours"][0]["precip_label"] == "Rain chance"
     assert decisions[0]["status"] == "Delay watering"
 
 
@@ -76,7 +81,46 @@ def test_open_meteo_builds_six_future_daily_forecasts() -> None:
     assert forecast["days"][0]["humidity_low"] is not None
     assert forecast["days"][0]["humidity_high"] is not None
     assert forecast["days"][0]["wind_descriptor"] == "light/moderate"
+    assert forecast["days"][0]["precip_label"] == "Rain chance"
     assert "rain/showers" in forecast["days"][0]["summary"]
+
+
+def test_snow_forecast_uses_snow_chance_labels() -> None:
+    times = future_local_times(48)
+    payload = {
+        "hourly": {
+            "time": times,
+            "temperature_2m": [28] * len(times),
+            "precipitation_probability": [65] * len(times),
+            "precipitation": [0.4] * len(times),
+            "weather_code": [71] * len(times),
+            "wind_speed_10m": [5] * len(times),
+        }
+    }
+
+    forecast = build_forecast(
+        "open_meteo",
+        normalize_open_meteo(payload, "America/Denver"),
+        "America/Denver",
+    )
+
+    assert forecast["precip_label"] == "Snow chance"
+    assert forecast["hours"][0]["precip_label"] == "Snow chance"
+    assert forecast["days"][0]["precip_label"] == "Snow chance"
+
+
+def test_hour_labels_use_twelve_hour_clock() -> None:
+    payload = {
+        "hourly": {
+            "time": ["2026-08-12T00:00", "2026-08-12T13:00"],
+            "temperature_2m": [60, 70],
+            "weather_code": [0, 0],
+        }
+    }
+
+    rows = normalize_open_meteo(payload, "America/Denver")
+
+    assert [row["label"] for row in rows] == ["12 AM", "1 PM"]
 
 
 def test_met_and_nws_payloads_share_hourly_contract() -> None:

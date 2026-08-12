@@ -1,6 +1,6 @@
 import json
 import logging
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Any, ClassVar
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -60,6 +60,7 @@ def build_windy_iframe_url(value: str, latitude: float, longitude: float) -> str
         marker="true",
         location="coordinates",
         type="map",
+        overlay="radar",
     )
     return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, urlencode(query), ""))
 
@@ -67,7 +68,13 @@ def build_windy_iframe_url(value: str, latitude: float, longitude: float) -> str
 @dataclass
 class AppSettings:
     settings_path: ClassVar[Path] = Path(__file__).resolve().parent.parent / "data" / "settings.json"
-    gateway_url: str = "http://192.168.1.100/weatherstation"
+    gateway_enabled: bool = True
+    gateway_url: str = "http://192.168.1.100"
+    gateway_id: str = ""
+    gateway_model: str = ""
+    gateway_inventory: list[dict[str, Any]] = field(default_factory=list)
+    gateway_rain_source: str = "traditional"
+    gateway_rain_reset_hour: int = 0
     poll_interval_seconds: int = 300
     location_name: str = ""
     latitude: float = 0.0
@@ -125,11 +132,13 @@ class AppSettings:
             if value not in ALLOWED_FORECAST_PROVIDERS:
                 raise ValueError("unsupported weather forecast provider")
             return value
-        if name in {"poll_interval_seconds", "retention_days"}:
+        if name in {"poll_interval_seconds", "retention_days", "gateway_rain_reset_hour"}:
             if isinstance(value, bool) or not isinstance(value, int):
                 raise TypeError("must be an integer")
             if name == "poll_interval_seconds":
-                return max(30, value)
+                return min(max(60, value), 3600)
+            if name == "gateway_rain_reset_hour":
+                return min(max(0, value), 23)
             return min(max(30, value), 366)
         if name in {"latitude", "longitude"}:
             if isinstance(value, bool) or not isinstance(value, (int, float)):
@@ -139,13 +148,24 @@ class AppSettings:
             if not -limit <= numeric <= limit:
                 raise ValueError(f"must be between {-limit} and {limit}")
             return numeric
-        if name == "use_ip_location":
+        if name in {"use_ip_location", "gateway_enabled"}:
             if not isinstance(value, bool):
                 raise TypeError("must be a boolean")
             return value
-        if name in {"location_name", "location_source", "location_provider"}:
+        if name in {
+            "location_name", "location_source", "location_provider", "gateway_id",
+            "gateway_model",
+        }:
             if not isinstance(value, str):
                 raise TypeError("must be a string")
+            return value
+        if name == "gateway_inventory":
+            if not isinstance(value, list) or not all(isinstance(item, dict) for item in value):
+                raise TypeError("must be a list of sensor records")
+            return value
+        if name == "gateway_rain_source":
+            if value not in {"none", "traditional", "piezo"}:
+                raise ValueError("unsupported Ecowitt rain source")
             return value
         if name == "timezone":
             if not isinstance(value, str):

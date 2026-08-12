@@ -7,6 +7,24 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 
+ADDITIONAL_READING_COLUMNS = {
+    "dew_point": "REAL",
+    "wind_chill": "REAL",
+    "heat_index": "REAL",
+    "absolute_pressure": "REAL",
+    "daily_max_wind": "REAL",
+    "rain_increment": "REAL",
+    "rain_event": "REAL",
+    "rain_week": "REAL",
+    "rain_month": "REAL",
+    "rain_year": "REAL",
+    "rain_lifetime": "REAL",
+    "light_intensity": "REAL",
+    "indoor_pressure": "REAL",
+    "indoor_absolute_pressure": "REAL",
+}
+
+
 class DataLogger:
     def __init__(self, db_path: str) -> None:
         self.db_path = Path(db_path)
@@ -35,6 +53,14 @@ class DataLogger:
                 )
                 """
             )
+            existing_columns = {
+                str(row[1]) for row in cursor.execute("PRAGMA table_info(readings)")
+            }
+            for name, column_type in ADDITIONAL_READING_COLUMNS.items():
+                if name not in existing_columns:
+                    cursor.execute(
+                        f"ALTER TABLE readings ADD COLUMN {name} {column_type}"
+                    )
             cursor.execute(
                 """
                 CREATE TABLE IF NOT EXISTS settings (
@@ -63,8 +89,22 @@ class DataLogger:
                     solar_radiation,
                     pressure,
                     indoor_temperature,
-                    indoor_humidity
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    indoor_humidity,
+                    dew_point,
+                    wind_chill,
+                    heat_index,
+                    absolute_pressure,
+                    daily_max_wind,
+                    rain_increment,
+                    rain_event,
+                    rain_week,
+                    rain_month,
+                    rain_year,
+                    rain_lifetime,
+                    light_intensity,
+                    indoor_pressure,
+                    indoor_absolute_pressure
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     timestamp.isoformat(),
@@ -80,6 +120,20 @@ class DataLogger:
                     payload.get("pressure"),
                     payload.get("indoor_temperature"),
                     payload.get("indoor_humidity"),
+                    payload.get("dew_point"),
+                    payload.get("wind_chill"),
+                    payload.get("heat_index"),
+                    payload.get("absolute_pressure"),
+                    payload.get("daily_max_wind"),
+                    payload.get("rain_increment"),
+                    payload.get("rain_event"),
+                    payload.get("rain_week"),
+                    payload.get("rain_month"),
+                    payload.get("rain_year"),
+                    payload.get("rain_lifetime"),
+                    payload.get("light_intensity"),
+                    payload.get("indoor_pressure"),
+                    payload.get("indoor_absolute_pressure"),
                 ),
             )
             connection.commit()
@@ -95,6 +149,20 @@ class DataLogger:
                 return None
             columns = [description[0] for description in cursor.description]
             return dict(zip(columns, row))
+
+    def get_readings_since(self, cutoff: datetime) -> list[Dict[str, Any]]:
+        """Return chronologically ordered readings at or after a UTC cutoff."""
+        if cutoff.tzinfo is not None:
+            cutoff = cutoff.astimezone(timezone.utc).replace(tzinfo=None)
+        with closing(sqlite3.connect(self.db_path)) as connection:
+            cursor = connection.cursor()
+            cursor.execute(
+                "SELECT * FROM readings WHERE timestamp >= ? ORDER BY timestamp ASC",
+                (cutoff.isoformat(),),
+            )
+            rows = cursor.fetchall()
+            columns = [description[0] for description in cursor.description]
+        return [dict(zip(columns, row)) for row in rows]
 
     def export_readings(self, max_days: int, format: str = "csv") -> str:
         cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=max_days)

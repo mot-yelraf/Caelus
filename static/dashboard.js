@@ -153,6 +153,90 @@
     activePane?.querySelector("[data-save-pane]")?.click();
   });
 
+  const ecowittUrl = document.getElementById("ecowittGatewayUrl");
+  const ecowittInterval = document.getElementById("ecowittPollInterval");
+  const ecowittStatus = form.querySelector("[data-ecowitt-status]");
+  const ecowittInventory = form.querySelector("[data-ecowitt-inventory]");
+  const ecowittDiscoverButton = form.querySelector("[data-ecowitt-discover]");
+  const ecowittSaveButton = form.querySelector("[data-ecowitt-save]");
+  const ecowittDisableButton = form.querySelector("[data-ecowitt-disable]");
+  const csrfToken = form.querySelector('input[name="csrf_token"]')?.value || "";
+  let ecowittDiscovery = null;
+
+  function renderEcowittInventory(inventory) {
+    if (!ecowittInventory) return;
+    ecowittInventory.replaceChildren();
+    (Array.isArray(inventory) ? inventory : []).forEach((sensor) => {
+      const row = document.createElement("div");
+      const name = document.createElement("strong");
+      const detail = document.createElement("span");
+      name.textContent = sensor.name || "Ecowitt sensor";
+      detail.textContent = `${sensor.family || "Ecowitt"} · ID ${sensor.id || "unknown"} · ${sensor.reporting === false ? "not reporting" : `signal ${sensor.signal ?? "—"}`}`;
+      row.append(name, detail);
+      ecowittInventory.append(row);
+    });
+  }
+
+  async function ecowittRequest(path, body) {
+    const response = await fetch(path, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({...body, csrf_token: csrfToken}),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.ok) {
+      throw new Error(payload.error || payload.detail || `Ecowitt request failed (${response.status})`);
+    }
+    return payload;
+  }
+
+  ecowittDiscoverButton?.addEventListener("click", async () => {
+    ecowittDiscoverButton.disabled = true;
+    ecowittSaveButton.disabled = true;
+    if (ecowittStatus) ecowittStatus.textContent = "Querying the Ecowitt gateway…";
+    try {
+      ecowittDiscovery = await ecowittRequest("/api/ecowitt/discover", {gateway_url: ecowittUrl.value});
+      renderEcowittInventory(ecowittDiscovery.inventory);
+      if (ecowittStatus) ecowittStatus.textContent = `${ecowittDiscovery.gateway_model}: ${ecowittDiscovery.inventory.length} registered sensor(s), ${ecowittDiscovery.live_metric_count} live metric(s).`;
+      ecowittSaveButton.disabled = false;
+    } catch (error) {
+      ecowittDiscovery = null;
+      renderEcowittInventory([]);
+      if (ecowittStatus) ecowittStatus.textContent = error.message || "Gateway discovery failed.";
+    } finally {
+      ecowittDiscoverButton.disabled = false;
+    }
+  });
+
+  ecowittSaveButton?.addEventListener("click", async () => {
+    if (!ecowittDiscovery) return;
+    ecowittSaveButton.disabled = true;
+    if (ecowittStatus) ecowittStatus.textContent = "Validating and saving the gateway…";
+    try {
+      const result = await ecowittRequest("/api/ecowitt/save", {
+        gateway_url: ecowittUrl.value,
+        poll_interval_seconds: Number(ecowittInterval.value),
+      });
+      renderEcowittInventory(result.inventory);
+      if (ecowittStatus) ecowittStatus.textContent = `${result.gateway_model} saved; Ecowitt polling is enabled.`;
+    } catch (error) {
+      if (ecowittStatus) ecowittStatus.textContent = error.message || "Gateway could not be saved.";
+      ecowittSaveButton.disabled = false;
+    }
+  });
+
+  ecowittDisableButton?.addEventListener("click", async () => {
+    ecowittDisableButton.disabled = true;
+    try {
+      await ecowittRequest("/api/ecowitt/disable", {});
+      if (ecowittStatus) ecowittStatus.textContent = "Ecowitt polling disabled; historical SQLite readings were retained.";
+    } catch (error) {
+      if (ecowittStatus) ecowittStatus.textContent = error.message || "Gateway could not be disabled.";
+    } finally {
+      ecowittDisableButton.disabled = false;
+    }
+  });
+
   const forecastDialog = document.getElementById("forecastDialog");
   document.querySelectorAll("[data-open-forecast]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -166,6 +250,35 @@
   forecastDialog?.addEventListener("close", () => body.classList.remove("modal-open"));
   forecastDialog?.addEventListener("click", (event) => {
     if (event.target === forecastDialog) forecastDialog.close();
+  });
+
+  document.querySelectorAll("[data-hourly-carousel]").forEach((carousel) => {
+    const hours = Array.from(carousel.querySelectorAll("[data-hourly-index]"));
+    const previousButton = carousel.querySelector("[data-hourly-previous]");
+    const nextButton = carousel.querySelector("[data-hourly-next]");
+    const status = carousel.parentElement?.querySelector("[data-hourly-status]");
+    const pageSize = Number(carousel.dataset.pageSize) || 8;
+    let pageStart = 0;
+
+    function showPage() {
+      const pageEnd = Math.min(pageStart + pageSize, hours.length);
+      hours.forEach((hour, index) => {
+        hour.hidden = index < pageStart || index >= pageEnd;
+      });
+      if (previousButton) previousButton.hidden = pageStart === 0;
+      if (nextButton) nextButton.hidden = pageEnd >= hours.length;
+      if (status) status.textContent = `Hours ${pageStart + 1}–${pageEnd} of ${hours.length}`;
+    }
+
+    previousButton?.addEventListener("click", () => {
+      pageStart = Math.max(0, pageStart - 1);
+      showPage();
+    });
+    nextButton?.addEventListener("click", () => {
+      pageStart = Math.min(Math.max(0, hours.length - pageSize), pageStart + 1);
+      showPage();
+    });
+    showPage();
   });
 
   const detectButton = dialog.querySelector("[data-detect-location]");
@@ -322,6 +435,15 @@
     sunMarker.dataset.daylightProgress = String(progress);
   }
 
+  function formatSolarTime(value) {
+    const match = String(value || "").match(/^(\d{1,2}):(\d{2})$/);
+    if (!match) return "—";
+    const hour24 = Number(match[1]);
+    if (!Number.isFinite(hour24) || hour24 > 23) return "—";
+    const hour12 = (hour24 % 12) || 12;
+    return `${hour12}:${match[2]} ${hour24 < 12 ? "AM" : "PM"}`;
+  }
+
   const initialMoonDisk = document.getElementById("currentMoonDisk");
   if (initialMoonDisk) {
     renderLocalMoon({
@@ -345,6 +467,25 @@
 
   const windyFrame = document.querySelector("[data-windy-map]");
   const windyResetButton = document.querySelector("[data-reset-windy]");
+  const windyInteraction = document.querySelector("[data-windy-interaction]");
+  const windyGuard = document.querySelector("[data-windy-guard]");
+  if (windyFrame && windyInteraction && windyGuard) {
+    const setWindyActive = (active) => {
+      windyInteraction.classList.toggle("is-active", active);
+      windyFrame.setAttribute("tabindex", active ? "0" : "-1");
+    };
+    windyGuard.addEventListener("click", () => {
+      setWindyActive(true);
+      windyFrame.focus();
+    });
+    windyInteraction.addEventListener("mouseleave", () => setWindyActive(false));
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && windyInteraction.classList.contains("is-active")) {
+        setWindyActive(false);
+        windyGuard.focus();
+      }
+    });
+  }
   if (windyFrame && windyResetButton) {
     windyResetButton.addEventListener("click", () => {
       const mapUrl = windyFrame.getAttribute("src");
@@ -358,6 +499,200 @@
       windyFrame.setAttribute("src", mapUrl);
     });
   }
+
+  function metricDate(value) {
+    const text = String(value || "");
+    return new Date(/[zZ]|[+-]\d\d:\d\d$/.test(text) ? text : `${text}Z`);
+  }
+
+  function metricValue(value, decimals, unit) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return "—";
+    return `${numeric.toFixed(Number(decimals) || 0)}${unit ? ` ${unit}` : ""}`;
+  }
+
+  function metricTime(value, timezoneName) {
+    const date = metricDate(value);
+    if (Number.isNaN(date.getTime())) return "—";
+    return new Intl.DateTimeFormat(undefined, {
+      timeZone: timezoneName,
+      hour: "numeric",
+      minute: "2-digit",
+    }).format(date);
+  }
+
+  function drawMetricGraph(canvas, metric, generatedAt, timezoneName) {
+    const context = canvas.getContext("2d");
+    const width = Math.max(320, Math.round(canvas.clientWidth || 520));
+    const height = 190;
+    const ratio = window.devicePixelRatio || 1;
+    canvas.width = Math.round(width * ratio);
+    canvas.height = Math.round(height * ratio);
+    context.scale(ratio, ratio);
+    context.clearRect(0, 0, width, height);
+
+    const styles = getComputedStyle(document.documentElement);
+    const accent = styles.getPropertyValue("--accent-2").trim() || "#55d5c7";
+    const muted = styles.getPropertyValue("--muted").trim() || "rgba(235,247,240,.7)";
+    const line = styles.getPropertyValue("--line").trim() || "rgba(196,235,220,.28)";
+    const left = 12;
+    const right = width - 12;
+    const top = 12;
+    const bottom = height - 28;
+    const end = metricDate(generatedAt).getTime();
+    const start = end - (24 * 60 * 60 * 1000);
+    const points = (metric.series || []).map((point) => ({
+      time: metricDate(point.timestamp).getTime(),
+      value: Number(point.value),
+    })).filter((point) => Number.isFinite(point.time) && Number.isFinite(point.value));
+    if (!points.length) return;
+    let low = Math.min(...points.map((point) => point.value));
+    let high = Math.max(...points.map((point) => point.value));
+    if (high === low) {
+      const padding = Math.max(Math.abs(high) * 0.05, 1);
+      low -= padding;
+      high += padding;
+    }
+    const x = (time) => left + ((time - start) / (end - start)) * (right - left);
+    const y = (value) => bottom - ((value - low) / (high - low)) * (bottom - top);
+
+    context.strokeStyle = line;
+    context.fillStyle = muted;
+    context.lineWidth = 1;
+    context.font = "10px Inter, sans-serif";
+    context.textAlign = "center";
+    for (let hour = 0; hour <= 24; hour += 3) {
+      const tickTime = start + hour * 60 * 60 * 1000;
+      const tickX = x(tickTime);
+      context.beginPath();
+      context.moveTo(tickX, top);
+      context.lineTo(tickX, bottom);
+      context.stroke();
+      const tickDate = new Date(tickTime);
+      const parts = new Intl.DateTimeFormat(undefined, {
+        timeZone: timezoneName,
+        hour: "numeric",
+        hour12: true,
+      }).formatToParts(tickDate);
+      const hourText = parts.find((part) => part.type === "hour")?.value || "";
+      const period = parts.find((part) => part.type === "dayPeriod")?.value?.slice(0, 1) || "";
+      context.fillText(`${hourText}${period}`, tickX, height - 9);
+    }
+
+    const average = Number(metric.stats?.avg);
+    if (Number.isFinite(average)) {
+      context.save();
+      context.setLineDash([5, 4]);
+      context.strokeStyle = muted;
+      context.beginPath();
+      context.moveTo(left, y(average));
+      context.lineTo(right, y(average));
+      context.stroke();
+      context.restore();
+    }
+
+    context.strokeStyle = accent;
+    context.lineWidth = 2.25;
+    context.lineJoin = "round";
+    context.lineCap = "round";
+    context.beginPath();
+    points.forEach((point, index) => {
+      const pointX = Math.max(left, Math.min(right, x(point.time)));
+      const pointY = y(point.value);
+      if (index === 0) context.moveTo(pointX, pointY);
+      else context.lineTo(pointX, pointY);
+    });
+    context.stroke();
+    if (points.length === 1) {
+      context.fillStyle = accent;
+      context.beginPath();
+      context.arc(x(points[0].time), y(points[0].value), 3, 0, Math.PI * 2);
+      context.fill();
+    }
+  }
+
+  function createMetricCard(metric, generatedAt, timezoneName) {
+    const card = document.createElement("article");
+    card.className = "glass-card weather-metric-card";
+    card.dataset.metricKey = metric.key;
+    const heading = document.createElement("header");
+    const titleBlock = document.createElement("div");
+    const eyebrow = document.createElement("p");
+    const title = document.createElement("h3");
+    const current = document.createElement("strong");
+    eyebrow.className = "eyebrow";
+    eyebrow.textContent = "24hr graph";
+    title.textContent = metric.label;
+    current.className = "metric-current";
+    current.textContent = metricValue(metric.current, metric.decimals, metric.unit);
+    titleBlock.append(eyebrow, title);
+    heading.append(titleBlock, current);
+
+    const canvas = document.createElement("canvas");
+    canvas.className = "weather-metric-graph";
+    canvas.setAttribute("role", "img");
+    canvas.setAttribute("aria-label", `24-hour graph of ${metric.label}`);
+
+    const stats = document.createElement("dl");
+    stats.className = "weather-metric-stats";
+    [
+      ["Min", metric.stats?.min, metric.stats?.min_at],
+      ["Avg", metric.stats?.avg, null],
+      ["Max", metric.stats?.max, metric.stats?.max_at],
+    ].forEach(([label, value, timestamp]) => {
+      const item = document.createElement("div");
+      const term = document.createElement("dt");
+      const definition = document.createElement("dd");
+      term.textContent = label;
+      definition.textContent = metricValue(value, metric.decimals, metric.unit);
+      item.append(term, definition);
+      if (timestamp) {
+        const time = document.createElement("time");
+        time.dateTime = timestamp;
+        time.textContent = metricTime(timestamp, timezoneName);
+        item.append(time);
+      }
+      stats.append(item);
+    });
+    card.append(heading, canvas, stats);
+    requestAnimationFrame(() => drawMetricGraph(canvas, metric, generatedAt, timezoneName));
+    if (window.ResizeObserver) {
+      new ResizeObserver(() => drawMetricGraph(canvas, metric, generatedAt, timezoneName)).observe(canvas);
+    }
+    return card;
+  }
+
+  async function loadWeatherHistory() {
+    const section = document.querySelector("[data-weather-history]");
+    const grid = document.querySelector("[data-weather-metric-grid]");
+    if (!section || !grid) return;
+    try {
+      const response = await fetch("/api/metrics/24h", {cache: "no-store"});
+      if (!response.ok) throw new Error("history unavailable");
+      const payload = await response.json();
+      const metrics = Array.isArray(payload.metrics) ? payload.metrics : [];
+      grid.replaceChildren();
+      if (!metrics.length) {
+        const empty = document.createElement("p");
+        empty.className = "metric-loading";
+        empty.textContent = "No valid Ecowitt readings have been stored in the last 24 hours.";
+        grid.append(empty);
+        return;
+      }
+      const timezoneName = payload.timezone || section.dataset.timezone || "UTC";
+      metrics.forEach((metric) => {
+        grid.append(createMetricCard(metric, payload.generated_at, timezoneName));
+      });
+    } catch (_error) {
+      grid.replaceChildren();
+      const error = document.createElement("p");
+      error.className = "metric-loading metric-error";
+      error.textContent = "The 24-hour weather history could not be loaded.";
+      grid.append(error);
+    }
+  }
+
+  loadWeatherHistory();
 
   async function refreshAstronomy() {
     if (document.hidden) return;
@@ -377,11 +712,38 @@
         : `Observer-local orientation · ${moon.moon_altitude}° altitude${moon.moon_altitude < 0 ? " (below horizon)" : ""}`;
       document.getElementById("sunriseTime").textContent = moon.sunrise;
       document.getElementById("sunsetTime").textContent = moon.sunset;
-      document.getElementById("mapSunriseTime").textContent = moon.sunrise;
-      document.getElementById("mapSunsetTime").textContent = moon.sunset;
-      document.getElementById("solarNoonTime").textContent = moon.solar_noon;
+      document.getElementById("mapSunriseTime").textContent = moon.sunrise_display || formatSolarTime(moon.sunrise);
+      document.getElementById("mapSunsetTime").textContent = moon.sunset_display || formatSolarTime(moon.sunset);
+      document.getElementById("solarNoonTime").textContent = moon.solar_noon_display || formatSolarTime(moon.solar_noon);
       document.getElementById("daylightDuration").textContent = moon.daylight_duration;
-      document.getElementById("daylightHours").textContent = moon.daylight_hours ?? "—";
+      document.getElementById("northPoleDaylight").textContent = moon.north_pole_daylight ?? "—";
+      document.getElementById("southPoleDaylight").textContent = moon.south_pole_daylight ?? "—";
+      document.getElementById("nextSeasonLabel").textContent = moon.next_season_label ?? "—";
+      const nextSeasonDate = document.getElementById("nextSeasonDate");
+      nextSeasonDate.textContent = moon.next_season_date ?? "—";
+      nextSeasonDate.setAttribute("datetime", moon.next_season_at || "");
+      const eclipseList = document.getElementById("nextEclipseList");
+      eclipseList.replaceChildren();
+      const eclipses = Array.isArray(moon.next_eclipses) ? moon.next_eclipses.slice(0, 3) : [];
+      if (!eclipses.length) {
+        const emptyItem = document.createElement("li");
+        emptyItem.className = "eclipse-empty";
+        emptyItem.textContent = moon.eclipse_calculation_available
+          ? "No visible eclipses for the next 12 months"
+          : "Eclipse calculations unavailable · rerun the Caelus installer";
+        eclipseList.append(emptyItem);
+      } else {
+        eclipses.forEach((eclipse) => {
+          const item = document.createElement("li");
+          const kind = document.createElement("strong");
+          const date = document.createElement("time");
+          kind.textContent = eclipse.kind || "Eclipse";
+          date.textContent = eclipse.date || "—";
+          date.setAttribute("datetime", eclipse.at || "");
+          item.append(kind, date);
+          eclipseList.append(item);
+        });
+      }
       document.getElementById("sunState").textContent = moon.sun_is_up ? "Sun above horizon" : "Sun below horizon";
       updateDaylightTrack(moon.daylight_progress);
       document.getElementById("lunarUpdated").textContent = `Updated ${moon.updated_at.slice(11, 16)} UTC`;

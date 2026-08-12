@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 import caelus.routes as routes_module
 from caelus import __version__
 from caelus.astronomy import moon_phase_context
-from caelus.routes import register_routes
+from caelus.routes import format_observation_time, register_routes
 from caelus.settings import AppSettings
 
 
@@ -17,6 +17,9 @@ class FakeDataLogger:
 
     def export_readings(self, max_days, format):
         return "[]" if format == "json" else "timestamp"
+
+    def get_readings_since(self, cutoff):
+        return []
 
 
 class FakePoller:
@@ -62,17 +65,53 @@ def test_dashboard_displays_zero_values() -> None:
     assert "0.0 mph" in response.text
 
 
+def test_observation_time_is_local_without_seconds_or_offset() -> None:
+    assert (
+        format_observation_time("2026-08-12T12:35:15.584178", "America/Denver")
+        == "Aug 12, 2026 · 6:35 AM"
+    )
+    assert (
+        format_observation_time(
+            "2026-08-12T06:35:15.584178-06:00", "America/Denver"
+        )
+        == "Aug 12, 2026 · 6:35 AM"
+    )
+
+
+def test_dashboard_renders_local_observation_time() -> None:
+    app = make_app()
+    app.state.settings.timezone = "America/Denver"
+    app.state.data_logger.get_latest = lambda: {
+        "timestamp": "2026-08-12T06:35:15.584178-06:00",
+        "temperature": 70.0,
+    }
+
+    response = TestClient(app).get("/")
+
+    assert response.status_code == 200
+    assert (
+        '<time datetime="2026-08-12T06:35:15.584178-06:00">'
+        "Aug 12, 2026 · 6:35 AM</time>"
+    ) in response.text
+
+
 def test_dashboard_includes_scene_themes_settings_modal_and_lunar_cycle() -> None:
     response = TestClient(make_app()).get("/")
 
     assert response.status_code == 200
     assert '<dialog class="settings-dialog" id="settingsDialog"' in response.text
     assert "data-settings-status" in response.text
-    assert response.text.count("data-save-pane=") == 5
+    assert response.text.count("data-save-pane=") == 4
+    assert "data-ecowitt-discover" in response.text
+    assert "data-ecowitt-save" in response.text
+    assert "data-ecowitt-disable" in response.text
+    assert "no Nodus sensors or switches are supported" in response.text
     assert "data-save-settings" not in response.text
     assert '<dialog class="forecast-dialog" id="forecastDialog"' in response.text
     assert "6-day forecast" in response.text
     assert f'class="brand-version">{__version__}</em>' in response.text
+    assert 'class="brand-mark" src="/static/icons/caelus-weather-compass-titled.png"' in response.text
+    assert '<span class="brand-mark">C</span>' not in response.text
     for theme in ("garden", "island", "river", "desert"):
         assert f'name="theme" value="{theme}"' in response.text
     for phase in ("New moon", "First quarter", "Full moon", "Last quarter"):
@@ -89,11 +128,206 @@ def test_dashboard_includes_scene_themes_settings_modal_and_lunar_cycle() -> Non
     assert response.text.count("data-phase-moon") == 8
     assert "🌒" not in response.text
     assert "Observer-local orientation" in response.text
-    assert "hours between sunrise and sunset" in response.text
-    assert '<footer class="site-footer"><p>Created by Peace Hill Studios</p></footer>' in response.text
+    assert 'id="northPoleDaylight"' in response.text
+    assert 'id="southPoleDaylight"' in response.text
+    assert 'id="nextSeasonHeading"' in response.text
+    assert 'id="nextEclipseHeading"' in response.text
+    assert 'id="nextEclipseList"' in response.text
+    assert (
+        "No visible eclipses for the next 12 months" in response.text
+        or "Eclipse calculations unavailable · rerun the Caelus installer" in response.text
+        or "lunar eclipse" in response.text
+        or "Solar eclipse" in response.text
+    )
+    assert 'id="daylightHours"' not in response.text
+    assert '<footer class="site-footer"><p>Created By Peace Hill Studios</p></footer>' in response.text
     assert "data-reset-windy" in response.text
     assert "data-windy-map" in response.text
+    assert "data-windy-interaction" in response.text
+    assert "data-windy-guard" in response.text
+    assert "Click to interact with map" in response.text
+    assert "overlay=radar" in response.text
+    assert "data-weather-history" in response.text
+    assert "24-hour sensor metrics" in response.text
+    assert "data-hourly-carousel" not in response.text
     assert "forecast-range" not in response.text
+
+
+def test_dashboard_pages_hourly_forecast_in_groups_of_eight() -> None:
+    app = make_app()
+    app.state.forecast_service = type(
+        "FakeForecastService",
+        (),
+        {
+            "get": staticmethod(
+                lambda _settings: {
+                    "ok": True,
+                    "provider": "open_meteo",
+                    "provider_label": "Open-Meteo",
+                    "condition": "Clear",
+                    "icon": "☀️",
+                    "high_f": 80,
+                    "low_f": 55,
+                    "precip_probability": 37,
+                    "precip_label": "Rain chance",
+                    "hours": [
+                        {
+                            "label": f"{index:02d}:00",
+                            "icon": "☀️",
+                            "temperature_f": 60 + index,
+                            "precip_probability": 0,
+                            "precip_label": "Rain chance",
+                        }
+                        for index in range(24)
+                    ],
+                    "days": [
+                        {
+                            "date": "2026-08-13",
+                            "label": "Thu Aug 13",
+                            "icon": "🌧️",
+                            "summary": "Cloudy early, snow afternoon",
+                            "high_f": 80,
+                            "low_f": 55,
+                            "high_c": 26.7,
+                            "low_c": 12.8,
+                            "humidity_low": 30,
+                            "humidity_high": 70,
+                            "precip_probability": 42,
+                            "precip_label": "Snow chance",
+                            "wind_descriptor": "light/moderate",
+                            "wind_low_mps": 1,
+                            "wind_high_mps": 4,
+                            "wind_low_mph": 2,
+                            "wind_high_mph": 9,
+                        }
+                    ],
+                }
+            )
+        },
+    )()
+
+    response = TestClient(app).get("/")
+
+    assert response.status_code == 200
+    assert response.text.count("data-hourly-index=") == 24
+    assert 'data-hourly-index="7"' in response.text
+    assert 'data-hourly-index="8" hidden' in response.text
+    assert 'data-hourly-previous aria-label="Show previous forecast hour" hidden' in response.text
+    assert "data-hourly-next" in response.text
+    assert "Hours 1–8 of 24" in response.text
+    assert "<strong>37%</strong> Rain chance" in response.text
+    assert "0% rain chance" in response.text
+    assert "42% snow chance" in response.text
+    assert "<dt>Snow chance</dt><dd>42%</dd>" in response.text
+    assert "PoP" not in response.text
+    assert "0.0 mm" not in response.text
+
+
+def test_24_hour_metrics_endpoint_returns_only_valid_stored_metrics() -> None:
+    app = make_app()
+    app.state.settings.timezone = "America/Denver"
+    app.state.data_logger.get_readings_since = lambda _cutoff: [
+        {
+            "timestamp": "2026-08-12T12:00:00",
+            "temperature": 68.0,
+            "humidity": None,
+            "wind_speed": 0.0,
+        },
+        {
+            "timestamp": "2026-08-12T13:00:00",
+            "temperature": 72.0,
+            "humidity": None,
+            "wind_speed": 4.0,
+        },
+    ]
+
+    response = TestClient(app).get("/api/metrics/24h")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["timezone"] == "America/Denver"
+    assert [metric["key"] for metric in payload["metrics"]] == [
+        "temperature",
+        "wind_speed",
+    ]
+    assert payload["metrics"][0]["stats"] == {
+        "min": 68.0,
+        "min_at": "2026-08-12T12:00:00",
+        "avg": 70.0,
+        "max": 72.0,
+        "max_at": "2026-08-12T13:00:00",
+        "samples": 2,
+    }
+
+
+def test_ecowitt_discovery_save_status_and_disable_routes(tmp_path, monkeypatch) -> None:
+    class FakeGateway:
+        def __init__(self, settings):
+            self.settings = settings
+            self.last_status = {"state": "waiting", "label": "Waiting"}
+
+        def discover(self, gateway_url):
+            assert gateway_url == "http://gw1100.local"
+            return {
+                "ok": True,
+                "gateway_url": gateway_url,
+                "gateway_id": "ecowitt-e8db840f1543",
+                "gateway_model": "GW1100A_V2.3.1",
+                "inventory": [{"id": "E8", "name": "7-in-1", "signal": 3}],
+                "rain_source": "traditional",
+                "rain_reset_hour": 9,
+                "live_metric_count": 12,
+            }
+
+        def status(self):
+            return {
+                **self.last_status,
+                "enabled": self.settings.gateway_enabled,
+                "gateway_url": self.settings.gateway_url,
+            }
+
+    settings_path = tmp_path / "settings.json"
+    monkeypatch.setattr(AppSettings, "settings_path", settings_path)
+    app = make_app()
+    app.state.gateway = FakeGateway(app.state.settings)
+    client = TestClient(app)
+    request = {
+        "gateway_url": "http://gw1100.local",
+        "csrf_token": "test-token",
+    }
+
+    discovered = client.post("/api/ecowitt/discover", json=request)
+    assert discovered.status_code == 200
+    assert discovered.json()["inventory"][0]["name"] == "7-in-1"
+
+    saved = client.post(
+        "/api/ecowitt/save",
+        json={**request, "poll_interval_seconds": 120},
+    )
+    assert saved.status_code == 200
+    assert app.state.settings.gateway_id == "ecowitt-e8db840f1543"
+    assert app.state.settings.poll_interval_seconds == 120
+    assert settings_path.exists()
+
+    status = client.get("/api/ecowitt/status")
+    assert status.json()["enabled"] is True
+
+    disabled = client.post(
+        "/api/ecowitt/disable", json={"csrf_token": "test-token"}
+    )
+    assert disabled.status_code == 200
+    assert app.state.settings.gateway_enabled is False
+
+
+def test_ecowitt_mutations_require_csrf() -> None:
+    app = make_app()
+    app.state.gateway = object()
+
+    response = TestClient(app).post(
+        "/api/ecowitt/discover", json={"gateway_url": "http://gw1100.local"}
+    )
+
+    assert response.status_code == 403
 
 
 def test_dashboard_tolerates_astronomy_payload_from_running_older_code(monkeypatch) -> None:
@@ -105,6 +339,38 @@ def test_dashboard_tolerates_astronomy_payload_from_running_older_code(monkeypat
     assert 'data-bright-limb-angle="0"' in response.text
     assert 'data-phase-index="4" data-illumination="100"' in response.text
     assert 'id="daylightDuration">—</h2>' in response.text
+
+
+def test_sunlight_card_layout_and_refresh_contract() -> None:
+    root = Path(__file__).resolve().parents[1]
+    css = (root / "static" / "styles.css").read_text(encoding="utf-8")
+    script = (root / "static" / "dashboard.js").read_text(encoding="utf-8")
+
+    assert "grid-template-columns: repeat(3, minmax(0, 1fr))" in css
+    assert ".daylight-times dd { order: -1;" in css
+    assert "--daylight-title-color: var(--accent);" in css
+    assert "--daylight-data-color: var(--ink);" in css
+    assert "--daylight-status-color: var(--warm);" in css
+    assert "function formatSolarTime(value)" in script
+    assert 'moon.north_pole_daylight ?? "—"' in script
+    assert 'moon.next_season_label ?? "—"' in script
+    assert "moon.next_eclipses" in script
+    assert "moon.eclipse_calculation_available" in script
+
+
+def test_map_interaction_gate_and_metric_graph_contract() -> None:
+    root = Path(__file__).resolve().parents[1]
+    css = (root / "static" / "styles.css").read_text(encoding="utf-8")
+    script = (root / "static" / "dashboard.js").read_text(encoding="utf-8")
+
+    assert 'windyGuard.addEventListener("click"' in script
+    assert 'windyInteraction.addEventListener("mouseleave"' in script
+    assert 'event.key === "Escape"' in script
+    assert 'fetch("/api/metrics/24h"' in script
+    assert "function drawMetricGraph(" in script
+    assert "[\"Min\", metric.stats?.min" in script
+    assert ".windy-map-interaction.is-active .windy-map-guard" in css
+    assert ".weather-metric-grid" in css
 
 
 def test_health_reports_failed_poller() -> None:

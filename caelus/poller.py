@@ -1,7 +1,8 @@
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI
 
@@ -53,8 +54,56 @@ class GatewayPoller:
         if not reading:
             return None
 
-        mapped = map_gateway_reading(reading)
+        mapped = map_gateway_reading(
+            reading,
+            rain_source=getattr(self.settings, "gateway_rain_source", "traditional"),
+        )
+        if not mapped:
+            return None
         timestamp = datetime.now(timezone.utc).replace(tzinfo=None)
+        latest_reader = getattr(self.data_logger, "get_latest", None)
+        latest = latest_reader() if callable(latest_reader) else None
+        self._add_rain_increment(mapped, latest, timestamp)
         self.data_logger.log_reading(timestamp, mapped)
         self.data_logger.prune_readings(self.settings.retention_days)
         return mapped
+
+    def _add_rain_increment(
+        self,
+        reading: dict[str, Any],
+        previous: dict[str, Any] | None,
+        timestamp: datetime,
+    ) -> None:
+        """Calculate interval rain without treating a daily counter as rainfall."""
+        current = reading.get("rain_total")
+        prior = previous.get("rain_total") if previous else None
+        if current is None or prior is None:
+            return
+        try:
+            current_total = float(current)
+            prior_total = float(prior)
+        except (TypeError, ValueError):
+            return
+        if current_total >= prior_total:
+            reading["rain_increment"] = round(current_total - prior_total, 3)
+            return
+
+        crossed_reset = False
+        try:
+            prior_time = datetime.fromisoformat(str(previous.get("timestamp")))
+            if prior_time.tzinfo is None:
+                prior_time = prior_time.replace(tzinfo=timezone.utc)
+            current_time = timestamp.replace(tzinfo=timezone.utc)
+            local_timezone = ZoneInfo(getattr(self.settings, "timezone", "UTC"))
+            prior_local = prior_time.astimezone(local_timezone)
+            current_local = current_time.astimezone(local_timezone)
+            reset_hour = int(getattr(self.settings, "gateway_rain_reset_hour", 0))
+            reset = prior_local.replace(
+                hour=max(0, min(23, reset_hour)), minute=0, second=0, microsecond=0
+            )
+            if reset <= prior_local:
+                reset += timedelta(days=1)
+            crossed_reset = reset <= current_local
+        except (TypeError, ValueError):
+            pass
+        reading["rain_increment"] = round(current_total, 3) if crossed_reset else 0.0

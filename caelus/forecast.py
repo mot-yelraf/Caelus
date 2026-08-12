@@ -20,11 +20,11 @@ PROVIDER_LABELS = {
     "open_meteo": "Open-Meteo",
     "us": "US · NWS",
 }
-MET_URL = "https://api.met.no/weatherapi/locationforecast/2.0/compact"
+MET_URL = "https://api.met.no/weatherapi/locationforecast/2.0/complete"
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
 NWS_POINTS_URL = "https://api.weather.gov/points/{latitude:.4f},{longitude:.4f}"
 CACHE_SECONDS = 60 * 60
-CACHE_FORMAT = 3
+CACHE_FORMAT = 4
 
 
 def normalize_forecast_provider(value: Any) -> str:
@@ -85,6 +85,17 @@ def _condition_icon(condition: str) -> str:
     if "partly" in text:
         return "🌤️"
     return "☀️"
+
+
+def _precipitation_chance_label(condition: Any) -> str:
+    """Name a precipitation probability as a rain or snow chance."""
+    text = str(condition or "").lower()
+    return "Snow chance" if "snow" in text or "sleet" in text else "Rain chance"
+
+
+def _precipitation_chance_label_for_rows(rows: list[dict[str, Any]]) -> str:
+    """Name the chance from every condition represented in a forecast window."""
+    return _precipitation_chance_label(" ".join(str(row.get("condition") or "") for row in rows))
 
 
 def _wmo_condition(code: Any) -> str:
@@ -157,7 +168,7 @@ def _hour_record(
     local = timestamp.astimezone(ZoneInfo(timezone_name))
     return {
         "time": local.isoformat(),
-        "label": local.strftime("%H:%M"),
+        "label": local.strftime("%I %p").lstrip("0"),
         "temperature_f": round(temperature),
         "precip_probability": round(_safe_float(precipitation_probability) or 0),
         "precipitation_mm": round(_safe_float(precipitation_mm) or 0, 2),
@@ -166,6 +177,7 @@ def _hour_record(
         "cloud_percent": round(_safe_float(cloud_percent)) if _safe_float(cloud_percent) is not None else None,
         "condition": condition,
         "icon": _condition_icon(condition),
+        "precip_label": _precipitation_chance_label(condition),
     }
 
 
@@ -337,12 +349,14 @@ def _daily_detail(rows: list[dict[str, Any]], local_date: Any, timezone_name: st
     low_f, high_f = min(temperatures), max(temperatures)
     low_mph, high_mph = min(winds_mph), max(winds_mph)
     average_mps = sum(_mph_to_mps(value) for value in winds_mph) / len(winds_mph)
+    condition = Counter(row["condition"] for row in rows).most_common(1)[0][0]
     return {
         "date": local_date.isoformat(),
         "label": f"{local_date.strftime('%a %b')} {local_date.day}",
-        "condition": Counter(row["condition"] for row in rows).most_common(1)[0][0],
+        "condition": condition,
         "summary": _daily_summary(rows, timezone_name),
-        "icon": _condition_icon(Counter(row["condition"] for row in rows).most_common(1)[0][0]),
+        "icon": _condition_icon(condition),
+        "precip_label": _precipitation_chance_label_for_rows(rows),
         "high_f": round(high_f),
         "low_f": round(low_f),
         "high_c": round(_f_to_c(high_f), 1),
@@ -369,7 +383,7 @@ def build_forecast(provider: str, rows: list[dict[str, Any]], timezone_name: str
         return {"ok": False, "provider": provider, "reason": "empty forecast", "hours": []}
     conditions = Counter(row["condition"] for row in window)
     condition = conditions.most_common(1)[0][0]
-    display_hours = future[::3][:8]
+    display_hours = future[:24]
     daily_groups: dict[Any, list[dict[str, Any]]] = {}
     for row in future:
         parsed = _parse_time(row["time"])
@@ -390,6 +404,7 @@ def build_forecast(provider: str, rows: list[dict[str, Any]], timezone_name: str
         "updated_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
         "condition": condition,
         "icon": _condition_icon(condition),
+        "precip_label": _precipitation_chance_label_for_rows(window),
         "high_f": max(row["temperature_f"] for row in window),
         "low_f": min(row["temperature_f"] for row in window),
         "precip_probability": max(row["precip_probability"] for row in window),

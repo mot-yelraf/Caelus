@@ -63,7 +63,7 @@ def test_windy_url_is_centered_and_marked_at_station_coordinates() -> None:
     assert "detailLat=32.7701" in url
     assert "detailLon=-108.2803" in url
     assert "marker=true" in url
-    assert "overlay=wind" in url
+    assert "overlay=radar" in url
 
 
 def test_legacy_themes_migrate_to_scene_themes() -> None:
@@ -82,3 +82,26 @@ def test_invalid_timezone_is_ignored_during_load(tmp_path, monkeypatch, caplog) 
     assert settings.timezone == "UTC"
     assert settings.forecast_provider == "open_meteo"
     assert "Ignoring invalid setting timezone" in caplog.text
+
+
+def test_ecowitt_configuration_round_trips_sensor_inventory(tmp_path, monkeypatch) -> None:
+    settings_path = tmp_path / "settings.json"
+    monkeypatch.setattr(AppSettings, "settings_path", settings_path)
+    settings = AppSettings(
+        gateway_enabled=True,
+        gateway_url="http://gw1100.local",
+        gateway_id="ecowitt-e8db840f1543",
+        gateway_model="GW1100A_V2.3.1",
+        gateway_inventory=[{"id": "E8", "name": "7-in-1", "signal": 3}],
+        gateway_rain_source="traditional",
+        gateway_rain_reset_hour=9,
+        poll_interval_seconds=120,
+    )
+
+    settings.save()
+    restored = AppSettings.load()
+
+    assert restored.gateway_id == "ecowitt-e8db840f1543"
+    assert restored.gateway_inventory[0]["name"] == "7-in-1"
+    assert restored.gateway_rain_reset_hour == 9
+    assert restored.poll_interval_seconds == 120

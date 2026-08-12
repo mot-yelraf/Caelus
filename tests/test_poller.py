@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime
 from types import SimpleNamespace
 
 from caelus.gateway import map_gateway_reading
@@ -20,6 +21,9 @@ class FakeDataLogger:
 
     def log_reading(self, timestamp, reading) -> None:
         self.readings.append((timestamp, reading))
+
+    def get_latest(self):
+        return None
 
     def prune_readings(self, retention_days) -> None:
         pass
@@ -60,3 +64,30 @@ def test_zero_gateway_values_are_preserved() -> None:
 
     assert reading["wind_speed"] == 0.0
     assert reading["wind_dir"] == 0
+
+
+def test_daily_rain_counter_is_stored_separately_from_interval_rain() -> None:
+    poller = make_poller()
+    reading = {"rain_total": 1.5}
+
+    poller._add_rain_increment(
+        reading,
+        {"timestamp": "2026-08-12T12:00:00", "rain_total": 1.25},
+        datetime(2026, 8, 12, 13, 0),
+    )
+
+    assert reading["rain_total"] == 1.5
+    assert reading["rain_increment"] == 0.25
+
+
+def test_unexplained_rain_counter_reset_is_conservative() -> None:
+    poller = make_poller()
+    reading = {"rain_total": 0.1}
+
+    poller._add_rain_increment(
+        reading,
+        {"timestamp": "2026-08-12T12:00:00", "rain_total": 1.25},
+        datetime(2026, 8, 12, 13, 0),
+    )
+
+    assert reading["rain_increment"] == 0.0
