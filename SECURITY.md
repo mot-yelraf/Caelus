@@ -13,6 +13,12 @@ port 8767 directly to the Internet, configure public router port forwarding to
 it, or place it behind a public reverse proxy without adding a suitable
 authentication layer.
 
+Anyone who can reach the service can read dashboard data and exports, trigger
+gateway polling, and use the gateway-discovery feature to make HTTP requests to
+a selected LAN host. Treat network reachability as authorization. The gateway
+validation limits requests to plain HTTP base URLs and known Ecowitt endpoints,
+but it is not a substitute for network isolation.
+
 Use these controls:
 
 - Keep the Caelus host and Ecowitt gateway on a trusted LAN or isolated IoT
@@ -49,6 +55,7 @@ those restrictions or add credentials to configured URLs.
 
 If you discover a security issue, report it privately:
 
+- [GitHub private vulnerability reporting](https://github.com/mot-yelraf/Caelus/security/advisories/new)
 - Email: mot.yelraf@gmail.com
 
 Please include a clear description, steps to reproduce, affected versions, and

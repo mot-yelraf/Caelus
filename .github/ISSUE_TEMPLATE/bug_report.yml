@@ -1,0 +1,46 @@
+name: Bug report
+description: Report a reproducible Caelus problem.
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Do not include credentials, precise coordinates, live gateway details, or private logs.
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What happened, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: Provide the smallest reliable sequence.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Caelus version
+      placeholder: v0.26.226.6
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Raspberry Pi
+        - macOS
+        - Windows
+        - Linux
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: Additional context
+      description: Include sanitized logs or screenshots and gateway model when relevant.
