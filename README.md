@@ -3,6 +3,9 @@
 Caelus is a lightweight Python-based weather dashboard for Ecowitt-compatible
 weather station gateways.
 
+For illustrated setup and operating instructions, see the
+[Caelus User Guide](docs/user_guide.md).
+
 ## Features
 
 - FastAPI backend with server-rendered templates
