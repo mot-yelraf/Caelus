@@ -8,7 +8,41 @@
   const tabs = Array.from(dialog.querySelectorAll("[data-settings-pane]"));
   const panes = Array.from(dialog.querySelectorAll("[data-pane]"));
   const settingsStatus = form.querySelector("[data-settings-status]");
+  const metricStyleInput = form.querySelector("[data-metric-styles-value]");
+  const allMetricStyles = form.querySelector("[data-all-metric-styles]");
+  const metricStyleSelects = Array.from(form.querySelectorAll("[data-metric-style-key]"));
+  const metricDisplayStyles = Object.fromEntries(
+    metricStyleSelects.map((select) => [select.dataset.metricStyleKey, select.value])
+  );
   let originalTheme = themeInputs.find((input) => input.checked)?.value || "garden";
+
+  function syncMetricStyleInput() {
+    if (metricStyleInput) metricStyleInput.value = JSON.stringify(metricDisplayStyles);
+  }
+
+  function updateAllMetricStyles() {
+    if (!allMetricStyles) return;
+    const styles = new Set(metricStyleSelects.map((select) => select.value));
+    allMetricStyles.value = styles.size === 1 ? metricStyleSelects[0]?.value || "" : "";
+  }
+
+  metricStyleSelects.forEach((select) => {
+    select.addEventListener("change", () => {
+      metricDisplayStyles[select.dataset.metricStyleKey] = select.value;
+      syncMetricStyleInput();
+      updateAllMetricStyles();
+    });
+  });
+  allMetricStyles?.addEventListener("change", () => {
+    if (!allMetricStyles.value) return;
+    metricStyleSelects.forEach((select) => {
+      select.value = allMetricStyles.value;
+      metricDisplayStyles[select.dataset.metricStyleKey] = allMetricStyles.value;
+    });
+    syncMetricStyleInput();
+  });
+  syncMetricStyleInput();
+  updateAllMetricStyles();
 
   function applyTheme(theme) {
     Array.from(body.classList)
@@ -533,32 +567,272 @@
     }).format(date);
   }
 
-  function drawMetricGraph(canvas, metric, generatedAt, timezoneName) {
+  const graphDialog = document.getElementById("graphDialog");
+  const fullScreenGraph = graphDialog?.querySelector("[data-full-screen-graph]");
+  const graphMetricInputs = Array.from(graphDialog?.querySelectorAll("[data-graph-metric]") || []);
+  const graphRangeButtons = Array.from(graphDialog?.querySelectorAll("[data-graph-hours]") || []);
+  const graphSelectionCount = graphDialog?.querySelector("[data-graph-selection-count]");
+  const graphSelectionStatus = graphDialog?.querySelector("[data-graph-selection-status]");
+  const graphStageTitle = graphDialog?.querySelector("#graphStageTitle");
+  const graphStageMeta = graphDialog?.querySelector("[data-graph-stage-meta]");
+  const graphStageMessage = graphDialog?.querySelector("[data-graph-stage-message]");
+  let selectedGraphHours = 24;
+  let renderedGraphPayload = null;
+  let renderedGraphKeys = [];
+  let fullGraphRequestSequence = 0;
+
+  const graphRangeLabels = new Map([
+    [1, "Last hour"], [6, "Last 6 hours"], [12, "Last 12 hours"], [24, "Last 24 hours"],
+    [72, "Last 3 days"], [168, "Last 7 days"], [336, "Last 14 days"], [696, "Last 29 days"],
+  ]);
+
+  function updateGraphSelectionState(message = "") {
+    const count = graphMetricInputs.filter((input) => input.checked).length;
+    if (graphSelectionCount) graphSelectionCount.textContent = `${count} of 4`;
+    if (graphSelectionStatus) {
+      graphSelectionStatus.textContent = message || "Select up to four metrics.";
+      graphSelectionStatus.classList.toggle("is-error", Boolean(message));
+    }
+  }
+
+  graphMetricInputs.forEach((input) => {
+    input.addEventListener("change", () => {
+      const selected = graphMetricInputs.filter((item) => item.checked);
+      if (selected.length > 4) {
+        input.checked = false;
+        updateGraphSelectionState("A maximum of four metrics can be graphed.");
+        return;
+      }
+      updateGraphSelectionState();
+      renderSelectedFullGraph();
+    });
+  });
+  graphRangeButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      selectedGraphHours = Number(button.dataset.graphHours) || 24;
+      graphRangeButtons.forEach((item) => item.setAttribute("aria-pressed", String(item === button)));
+      renderSelectedFullGraph();
+    });
+  });
+
+  function fullGraphValue(value, decimals) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return "—";
+    const precision = Math.min(2, Math.max(0, Number(decimals) || 0));
+    return numeric.toLocaleString(undefined, {minimumFractionDigits: precision, maximumFractionDigits: precision});
+  }
+
+  function drawFullScreenGraph(canvas, metrics, payload) {
+    if (!canvas || !metrics.length) return;
     const context = canvas.getContext("2d");
-    const width = Math.max(320, Math.round(canvas.clientWidth || 520));
-    const height = 190;
+    const width = Math.max(720, Math.round(canvas.clientWidth || 1100));
+    const height = Math.max(420, Math.round(canvas.clientHeight || 650));
     const ratio = window.devicePixelRatio || 1;
     canvas.width = Math.round(width * ratio);
     canvas.height = Math.round(height * ratio);
     context.scale(ratio, ratio);
     context.clearRect(0, 0, width, height);
 
-    const styles = getComputedStyle(document.documentElement);
-    const accent = styles.getPropertyValue("--accent-2").trim() || "#55d5c7";
+    const colors = ["#5eead4", "#7dd3fc", "#fbbf24", "#fb7185"];
+    const plotLeft = 132;
+    const plotRight = width - 132;
+    const plotTop = 42;
+    const plotBottom = height - 68;
+    const axes = metrics.map((metric, index) => {
+      const points = (metric.series || []).map((point) => ({time: metricDate(point.timestamp).getTime(), value: Number(point.value)}))
+        .filter((point) => Number.isFinite(point.time) && Number.isFinite(point.value));
+      let minimum = points.length ? Math.min(...points.map((point) => point.value)) : 0;
+      let maximum = points.length ? Math.max(...points.map((point) => point.value)) : 1;
+      const padding = maximum === minimum ? Math.max(Math.abs(maximum) * 0.05, 1) : (maximum - minimum) * 0.06;
+      minimum -= padding;
+      maximum += padding;
+      const side = index < 2 ? "left" : "right";
+      const sideIndex = index % 2;
+      const axisX = side === "left" ? plotLeft - sideIndex * 62 : plotRight + sideIndex * 62;
+      return {metric, points, minimum, maximum, side, sideIndex, axisX, color: colors[index]};
+    });
+    const requestedDuration = Math.max(1, Number(payload.hours) || 24) * 60 * 60 * 1000;
+    const requestedEndTime = metricDate(payload.generated_at).getTime();
+    const requestedStartTime = requestedEndTime - requestedDuration;
+    const earliestDataTime = Math.min(...axes.flatMap((axis) => axis.points.map((point) => point.time)));
+    const startTime = Number.isFinite(earliestDataTime) && earliestDataTime > requestedStartTime
+      ? earliestDataTime
+      : requestedStartTime;
+    const endTime = startTime + requestedDuration;
+    const x = (time) => plotLeft + Math.max(0, Math.min(1, (time - startTime) / requestedDuration)) * (plotRight - plotLeft);
+
+    context.font = "10px Inter, sans-serif";
+    context.strokeStyle = "rgba(185,226,211,.14)";
+    context.fillStyle = "rgba(225,242,235,.66)";
+    context.lineWidth = 1;
+    const xTickCount = width < 1000 ? 5 : 8;
+    for (let tick = 0; tick <= xTickCount; tick += 1) {
+      const tickTime = startTime + (endTime - startTime) * tick / xTickCount;
+      const tickX = x(tickTime);
+      context.beginPath();
+      context.moveTo(tickX, plotTop);
+      context.lineTo(tickX, plotBottom);
+      context.stroke();
+      const options = payload.hours <= 24
+        ? {timeZone: payload.timezone, hour: "numeric", minute: payload.hours <= 6 ? "2-digit" : undefined}
+        : {timeZone: payload.timezone, month: "short", day: "numeric"};
+      context.textAlign = tick === 0 ? "left" : tick === xTickCount ? "right" : "center";
+      context.fillText(new Intl.DateTimeFormat(undefined, options).format(new Date(tickTime)).replace(" ", ""), tickX, plotBottom + 24);
+    }
+
+    axes.forEach((axis) => {
+      const valueRange = axis.maximum - axis.minimum;
+      const tickStep = valueRange / 4;
+      const stepDecimals = tickStep < 1 ? 2 : Number.isInteger(tickStep) ? 0 : 1;
+      const decimals = Math.min(2, Math.max(Number(axis.metric.decimals) || 0, stepDecimals));
+      const y = (value) => plotBottom - ((value - axis.minimum) / valueRange) * (plotBottom - plotTop);
+      context.strokeStyle = axis.color;
+      context.fillStyle = axis.color;
+      context.lineWidth = 1;
+      context.beginPath();
+      context.moveTo(axis.axisX, plotTop);
+      context.lineTo(axis.axisX, plotBottom);
+      context.stroke();
+      for (let tick = 0; tick <= 4; tick += 1) {
+        const value = axis.minimum + valueRange * tick / 4;
+        const tickY = y(value);
+        context.beginPath();
+        context.moveTo(axis.axisX + (axis.side === "left" ? -5 : 5), tickY);
+        context.lineTo(axis.axisX, tickY);
+        context.stroke();
+        context.textAlign = axis.side === "left" ? "right" : "left";
+        context.textBaseline = "middle";
+        context.fillText(fullGraphValue(value, decimals), axis.axisX + (axis.side === "left" ? -8 : 8), tickY);
+      }
+      context.save();
+      context.translate(axis.axisX + (axis.side === "left" ? -46 : 46), (plotTop + plotBottom) / 2);
+      context.rotate(axis.side === "left" ? -Math.PI / 2 : Math.PI / 2);
+      context.textAlign = "center";
+      context.font = "700 11px Inter, sans-serif";
+      context.fillText(`${axis.metric.label}${axis.metric.unit ? ` (${axis.metric.unit})` : ""}`, 0, 0);
+      context.restore();
+
+      context.strokeStyle = axis.color;
+      context.lineWidth = 2.5;
+      context.lineJoin = "round";
+      context.lineCap = "round";
+      context.beginPath();
+      axis.points.forEach((point, pointIndex) => {
+        const pointX = x(point.time);
+        const pointY = y(point.value);
+        if (pointIndex === 0) context.moveTo(pointX, pointY);
+        else context.lineTo(pointX, pointY);
+      });
+      context.stroke();
+    });
+
+    context.font = "700 10px Inter, sans-serif";
+    context.textBaseline = "alphabetic";
+    let legendX = plotLeft;
+    axes.forEach((axis) => {
+      const current = axis.metric.current;
+      const label = `${axis.metric.label}: ${fullGraphValue(current, axis.metric.decimals)}${axis.metric.unit ? ` ${axis.metric.unit}` : ""}`;
+      context.fillStyle = axis.color;
+      context.fillRect(legendX, 12, 10, 10);
+      context.fillText(label, legendX + 15, 21);
+      legendX += context.measureText(label).width + 42;
+    });
+    canvas.setAttribute("aria-label", `${graphRangeLabels.get(Number(payload.hours)) || `${payload.hours} hours`} graph of ${metrics.map((metric) => metric.label).join(", ")}`);
+  }
+
+  async function renderSelectedFullGraph({silent = false} = {}) {
+    const selectedKeys = graphMetricInputs.filter((input) => input.checked).map((input) => input.value);
+    if (!selectedKeys.length) {
+      fullGraphRequestSequence += 1;
+      renderedGraphPayload = null;
+      renderedGraphKeys = [];
+      if (fullScreenGraph) fullScreenGraph.width = fullScreenGraph.width;
+      if (graphStageTitle) graphStageTitle.textContent = graphRangeLabels.get(selectedGraphHours) || `${selectedGraphHours} hours`;
+      if (graphStageMeta) graphStageMeta.textContent = "No metrics selected";
+      if (graphStageMessage) {
+        graphStageMessage.hidden = false;
+        graphStageMessage.textContent = "Select at least one metric.";
+      }
+      updateGraphSelectionState("Select at least one metric.");
+      return;
+    }
+    const requestSequence = ++fullGraphRequestSequence;
+    if (!silent && graphStageMessage) {
+      graphStageMessage.hidden = false;
+      graphStageMessage.textContent = "Loading graph data…";
+    }
+    try {
+      const response = await fetch(`/api/metrics/range?hours=${selectedGraphHours}`, {cache: "no-store"});
+      if (!response.ok) throw new Error("Graph data is unavailable.");
+      const payload = await response.json();
+      if (requestSequence !== fullGraphRequestSequence) return;
+      const metricsByKey = new Map((payload.metrics || []).map((metric) => [metric.key, metric]));
+      const selectedMetrics = selectedKeys.map((key) => metricsByKey.get(key)).filter(Boolean);
+      if (!selectedMetrics.length) throw new Error("No stored readings are available for the selected metrics.");
+      renderedGraphPayload = payload;
+      renderedGraphKeys = selectedMetrics.map((metric) => metric.key);
+      if (graphStageTitle) graphStageTitle.textContent = graphRangeLabels.get(Number(payload.hours)) || `${payload.hours} hours`;
+      if (graphStageMeta) graphStageMeta.textContent = selectedMetrics.map((metric) => metric.label).join(" · ");
+      if (graphStageMessage) graphStageMessage.hidden = true;
+      drawFullScreenGraph(fullScreenGraph, selectedMetrics, payload);
+      updateGraphSelectionState(selectedMetrics.length < selectedKeys.length ? "Metrics without stored readings were omitted." : "");
+    } catch (error) {
+      if (requestSequence === fullGraphRequestSequence && !silent && graphStageMessage) {
+        graphStageMessage.hidden = false;
+        graphStageMessage.textContent = error.message || "Graph data is unavailable.";
+      }
+    }
+  }
+
+  document.querySelectorAll("[data-open-graph]").forEach((button) => {
+    button.addEventListener("click", () => {
+      graphDialog?.showModal();
+      body.classList.add("modal-open");
+      updateGraphSelectionState();
+      renderSelectedFullGraph();
+    });
+  });
+  graphDialog?.querySelectorAll("[data-close-graph]").forEach((button) => button.addEventListener("click", () => graphDialog.close()));
+  graphDialog?.addEventListener("close", () => body.classList.remove("modal-open"));
+  graphDialog?.addEventListener("click", (event) => {
+    if (event.target === graphDialog) graphDialog.close();
+  });
+  if (window.ResizeObserver && fullScreenGraph) {
+    new ResizeObserver(() => {
+      if (!renderedGraphPayload || !graphDialog?.open) return;
+      const metricsByKey = new Map((renderedGraphPayload.metrics || []).map((metric) => [metric.key, metric]));
+      drawFullScreenGraph(fullScreenGraph, renderedGraphKeys.map((key) => metricsByKey.get(key)).filter(Boolean), renderedGraphPayload);
+    }).observe(fullScreenGraph);
+  }
+
+  function drawMetricGraph(canvas, metric, generatedAt, timezoneName, hours = 24) {
+    const context = canvas.getContext("2d");
+    const width = Math.max(320, Math.round(canvas.clientWidth || 520));
+    const height = 230;
+    const ratio = window.devicePixelRatio || 1;
+    canvas.width = Math.round(width * ratio);
+    canvas.height = Math.round(height * ratio);
+    context.scale(ratio, ratio);
+    context.clearRect(0, 0, width, height);
+
+    const styles = getComputedStyle(canvas.closest(".glass-card") || document.documentElement);
+    const accent = styles.getPropertyValue("--metric-graph-accent").trim()
+      || styles.getPropertyValue("--accent-2").trim() || "#55d5c7";
     const muted = styles.getPropertyValue("--muted").trim() || "rgba(235,247,240,.7)";
     const line = styles.getPropertyValue("--line").trim() || "rgba(196,235,220,.28)";
-    const left = 12;
+    const left = 52;
     const right = width - 12;
     const top = 12;
     const bottom = height - 28;
+    const generatedTime = metricDate(generatedAt).getTime();
+    const rollingStart = generatedTime - (hours * 60 * 60 * 1000);
     const points = (metric.series || []).map((point) => ({
       time: metricDate(point.timestamp).getTime(),
       value: Number(point.value),
     })).filter((point) => Number.isFinite(point.time) && Number.isFinite(point.value))
+      .filter((point) => point.time >= rollingStart && point.time <= generatedTime)
       .sort((a, b) => a.time - b.time);
     if (!points.length) return;
-    const generatedTime = metricDate(generatedAt).getTime();
-    const rollingStart = generatedTime - (24 * 60 * 60 * 1000);
     const start = Math.max(rollingStart, points[0].time);
     const latestTime = points[points.length - 1].time;
     const end = latestTime > start ? latestTime : start + 1;
@@ -572,11 +846,37 @@
     }
     const x = (time) => left + ((time - start) / (end - start)) * (right - left);
     const y = (value) => bottom - ((value - low) / (high - low)) * (bottom - top);
+    const valueRange = high - low;
+    const yTickCount = 4;
+    const tickStep = valueRange / yTickCount;
+    const stepDecimals = tickStep < 1 ? 2 : Number.isInteger(tickStep) ? 0 : 1;
+    const axisDecimals = Math.min(2, Math.max(Number(metric.decimals) || 0, stepDecimals));
+    const formatAxisValue = (value) => Number(value).toLocaleString(undefined, {
+      minimumFractionDigits: axisDecimals,
+      maximumFractionDigits: axisDecimals,
+    });
 
     context.strokeStyle = line;
     context.fillStyle = muted;
     context.lineWidth = 1;
     context.font = "10px Inter, sans-serif";
+    context.textBaseline = "middle";
+    context.textAlign = "right";
+    for (let tick = 0; tick <= yTickCount; tick += 1) {
+      const tickValue = low + (high - low) * tick / yTickCount;
+      const tickY = y(tickValue);
+      context.beginPath();
+      context.moveTo(left - 5, tickY);
+      context.lineTo(right, tickY);
+      context.stroke();
+      context.fillText(formatAxisValue(tickValue), left - 8, tickY);
+    }
+    context.beginPath();
+    context.moveTo(left, top);
+    context.lineTo(left, bottom);
+    context.stroke();
+
+    context.textBaseline = "alphabetic";
     context.textAlign = "center";
     const tickCount = width < 400 ? 4 : 8;
     for (let tick = 0; tick <= tickCount; tick += 1) {
@@ -595,16 +895,29 @@
       context.fillText(tickLabel.replace(" ", ""), tickX, height - 9);
     }
 
-    const average = Number(metric.stats?.avg);
+    const average = points.reduce((sum, point) => sum + point.value, 0) / points.length;
     if (Number.isFinite(average)) {
+      const averageY = y(average);
       context.save();
       context.setLineDash([5, 4]);
       context.strokeStyle = muted;
       context.beginPath();
-      context.moveTo(left, y(average));
-      context.lineTo(right, y(average));
+      context.moveTo(left, averageY);
+      context.lineTo(right, averageY);
       context.stroke();
       context.restore();
+
+      const averageLabel = `AVG ${metricValue(average, metric.decimals, metric.unit)}`;
+      context.font = "700 9px Inter, sans-serif";
+      context.textAlign = "right";
+      context.textBaseline = "middle";
+      const labelWidth = context.measureText(averageLabel).width + 8;
+      const labelY = Math.max(top + 7, Math.min(bottom - 7, averageY - 8));
+      context.fillStyle = styles.getPropertyValue("--metric-graph-bg").trim()
+        || styles.getPropertyValue("--glass-strong").trim() || "rgba(3,22,28,.82)";
+      context.fillRect(right - labelWidth, labelY - 7, labelWidth, 14);
+      context.fillStyle = accent;
+      context.fillText(averageLabel, right - 4, labelY);
     }
 
     context.strokeStyle = accent;
@@ -639,7 +952,7 @@
     context.scale(ratio, ratio);
     context.clearRect(0, 0, width, height);
 
-    const styles = getComputedStyle(document.documentElement);
+    const styles = getComputedStyle(canvas.closest(".glass-card") || document.documentElement);
     const muted = styles.getPropertyValue("--muted").trim() || "rgba(235,247,240,.7)";
     const line = styles.getPropertyValue("--line").trim() || "rgba(196,235,220,.28)";
     const ink = styles.getPropertyValue("--ink").trim() || "#eef8f4";
@@ -750,96 +1063,267 @@
     canvas.windRoseSummary = {bins, total, hours};
   }
 
+  function gaugeConfig(metric) {
+    const values = (metric.series || []).map((point) => Number(point.value)).filter(Number.isFinite);
+    const observedMin = values.length ? Math.min(...values) : 0;
+    const observedMax = values.length ? Math.max(...values) : 100;
+    const configs = {
+      temperature: [-20, 50, ["#2474c6", "#65b8e8", "#65b96e", "#f0c64e", "#cf4b3f"]],
+      dew_point: [-20, 50, ["#2474c6", "#65b8e8", "#65b96e", "#f0c64e", "#cf4b3f"]],
+      wind_chill: [-20, 50, ["#2474c6", "#65b8e8", "#65b96e", "#f0c64e", "#cf4b3f"]],
+      heat_index: [-20, 50, ["#2474c6", "#65b8e8", "#65b96e", "#f0c64e", "#cf4b3f"]],
+      humidity: [0, 100, ["#b47a16", "#e6bb38", "#9ed6e4", "#4a9fdf", "#174da8"]],
+      indoor_humidity: [0, 100, ["#b47a16", "#e6bb38", "#9ed6e4", "#4a9fdf", "#174da8"]],
+      pressure: [950, 1050, ["#9ed6e4"]],
+      absolute_pressure: [950, 1050, ["#9ed6e4"]],
+      indoor_pressure: [950, 1050, ["#9ed6e4"]],
+      indoor_absolute_pressure: [950, 1050, ["#9ed6e4"]],
+      uv: [0, 12, ["#65b96e", "#f0c64e", "#e88b35", "#cf4b3f", "#7a398f"]],
+      wind_speed: [0, metric.unit === "km/h" ? 80 : 50, ["#9ed6e4", "#65b8e8", "#2474c6", "#174da8"]],
+      wind_gust: [0, metric.unit === "km/h" ? 80 : 50, ["#9ed6e4", "#65b8e8", "#2474c6", "#174da8"]],
+      daily_max_wind: [0, metric.unit === "km/h" ? 80 : 50, ["#9ed6e4", "#65b8e8", "#2474c6", "#174da8"]],
+    };
+    if (configs[metric.key]) {
+      const config = configs[metric.key];
+      if (metric.unit === "°F" && config[0] === -20 && config[1] === 50) return [0, 140, config[2]];
+      if (metric.unit === "inHg" && config[0] === 950) return [28, 31, config[2]];
+      return config;
+    }
+    const spread = Math.max(observedMax - observedMin, Math.abs(observedMax) * 0.2, 1);
+    return [Math.min(0, observedMin - spread * 0.15), observedMax + spread * 0.2, ["#65b8e8", "#65b96e", "#f0c64e", "#cf4b3f"]];
+  }
+
+  function drawMetricGauge(canvas, metric) {
+    const context = canvas.getContext("2d");
+    const width = Math.max(320, Math.round(canvas.clientWidth || 520));
+    const height = 230;
+    const ratio = window.devicePixelRatio || 1;
+    canvas.width = Math.round(width * ratio);
+    canvas.height = Math.round(height * ratio);
+    context.scale(ratio, ratio);
+    context.clearRect(0, 0, width, height);
+    const styles = getComputedStyle(canvas.closest(".glass-card") || document.documentElement);
+    const ink = styles.getPropertyValue("--ink").trim() || "#eef8f4";
+    const muted = styles.getPropertyValue("--muted").trim() || "rgba(235,247,240,.7)";
+    const value = Number(metric.current);
+    const [minimum, maximum, zones] = gaugeConfig(metric);
+    const centerX = width / 2;
+    const centerY = 133;
+    const radius = 84;
+    const start = Math.PI * 0.82;
+    const end = Math.PI * 2.18;
+    const angleFor = (number) => start + Math.max(0, Math.min(1, (number - minimum) / (maximum - minimum))) * (end - start);
+
+    context.lineCap = "butt";
+    context.lineWidth = 21;
+    zones.forEach((color, index) => {
+      context.strokeStyle = color;
+      context.beginPath();
+      context.arc(centerX, centerY, radius, start + (end - start) * index / zones.length, start + (end - start) * (index + 1) / zones.length);
+      context.stroke();
+    });
+    context.fillStyle = muted;
+    context.font = "700 10px Inter, sans-serif";
+    context.textAlign = "center";
+    for (let index = 0; index <= 5; index += 1) {
+      const tickValue = minimum + (maximum - minimum) * index / 5;
+      const angle = angleFor(tickValue);
+      const tickX = centerX + Math.cos(angle) * (radius + 24);
+      const tickY = centerY + Math.sin(angle) * (radius + 24);
+      context.fillText(Math.abs(tickValue) >= 100 ? Math.round(tickValue) : Number(tickValue.toFixed(1)), tickX, tickY);
+    }
+    if (Number.isFinite(value)) {
+      const needle = angleFor(value);
+      context.strokeStyle = ink;
+      context.lineWidth = 4;
+      context.lineCap = "round";
+      context.beginPath();
+      context.moveTo(centerX - Math.cos(needle) * 13, centerY - Math.sin(needle) * 13);
+      context.lineTo(centerX + Math.cos(needle) * radius * 0.72, centerY + Math.sin(needle) * radius * 0.72);
+      context.stroke();
+      context.fillStyle = ink;
+      context.beginPath();
+      context.arc(centerX, centerY, 7, 0, Math.PI * 2);
+      context.fill();
+    }
+    context.fillStyle = ink;
+    context.font = "700 15px Inter, sans-serif";
+    context.fillText(metricValue(metric.current, metric.decimals, metric.unit), centerX, 205);
+  }
+
+  function drawCompassGauge(canvas, metric) {
+    const context = canvas.getContext("2d");
+    const width = Math.max(320, Math.round(canvas.clientWidth || 520));
+    const height = 230;
+    const ratio = window.devicePixelRatio || 1;
+    canvas.width = Math.round(width * ratio);
+    canvas.height = Math.round(height * ratio);
+    context.scale(ratio, ratio);
+    context.clearRect(0, 0, width, height);
+    const styles = getComputedStyle(canvas.closest(".glass-card") || document.documentElement);
+    const ink = styles.getPropertyValue("--ink").trim() || "#eef8f4";
+    const line = styles.getPropertyValue("--line").trim() || "rgba(196,235,220,.28)";
+    const centerX = width / 2;
+    const centerY = 112;
+    const radius = 82;
+    context.fillStyle = "rgba(158, 214, 228, 0.5)";
+    context.strokeStyle = line;
+    context.lineWidth = 10;
+    context.beginPath();
+    context.arc(centerX, centerY, radius, 0, Math.PI * 2);
+    context.fill();
+    context.stroke();
+    for (let degrees = 0; degrees < 360; degrees += 15) {
+      const angle = (degrees - 90) * Math.PI / 180;
+      const major = degrees % 45 === 0;
+      context.strokeStyle = ink;
+      context.lineWidth = major ? 2 : 1;
+      context.beginPath();
+      context.moveTo(centerX + Math.cos(angle) * (radius - (major ? 13 : 8)), centerY + Math.sin(angle) * (radius - (major ? 13 : 8)));
+      context.lineTo(centerX + Math.cos(angle) * radius, centerY + Math.sin(angle) * radius);
+      context.stroke();
+    }
+    context.fillStyle = ink;
+    context.font = "700 16px Inter, sans-serif";
+    context.textAlign = "center";
+    [["N", 0], ["E", 90], ["S", 180], ["W", 270]].forEach(([label, degrees]) => {
+      const angle = (degrees - 90) * Math.PI / 180;
+      context.fillText(label, centerX + Math.cos(angle) * 53, centerY + Math.sin(angle) * 53 + 5);
+    });
+    const value = Number(metric.current);
+    if (Number.isFinite(value)) {
+      const angle = (value - 90) * Math.PI / 180;
+      context.fillStyle = ink;
+      context.beginPath();
+      context.moveTo(centerX + Math.cos(angle) * 67, centerY + Math.sin(angle) * 67);
+      context.lineTo(centerX + Math.cos(angle + Math.PI / 2) * 7 - Math.cos(angle) * 16, centerY + Math.sin(angle + Math.PI / 2) * 7 - Math.sin(angle) * 16);
+      context.lineTo(centerX + Math.cos(angle - Math.PI / 2) * 7 - Math.cos(angle) * 16, centerY + Math.sin(angle - Math.PI / 2) * 7 - Math.sin(angle) * 16);
+      context.closePath();
+      context.fill();
+      context.beginPath();
+      context.arc(centerX, centerY, 8, 0, Math.PI * 2);
+      context.fill();
+    }
+  }
+
+  async function persistMetricDisplayStyles() {
+    syncMetricStyleInput();
+    const formData = new FormData();
+    formData.append("csrf_token", form.querySelector('input[name="csrf_token"]')?.value || "");
+    formData.append("settings_pane", "appearance");
+    formData.append("metric_display_styles", JSON.stringify(metricDisplayStyles));
+    try {
+      await fetch(form.action, {method: "POST", body: formData});
+    } catch (_error) {
+      // The card has already changed locally; the next Appearance save retries it.
+    }
+  }
+
   function createMetricCard(metric, generatedAt, timezoneName) {
     const card = document.createElement("article");
     card.className = "glass-card weather-metric-card";
     card.dataset.metricKey = metric.key;
+    card.tabIndex = 0;
+    card.setAttribute("role", "button");
     const heading = document.createElement("header");
     const titleBlock = document.createElement("div");
     const eyebrow = document.createElement("p");
     const title = document.createElement("h3");
     const current = document.createElement("strong");
     eyebrow.className = "eyebrow";
-    const isWindRose = metric.key === "wind_dir" && metric.wind_speed;
-    eyebrow.textContent = isWindRose ? "Directional distribution" : "24hr graph";
-    title.textContent = isWindRose ? "24-hour Wind-Rose" : metric.label;
     current.className = "metric-current";
-    current.textContent = isWindRose
-      ? metricValue(metric.wind_speed.current, metric.wind_speed.decimals, metric.wind_speed.unit)
-      : metricValue(metric.current, metric.decimals, metric.unit);
     titleBlock.append(eyebrow, title);
-    let windRoseHours = 24;
-    if (isWindRose) {
-      const controls = document.createElement("div");
-      controls.className = "wind-rose-controls";
-      [24, 6].forEach((hours) => {
-        const button = document.createElement("button");
-        button.type = "button";
-        button.textContent = `${hours}h`;
-        button.setAttribute("aria-pressed", String(hours === windRoseHours));
-        button.addEventListener("click", () => {
-          windRoseHours = hours;
-          controls.querySelectorAll("button").forEach((item) => item.setAttribute("aria-pressed", String(item === button)));
-          title.textContent = `${hours}-hour Wind-Rose`;
-          canvas.setAttribute("aria-label", `${hours}-hour wind rose with wind-speed bands`);
-          drawWindRose(canvas, metric, generatedAt, windRoseHours);
-        });
-        controls.append(button);
-      });
-      titleBlock.append(controls);
-    }
     heading.append(titleBlock, current);
-
     const canvas = document.createElement("canvas");
-    canvas.className = `weather-metric-graph${isWindRose ? " wind-rose-graph" : ""}`;
     canvas.setAttribute("role", "img");
-    canvas.setAttribute("aria-label", isWindRose ? "24-hour wind rose with wind-speed bands" : `24-hour graph of ${metric.label}`);
-    if (isWindRose) {
-      canvas.addEventListener("mousemove", (event) => {
-        const summary = canvas.windRoseSummary;
-        if (!summary?.total) return;
-        const rect = canvas.getBoundingClientRect();
-        const centerX = rect.width / 2;
-        const centerY = 101;
-        const angle = (Math.atan2(event.clientY - rect.top - centerY, event.clientX - rect.left - centerX) + Math.PI / 2 + Math.PI * 2) % (Math.PI * 2);
-        const index = Math.round(angle / (Math.PI / 8)) % 16;
-        const bin = summary.bins[index];
-        const percent = Math.round(bin.count / summary.total * 100);
-        const average = bin.count ? (bin.speedTotal / bin.count).toFixed(1) : "0.0";
-        canvas.title = `${summary.hours} Hours wind rose — ${windDirections[index]} ${percent}% — average ${average} ${metric.wind_speed.unit}`;
-      });
-    }
-
     const stats = document.createElement("dl");
     stats.className = "weather-metric-stats";
-    const displayedMetric = isWindRose ? metric.wind_speed : metric;
-    [
-      [isWindRose ? "24h Min" : "Min", displayedMetric.stats?.min, displayedMetric.stats?.min_at],
-      [isWindRose ? "24h Avg" : "Avg", displayedMetric.stats?.avg, null],
-      [isWindRose ? "24h Max" : "Max", displayedMetric.stats?.max, displayedMetric.stats?.max_at],
-    ].forEach(([label, value, timestamp]) => {
+    const statElements = ["Min", "Avg", "Max"].map((label) => {
       const item = document.createElement("div");
       const term = document.createElement("dt");
       const definition = document.createElement("dd");
+      const time = document.createElement("time");
       term.textContent = label;
-      definition.textContent = metricValue(value, displayedMetric.decimals, displayedMetric.unit);
-      item.append(term, definition);
-      if (timestamp) {
-        const time = document.createElement("time");
-        time.dateTime = timestamp;
-        time.textContent = metricTime(timestamp, timezoneName);
-        item.append(time);
-      }
+      item.append(term, definition, time);
       stats.append(item);
+      return {term, definition, time};
     });
     card.append(heading, canvas, stats);
-    const draw = () => isWindRose
-      ? drawWindRose(canvas, metric, generatedAt, windRoseHours)
-      : drawMetricGraph(canvas, metric, generatedAt, timezoneName);
-    requestAnimationFrame(draw);
-    if (window.ResizeObserver) {
-      new ResizeObserver(draw).observe(canvas);
+
+    const isWindRose = metric.key === "wind_dir" && metric.wind_speed;
+    let displayStyle = metricDisplayStyles[metric.key] || "graph24hr";
+
+    function updateStats(displayedMetric, hours) {
+      const end = metricDate(generatedAt).getTime();
+      const start = end - hours * 60 * 60 * 1000;
+      const points = (displayedMetric.series || []).map((point) => ({
+        timestamp: point.timestamp,
+        value: Number(point.value ?? point.speed),
+      })).filter((point) => Number.isFinite(point.value) && metricDate(point.timestamp).getTime() >= start);
+      if (!points.length) return;
+      const minimum = points.reduce((best, point) => point.value < best.value ? point : best);
+      const maximum = points.reduce((best, point) => point.value > best.value ? point : best);
+      const average = points.reduce((sum, point) => sum + point.value, 0) / points.length;
+      [[minimum.value, minimum.timestamp], [average, null], [maximum.value, maximum.timestamp]].forEach(([value, timestamp], index) => {
+        statElements[index].term.textContent = isWindRose ? `${hours}h ${["Min", "Avg", "Max"][index]}` : ["Min", "Avg", "Max"][index];
+        statElements[index].definition.textContent = metricValue(value, displayedMetric.decimals, displayedMetric.unit);
+        statElements[index].time.textContent = timestamp ? metricTime(timestamp, timezoneName) : "";
+        statElements[index].time.dateTime = timestamp || "";
+      });
     }
+
+    function render() {
+      const hours = displayStyle === "graph6hr" ? 6 : 24;
+      const gaugeMode = displayStyle === "gauge";
+      const displayedMetric = isWindRose && !gaugeMode ? metric.wind_speed : metric;
+      eyebrow.textContent = gaugeMode ? "Gauge" : `${hours}hr graph`;
+      title.textContent = isWindRose ? (gaugeMode ? "Wind direction" : `${hours}-hour Wind-Rose`) : metric.label;
+      current.textContent = metricValue(displayedMetric.current, displayedMetric.decimals, displayedMetric.unit);
+      canvas.className = `weather-metric-graph${gaugeMode ? " weather-metric-gauge" : isWindRose ? " wind-rose-graph" : ""}`;
+      canvas.setAttribute("aria-label", gaugeMode
+        ? `Gauge for ${title.textContent}`
+        : isWindRose ? `${hours}-hour wind rose with wind-speed bands` : `${hours}-hour graph of ${metric.label}`);
+      card.setAttribute("aria-label", `${title.textContent}, ${eyebrow.textContent}. Click to change display style.`);
+      updateStats(displayedMetric, gaugeMode ? 24 : hours);
+      if (gaugeMode) {
+        if (isWindRose) drawCompassGauge(canvas, metric);
+        else drawMetricGauge(canvas, metric);
+      } else if (isWindRose) {
+        drawWindRose(canvas, metric, generatedAt, hours);
+      } else {
+        drawMetricGraph(canvas, metric, generatedAt, timezoneName, hours);
+      }
+    }
+
+    function cycleDisplayStyle() {
+      displayStyle = displayStyle === "graph24hr" ? "graph6hr" : displayStyle === "graph6hr" ? "gauge" : "graph24hr";
+      metricDisplayStyles[metric.key] = displayStyle;
+      const selector = metricStyleSelects.find((item) => item.dataset.metricStyleKey === metric.key);
+      if (selector) selector.value = displayStyle;
+      updateAllMetricStyles();
+      render();
+      persistMetricDisplayStyles();
+    }
+
+    card.addEventListener("click", cycleDisplayStyle);
+    card.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      cycleDisplayStyle();
+    });
+    canvas.addEventListener("mousemove", (event) => {
+      const summary = canvas.windRoseSummary;
+      if (!summary?.total || displayStyle === "gauge") return;
+      const rect = canvas.getBoundingClientRect();
+      const angle = (Math.atan2(event.clientY - rect.top - 101, event.clientX - rect.left - rect.width / 2) + Math.PI / 2 + Math.PI * 2) % (Math.PI * 2);
+      const index = Math.round(angle / (Math.PI / 8)) % 16;
+      const bin = summary.bins[index];
+      const percent = Math.round(bin.count / summary.total * 100);
+      const average = bin.count ? (bin.speedTotal / bin.count).toFixed(1) : "0.0";
+      canvas.title = `${summary.hours} Hours wind rose — ${windDirections[index]} ${percent}% — average ${average} ${metric.wind_speed.unit}`;
+    });
+    requestAnimationFrame(render);
+    if (window.ResizeObserver) new ResizeObserver(render).observe(canvas);
     return card;
   }
 
@@ -941,6 +1425,9 @@
     }
     await refreshSensorOnlineStatus();
     await loadWeatherHistory();
+    if (graphDialog?.open && renderedGraphPayload) {
+      await renderSelectedFullGraph({silent: true});
+    }
   }
 
   let dashboardRefreshTimer = null;

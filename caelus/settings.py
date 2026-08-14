@@ -13,6 +13,7 @@ LEGACY_THEME_MAP = {"light": "garden", "dark": "river", "midnight": "island"}
 ALLOWED_THEMES = SCENE_THEMES | set(LEGACY_THEME_MAP)
 ALLOWED_EXPORT_FORMATS = {"csv", "json"}
 ALLOWED_FORECAST_PROVIDERS = {"met_no", "open_meteo", "us"}
+ALLOWED_METRIC_DISPLAY_STYLES = {"graph24hr", "graph6hr", "gauge"}
 
 
 def normalize_theme(value: str) -> str:
@@ -86,7 +87,8 @@ class AppSettings:
     forecast_provider: str = "met_no"
     theme: str = "garden"
     unit_system: str = "imperial"
-    pressure_unit: str = "hpa"
+    pressure_unit: str = "auto"
+    metric_display_styles: dict[str, str] = field(default_factory=dict)
     retention_days: int = 366
     export_format: str = "csv"
     windy_iframe_url: str = "https://embed.windy.com/embed2.html"
@@ -116,6 +118,9 @@ class AppSettings:
                 setattr(settings, name, cls._validate_value(name, data[name]))
             except (TypeError, ValueError) as exc:
                 logger.warning("Ignoring invalid setting %s: %s", name, exc)
+        # Older releases allowed pressure to override the unit preset. The
+        # control no longer exists, so migrate all loaded values to automatic.
+        settings.pressure_unit = "auto"
         return settings
 
     @staticmethod
@@ -134,6 +139,15 @@ class AppSettings:
             if value not in {"auto", "hpa", "inhg"}:
                 raise ValueError("unsupported pressure display unit")
             return value
+        if name == "metric_display_styles":
+            if not isinstance(value, dict):
+                raise TypeError("must be an object")
+            result = {}
+            for metric, style in value.items():
+                if not isinstance(metric, str) or style not in ALLOWED_METRIC_DISPLAY_STYLES:
+                    raise ValueError("unsupported metric display style")
+                result[metric] = style
+            return result
         if name == "export_format":
             if value not in ALLOWED_EXPORT_FORMATS:
                 raise ValueError("unsupported export format")

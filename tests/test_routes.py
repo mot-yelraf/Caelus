@@ -122,7 +122,7 @@ def test_current_reading_api_uses_configured_refresh_interval() -> None:
         "poll_interval_seconds": 120,
         "display_units": {
             "temperature": "°F",
-            "pressure": "hPa",
+            "pressure": "inHg",
             "wind_speed": "mph",
             "wind_gust": "mph",
             "rain_total": "in",
@@ -130,7 +130,7 @@ def test_current_reading_api_uses_configured_refresh_interval() -> None:
     }
 
 
-def test_gateway_relative_pressure_is_displayed_in_hpa() -> None:
+def test_gateway_relative_pressure_follows_display_unit_preset() -> None:
     app = make_app()
     app.state.data_logger.get_latest = lambda: {
         "timestamp": "2026-08-12T12:35:15",
@@ -143,8 +143,8 @@ def test_gateway_relative_pressure_is_displayed_in_hpa() -> None:
     current = client.get("/api/readings/current")
 
     assert 'data-reading-field="pressure"' in dashboard.text
-    assert ">1006.0 hPa</strong>" in dashboard.text
-    assert current.json()["reading"]["pressure"] == 1006.0
+    assert ">29.7 inHg</strong>" in dashboard.text
+    assert current.json()["reading"]["pressure"] == 29.7
 
 def test_dashboard_refresh_timers_follow_station_and_forecast_contract() -> None:
     root = Path(__file__).resolve().parents[1]
@@ -172,6 +172,14 @@ def test_dashboard_includes_scene_themes_settings_modal_and_lunar_cycle() -> Non
     assert "no Nodus sensors or switches are supported" in response.text
     assert "data-save-settings" not in response.text
     assert '<dialog class="forecast-dialog" id="forecastDialog"' in response.text
+    assert '<dialog class="graph-dialog" id="graphDialog"' in response.text
+    assert "data-open-graph" in response.text
+    assert 'href="#moon"' not in response.text
+    assert 'href="#conditions"' not in response.text
+    assert 'href="#map"' not in response.text
+    assert response.text.count("data-graph-hours=") == 8
+    assert response.text.count("data-graph-metric") == 26
+    assert "data-render-graph" not in response.text
     assert "6-day forecast" in response.text
     assert f'class="brand-version">{__version__}</em>' in response.text
     assert 'class="brand-mark" src="/static/icons/caelus-weather-compass-titled.png"' in response.text
@@ -428,6 +436,46 @@ def test_sunlight_card_layout_and_refresh_contract() -> None:
     assert "moon.eclipse_calculation_available" in script
 
 
+def test_sunny_beach_and_daylight_desert_theme_contract() -> None:
+    root = Path(__file__).resolve().parents[1]
+    template = (root / "templates" / "dashboard.html").read_text(encoding="utf-8")
+    css = (root / "static" / "styles.css").read_text(encoding="utf-8")
+
+    assert "Sunny Beach" in template
+    assert "Ocean Island" not in template
+    assert "sunny-beach.webp" in css
+    assert "desert-clear.webp" in css
+    assert ".theme-desert .glass-card:not(.lunar-header)" in css
+    assert (root / "static" / "backgrounds" / "sunny-beach.webp").is_file()
+    assert (root / "static" / "backgrounds" / "desert-clear.webp").is_file()
+    assert not (root / "static" / "backgrounds" / "island.webp").exists()
+    assert not (root / "static" / "backgrounds" / "desert.webp").exists()
+
+
+def test_metric_display_style_settings_contract() -> None:
+    response = TestClient(make_app()).get("/")
+    root = Path(__file__).resolve().parents[1]
+    css = (root / "static" / "styles.css").read_text(encoding="utf-8")
+
+    assert "Pressure unit" not in response.text
+    assert 'data-metric-style-key="temperature"' in response.text
+    assert "data-all-metric-styles" in response.text
+    assert "<span>All metrics</span>" in response.text
+    assert ">24Hr Graph</option>" in response.text
+    assert ">6Hr Graph</option>" in response.text
+    assert ">Gauge</option>" in response.text
+    assert "grid-template-columns: repeat(3, minmax(0, 1fr))" in css
+    assert response.text.count('class="appearance-section"') == 3
+    assert "<strong>Theme</strong>" in response.text
+    assert "<strong>Units</strong>" in response.text
+    assert "<strong>Display Style</strong>" in response.text
+    assert 'class="appearance-pane-footer"' in response.text
+    assert ".appearance-pane-scroll" in css
+    script = (root / "static" / "dashboard.js").read_text(encoding="utf-8")
+    assert "function updateAllMetricStyles()" in script
+    assert 'allMetricStyles?.addEventListener("change"' in script
+
+
 def test_map_interaction_gate_and_metric_graph_contract() -> None:
     root = Path(__file__).resolve().parents[1]
     css = (root / "static" / "styles.css").read_text(encoding="utf-8")
@@ -438,17 +486,59 @@ def test_map_interaction_gate_and_metric_graph_contract() -> None:
     assert 'event.key === "Escape"' in script
     assert 'fetch("/api/metrics/24h"' in script
     assert "function drawMetricGraph(" in script
-    assert "const rollingStart = generatedTime - (24 * 60 * 60 * 1000)" in script
+    assert "const height = 230;" in script
+    assert ".weather-metric-graph { display: block; width: 100%; height: 230px;" in css
+    assert "const rollingStart = generatedTime - (hours * 60 * 60 * 1000)" in script
     assert "const start = Math.max(rollingStart, points[0].time)" in script
     assert "const end = latestTime > start ? latestTime : start + 1" in script
+    assert "const yTickCount = 4;" in script
+    assert "context.fillText(formatAxisValue(tickValue), left - 8, tickY);" in script
+    assert "points.reduce((sum, point) => sum + point.value, 0) / points.length" in script
+    assert "`AVG ${metricValue(average, metric.decimals, metric.unit)}`" in script
     assert "function drawWindRose(" in script
-    assert 'title.textContent = isWindRose ? "24-hour Wind-Rose"' in script
+    assert '`${hours}-hour Wind-Rose`' in script
     assert '{maximum: 5, label: "0–5"' in script
-    assert '[24, 6].forEach((hours)' in script
-    assert 'isWindRose ? "24h Min" : "Min"' in script
+    assert "function drawMetricGauge(" in script
+    assert "function drawCompassGauge(" in script
+    assert 'displayStyle === "graph24hr" ? "graph6hr"' in script
+    assert "wind-rose-controls" not in script
     assert ".windy-map-interaction.is-active .windy-map-guard" in css
     assert "grid-template-columns: repeat(4, minmax(0, 1fr))" in css
     assert ".wind-rose-controls" in css
+
+
+def test_full_screen_metric_graph_range_api_accepts_only_supported_windows() -> None:
+    client = TestClient(make_app())
+
+    response = client.get("/api/metrics/range?hours=696")
+
+    assert response.status_code == 200
+    assert response.json()["hours"] == 696
+    assert client.get("/api/metrics/range?hours=2").status_code == 422
+
+
+def test_full_screen_graph_enforces_four_metric_axes_contract() -> None:
+    root = Path(__file__).resolve().parents[1]
+    script = (root / "static" / "dashboard.js").read_text(encoding="utf-8")
+    css = (root / "static" / "styles.css").read_text(encoding="utf-8")
+
+    assert "if (selected.length > 4)" in script
+    assert '"A maximum of four metrics can be graphed."' in script
+    assert 'const side = index < 2 ? "left" : "right";' in script
+    assert "plotLeft - sideIndex * 62" in script
+    assert "plotRight + sideIndex * 62" in script
+    assert "function drawFullScreenGraph(" in script
+    assert "earliestDataTime > requestedStartTime" in script
+    assert "const endTime = startTime + requestedDuration;" in script
+    assert script.count("renderSelectedFullGraph();") == 3
+    assert "let fullGraphRequestSequence = 0;" in script
+    assert "requestSequence !== fullGraphRequestSequence" in script
+    assert "if (graphDialog?.open && renderedGraphPayload)" in script
+    assert "renderSelectedFullGraph({silent: true})" in script
+    assert "data-close-graph" in (root / "templates" / "dashboard.html").read_text(encoding="utf-8")
+    assert "data-render-graph" not in (root / "templates" / "dashboard.html").read_text(encoding="utf-8")
+    assert "grid-template-columns: clamp(17rem, 19vw, 20rem) minmax(0, 1fr)" in css
+    assert ".graph-controls-footer" not in css
 
 
 def test_health_reports_failed_poller() -> None:
@@ -505,7 +595,7 @@ def test_appearance_pane_saves_without_other_settings_fields(tmp_path, monkeypat
             "settings_pane": "appearance",
             "theme": "river",
             "unit_system": "metric",
-            "pressure_unit": "inhg",
+            "metric_display_styles": '{"temperature":"gauge","humidity":"graph6hr"}',
             "csrf_token": "test-token",
         },
     )
@@ -514,11 +604,15 @@ def test_appearance_pane_saves_without_other_settings_fields(tmp_path, monkeypat
     assert response.json() == {"ok": True, "pane": "appearance"}
     assert app.state.settings.theme == "river"
     assert app.state.settings.unit_system == "metric"
-    assert app.state.settings.pressure_unit == "inhg"
+    assert app.state.settings.pressure_unit == "auto"
+    assert app.state.settings.metric_display_styles == {
+        "temperature": "gauge", "humidity": "graph6hr"
+    }
     assert app.state.settings.gateway_url == original_gateway
     assert AppSettings.load().theme == "river"
     assert AppSettings.load().unit_system == "metric"
-    assert AppSettings.load().pressure_unit == "inhg"
+    assert AppSettings.load().pressure_unit == "auto"
+    assert AppSettings.load().metric_display_styles["temperature"] == "gauge"
 
 
 def test_settings_rejects_non_http_gateway_with_csrf_token() -> None:

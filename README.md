@@ -17,6 +17,8 @@ weather station gateways.
   until deliberately activated, so page scrolling is not captured accidentally
 - Responsive 24-hour cards for every valid stored Ecowitt metric, with local
   three-hour graph ticks and complete-window minimum, average, and maximum stats
+- Full-screen live history graph with eight selectable windows from one hour to
+  29 days and up to four independently scaled metrics across two axes per side
 - Calculated eight-phase moon cycle with illumination, lunar age, and a live
   observer-local disk whose bright limb follows the Sun in the user's sky; a
   detailed lunar surface texture remains visible through the calculated phase
@@ -31,7 +33,7 @@ weather station gateways.
   temperatures and wind, humidity ranges, and precipitation outlook
 - Forecast-derived irrigation, frost, and outdoor-work decisions
 - Time-based CSV / JSON export and retention settings
-- Four device-persistent scene themes: Mountain Garden, Ocean Island, Forest
+- Four device-persistent scene themes: Mountain Garden, Sunny Beach, Forest
   River, and Desert Bloom
 - Modal System Settings with keyboard navigation and live theme previews
 - Poller-aware health reporting at `/healthz`

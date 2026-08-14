@@ -1,4 +1,5 @@
 import asyncio
+import json
 import secrets
 from dataclasses import fields, replace
 from datetime import datetime, timedelta, timezone
@@ -14,7 +15,7 @@ from caelus.data_logger import DataLogger
 from caelus.forecast import build_decisions, normalize_forecast_provider
 from caelus.gateway import EcowittGatewayError
 from caelus.location import resolve_ip_location
-from caelus.metrics import build_24_hour_metric_cards
+from caelus.metrics import WEATHER_METRICS, build_24_hour_metric_cards
 from caelus.settings import (
     ALLOWED_EXPORT_FORMATS,
     AppSettings,
@@ -24,6 +25,8 @@ from caelus.settings import (
     validate_windy_iframe_url,
 )
 from caelus.units import convert_reading, display_unit_for
+
+GRAPH_RANGE_HOURS = {1, 6, 12, 24, 72, 168, 336, 696}
 
 
 def format_observation_time(value: Any, timezone_name: str) -> str:
@@ -95,6 +98,7 @@ def register_routes(app: FastAPI) -> None:
                     field: display_unit_for(field, settings.unit_system, settings.pressure_unit)
                     for field in ("temperature", "pressure", "wind_speed", "wind_gust", "rain_total")
                 },
+                "metric_display_options": WEATHER_METRICS,
             },
         )
 
@@ -126,7 +130,7 @@ def register_routes(app: FastAPI) -> None:
         forecast_provider: str | None = Form(None),
         theme: str | None = Form(None),
         unit_system: str | None = Form(None),
-        pressure_unit: str | None = Form(None),
+        metric_display_styles: str | None = Form(None),
         retention_days: int | None = Form(None),
         export_format: str | None = Form(None),
         windy_iframe_url: str | None = Form(None),
@@ -180,9 +184,13 @@ def register_routes(app: FastAPI) -> None:
                 candidate.unit_system = AppSettings._validate_value(
                     "unit_system", unit_system or candidate.unit_system
                 )
-                candidate.pressure_unit = AppSettings._validate_value(
-                    "pressure_unit", pressure_unit or candidate.pressure_unit
-                )
+                # Retained internally for compatibility with older settings;
+                # pressure now follows the selected display-unit preset.
+                candidate.pressure_unit = "auto"
+                if metric_display_styles is not None:
+                    candidate.metric_display_styles = AppSettings._validate_value(
+                        "metric_display_styles", json.loads(metric_display_styles)
+                    )
             if settings_pane in {"all", "data-map"}:
                 next_export = export_format or candidate.export_format
                 if next_export not in ALLOWED_EXPORT_FORMATS:
@@ -194,7 +202,7 @@ def register_routes(app: FastAPI) -> None:
                 candidate.windy_iframe_url = validate_windy_iframe_url(
                     windy_iframe_url or candidate.windy_iframe_url
                 )
-        except ValueError as exc:
+        except (json.JSONDecodeError, TypeError, ValueError) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
         for item in fields(AppSettings):
@@ -344,6 +352,27 @@ def register_routes(app: FastAPI) -> None:
         )
         return {
             "hours": 24,
+            "generated_at": observed_at.replace(microsecond=0).isoformat(),
+            "timezone": app.state.settings.timezone,
+            "metrics": build_24_hour_metric_cards(
+                rows,
+                app.state.settings.unit_system,
+                app.state.settings.pressure_unit,
+            ),
+        }
+
+    @app.get("/api/metrics/range")
+    async def get_metric_range(hours: int = 24) -> Dict[str, Any]:
+        """Return display-ready metric series for a supported graph window."""
+        if hours not in GRAPH_RANGE_HOURS:
+            raise HTTPException(status_code=422, detail="unsupported graph range")
+        observed_at = datetime.now(timezone.utc)
+        rows = await asyncio.to_thread(
+            app.state.data_logger.get_readings_since,
+            observed_at - timedelta(hours=hours),
+        )
+        return {
+            "hours": hours,
             "generated_at": observed_at.replace(microsecond=0).isoformat(),
             "timezone": app.state.settings.timezone,
             "metrics": build_24_hour_metric_cards(

@@ -24,7 +24,8 @@ def test_load_preserves_known_values_and_ignores_unknown_fields(tmp_path, monkey
     assert settings.theme == "river"
     assert settings.poll_interval_seconds == 300
     assert settings.unit_system == "imperial"
-    assert settings.pressure_unit == "hpa"
+    assert settings.pressure_unit == "auto"
+    assert settings.metric_display_styles == {}
 
 
 def test_load_invalid_json_returns_defaults(tmp_path, monkeypatch, caplog) -> None:
@@ -72,6 +73,22 @@ def test_legacy_themes_migrate_to_scene_themes() -> None:
     assert normalize_theme("light") == "garden"
     assert normalize_theme("dark") == "river"
     assert normalize_theme("midnight") == "island"
+
+
+def test_metric_display_styles_validate_individually() -> None:
+    assert AppSettings._validate_value(
+        "metric_display_styles", {"temperature": "gauge", "humidity": "graph6hr"}
+    ) == {"temperature": "gauge", "humidity": "graph6hr"}
+    with pytest.raises(ValueError):
+        AppSettings._validate_value("metric_display_styles", {"temperature": "dial"})
+
+
+def test_removed_pressure_override_migrates_to_unit_preset(tmp_path, monkeypatch) -> None:
+    settings_path = tmp_path / "settings.json"
+    settings_path.write_text('{"unit_system":"imperial","pressure_unit":"hpa"}', encoding="utf-8")
+    monkeypatch.setattr(AppSettings, "settings_path", settings_path)
+
+    assert AppSettings.load().pressure_unit == "auto"
 
 
 def test_invalid_timezone_is_ignored_during_load(tmp_path, monkeypatch, caplog) -> None:
