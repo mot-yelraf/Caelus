@@ -4,6 +4,8 @@ import json
 import sqlite3
 from datetime import datetime, timedelta, timezone
 
+import pytest
+
 from caelus.data_logger import DataLogger
 
 
@@ -26,6 +28,27 @@ def test_csv_export_uses_csv_escaping(tmp_path) -> None:
     rows = list(csv.reader(io.StringIO(logger.export_readings(1, "csv"))))
 
     assert rows[1][6] == "=unexpected,value"
+
+
+def test_export_can_convert_normalized_values_to_metric_display_units(tmp_path) -> None:
+    logger = DataLogger(str(tmp_path / "caelus.db"))
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    logger.log_reading(
+        now,
+        {
+            "temperature": 68.0,
+            "wind_speed": 10.0,
+            "rain_total": 1.0,
+            "indoor_pressure": 29.92,
+        },
+    )
+
+    row = json.loads(logger.export_readings(1, "json", "metric", "auto"))[0]
+
+    assert row["temperature"] == 20.0
+    assert row["wind_speed"] == 16.09344
+    assert row["rain_total"] == 25.4
+    assert row["indoor_pressure"] == pytest.approx(1013.21, abs=0.01)
 
 
 def test_existing_database_is_additively_migrated_for_7_in_1_metrics(tmp_path) -> None:

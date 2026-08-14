@@ -15,7 +15,7 @@ class FakeDataLogger:
     def get_latest(self):
         return {"temperature": 0.0, "wind_speed": 0.0, "wind_dir": 0}
 
-    def export_readings(self, max_days, format):
+    def export_readings(self, max_days, format, unit_system=None, pressure_unit="auto"):
         return "[]" if format == "json" else "timestamp"
 
     def get_readings_since(self, cutoff):
@@ -25,9 +25,15 @@ class FakeDataLogger:
 class FakePoller:
     def __init__(self, task=None) -> None:
         self.task = task
+        self.poll_calls = 0
+        self.schedule_resets = 0
 
     def poll_once(self):
+        self.poll_calls += 1
         return {"temperature": 0.0}
+
+    def reset_schedule(self):
+        self.schedule_resets += 1
 
 
 class FakeTask:
@@ -114,14 +120,39 @@ def test_current_reading_api_uses_configured_refresh_interval() -> None:
         },
         "latest_observation_time": "Aug 12, 2026 · 6:35 AM",
         "poll_interval_seconds": 120,
+        "display_units": {
+            "temperature": "°F",
+            "pressure": "hPa",
+            "wind_speed": "mph",
+            "wind_gust": "mph",
+            "rain_total": "in",
+        },
     }
 
+
+def test_gateway_relative_pressure_is_displayed_in_hpa() -> None:
+    app = make_app()
+    app.state.data_logger.get_latest = lambda: {
+        "timestamp": "2026-08-12T12:35:15",
+        "pressure": None,
+        "indoor_pressure": 29.708,
+    }
+    client = TestClient(app)
+
+    dashboard = client.get("/")
+    current = client.get("/api/readings/current")
+
+    assert 'data-reading-field="pressure"' in dashboard.text
+    assert ">1006.0 hPa</strong>" in dashboard.text
+    assert current.json()["reading"]["pressure"] == 1006.0
 
 def test_dashboard_refresh_timers_follow_station_and_forecast_contract() -> None:
     root = Path(__file__).resolve().parents[1]
     script = (root / "static" / "dashboard.js").read_text(encoding="utf-8")
 
     assert 'fetch("/api/readings/current", {cache: "no-store"})' in script
+    assert 'fetch("/api/ecowitt/status", {cache: "no-store"})' in script
+    assert 'label.textContent = online ? "Online"' in script
     assert "window.setInterval(refreshEcowittDashboard, safeSeconds * 1000)" in script
     assert 'fetch("/api/forecast?force=true", {cache: "no-store"})' in script
     assert "nextHour.setMinutes(60, 1, 0)" in script
@@ -152,9 +183,10 @@ def test_dashboard_includes_scene_themes_settings_modal_and_lunar_cycle() -> Non
     for heading in ("Current readings", "Today’s forecast", "Sunlight today", "Regional radar"):
         assert heading in response.text
     conditions_position = response.text.index('class="conditions-row"')
+    sensor_position = response.text.index('class="weather-history"')
     map_position = response.text.index('class="map-row"')
     moon_position = response.text.index('class="glass-card lunar-header"')
-    assert conditions_position < map_position < moon_position
+    assert conditions_position < sensor_position < map_position < moon_position
     assert 'class="glass-card map-card full-width-map"' in response.text
     assert "Environmental decisions" not in response.text
     assert 'id="currentMoonDisk"' in response.text
@@ -182,6 +214,8 @@ def test_dashboard_includes_scene_themes_settings_modal_and_lunar_cycle() -> Non
     assert "overlay=radar" in response.text
     assert "data-weather-history" in response.text
     assert "24-hour sensor metrics" in response.text
+    assert "data-sensor-online-status" in response.text
+    assert "data-sensor-online-label" in response.text
     assert "data-hourly-carousel" not in response.text
     assert "forecast-range" not in response.text
 
@@ -341,6 +375,9 @@ def test_ecowitt_discovery_save_status_and_disable_routes(tmp_path, monkeypatch)
     assert app.state.settings.gateway_id == "ecowitt-e8db840f1543"
     assert app.state.settings.poll_interval_seconds == 120
     assert settings_path.exists()
+    assert saved.json()["initial_reading_stored"] is True
+    assert app.state.poller.poll_calls == 1
+    assert app.state.poller.schedule_resets == 1
 
     status = client.get("/api/ecowitt/status")
     assert status.json()["enabled"] is True
@@ -401,9 +438,17 @@ def test_map_interaction_gate_and_metric_graph_contract() -> None:
     assert 'event.key === "Escape"' in script
     assert 'fetch("/api/metrics/24h"' in script
     assert "function drawMetricGraph(" in script
-    assert "[\"Min\", metric.stats?.min" in script
+    assert "const rollingStart = generatedTime - (24 * 60 * 60 * 1000)" in script
+    assert "const start = Math.max(rollingStart, points[0].time)" in script
+    assert "const end = latestTime > start ? latestTime : start + 1" in script
+    assert "function drawWindRose(" in script
+    assert 'title.textContent = isWindRose ? "24-hour Wind-Rose"' in script
+    assert '{maximum: 5, label: "0–5"' in script
+    assert '[24, 6].forEach((hours)' in script
+    assert 'isWindRose ? "24h Min" : "Min"' in script
     assert ".windy-map-interaction.is-active .windy-map-guard" in css
-    assert ".weather-metric-grid" in css
+    assert "grid-template-columns: repeat(4, minmax(0, 1fr))" in css
+    assert ".wind-rose-controls" in css
 
 
 def test_health_reports_failed_poller() -> None:
@@ -459,6 +504,8 @@ def test_appearance_pane_saves_without_other_settings_fields(tmp_path, monkeypat
         data={
             "settings_pane": "appearance",
             "theme": "river",
+            "unit_system": "metric",
+            "pressure_unit": "inhg",
             "csrf_token": "test-token",
         },
     )
@@ -466,8 +513,12 @@ def test_appearance_pane_saves_without_other_settings_fields(tmp_path, monkeypat
     assert response.status_code == 200
     assert response.json() == {"ok": True, "pane": "appearance"}
     assert app.state.settings.theme == "river"
+    assert app.state.settings.unit_system == "metric"
+    assert app.state.settings.pressure_unit == "inhg"
     assert app.state.settings.gateway_url == original_gateway
     assert AppSettings.load().theme == "river"
+    assert AppSettings.load().unit_system == "metric"
+    assert AppSettings.load().pressure_unit == "inhg"
 
 
 def test_settings_rejects_non_http_gateway_with_csrf_token() -> None:

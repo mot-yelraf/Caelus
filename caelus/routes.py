@@ -23,6 +23,7 @@ from caelus.settings import (
     validate_gateway_url,
     validate_windy_iframe_url,
 )
+from caelus.units import convert_reading, display_unit_for
 
 
 def format_observation_time(value: Any, timezone_name: str) -> str:
@@ -39,12 +40,32 @@ def format_observation_time(value: Any, timezone_name: str) -> str:
     return f"{date_text} · {time_text}"
 
 
+def reading_for_display(
+    reading: dict[str, Any] | None,
+    unit_system: str = "imperial",
+    pressure_unit: str = "hpa",
+) -> dict[str, Any]:
+    """Convert one normalized reading into configured display units."""
+    result = convert_reading(reading, unit_system, pressure_unit)
+    for field in ("temperature", "dew_point", "wind_chill", "heat_index", "indoor_temperature", "wind_speed", "wind_gust", "daily_max_wind", "pressure", "absolute_pressure", "indoor_pressure", "indoor_absolute_pressure"):
+        if isinstance(result.get(field), (int, float)):
+            result[field] = round(float(result[field]), 1)
+    for field in ("rain_rate", "rain_total", "rain_event", "rain_week", "rain_month", "rain_year", "rain_lifetime", "rain_increment"):
+        if isinstance(result.get(field), (int, float)):
+            result[field] = round(float(result[field]), 2)
+    return result
+
+
 def register_routes(app: FastAPI) -> None:
     @app.get("/", response_class=HTMLResponse)
     async def dashboard(request: Request) -> Any:
         settings: AppSettings = app.state.settings
         data_logger: DataLogger = app.state.data_logger
-        latest = await asyncio.to_thread(data_logger.get_latest) or {}
+        latest = reading_for_display(
+            await asyncio.to_thread(data_logger.get_latest),
+            settings.unit_system,
+            settings.pressure_unit,
+        )
         forecast_service = getattr(app.state, "forecast_service", None)
         forecast = (
             await asyncio.to_thread(forecast_service.get, settings)
@@ -70,6 +91,10 @@ def register_routes(app: FastAPI) -> None:
                 "moon": moon,
                 "forecast": forecast,
                 "decisions": build_decisions(forecast),
+                "display_units": {
+                    field: display_unit_for(field, settings.unit_system, settings.pressure_unit)
+                    for field in ("temperature", "pressure", "wind_speed", "wind_gust", "rain_total")
+                },
             },
         )
 
@@ -100,6 +125,8 @@ def register_routes(app: FastAPI) -> None:
         timezone_name: str | None = Form(None),
         forecast_provider: str | None = Form(None),
         theme: str | None = Form(None),
+        unit_system: str | None = Form(None),
+        pressure_unit: str | None = Form(None),
         retention_days: int | None = Form(None),
         export_format: str | None = Form(None),
         windy_iframe_url: str | None = Form(None),
@@ -150,6 +177,12 @@ def register_routes(app: FastAPI) -> None:
                 )
             if settings_pane in {"all", "appearance"}:
                 candidate.theme = normalize_theme(theme or candidate.theme)
+                candidate.unit_system = AppSettings._validate_value(
+                    "unit_system", unit_system or candidate.unit_system
+                )
+                candidate.pressure_unit = AppSettings._validate_value(
+                    "pressure_unit", pressure_unit or candidate.pressure_unit
+                )
             if settings_pane in {"all", "data-map"}:
                 next_export = export_format or candidate.export_format
                 if next_export not in ALLOWED_EXPORT_FORMATS:
@@ -232,8 +265,11 @@ def register_routes(app: FastAPI) -> None:
                 status_code=422,
             )
         try:
+            discover_for_save = getattr(
+                app.state.gateway, "discover_for_save", app.state.gateway.discover
+            )
             discovery = await asyncio.to_thread(
-                app.state.gateway.discover, payload.get("gateway_url")
+                discover_for_save, payload.get("gateway_url")
             )
         except EcowittGatewayError as exc:
             return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
@@ -251,7 +287,17 @@ def register_routes(app: FastAPI) -> None:
         for item in fields(AppSettings):
             setattr(settings, item.name, getattr(candidate, item.name))
         await asyncio.to_thread(settings.save)
-        return JSONResponse({**discovery, "poll_interval_seconds": interval})
+        initial_reading = await asyncio.to_thread(app.state.poller.poll_once)
+        reset_schedule = getattr(app.state.poller, "reset_schedule", None)
+        if callable(reset_schedule):
+            reset_schedule()
+        return JSONResponse(
+            {
+                **discovery,
+                "poll_interval_seconds": interval,
+                "initial_reading_stored": initial_reading is not None,
+            }
+        )
 
     @app.post("/api/ecowitt/disable")
     async def ecowitt_disable(request: Request) -> Response:
@@ -271,13 +317,21 @@ def register_routes(app: FastAPI) -> None:
     async def get_current_reading() -> Dict[str, Any]:
         """Return the latest stored Ecowitt reading for dashboard refreshes."""
         settings: AppSettings = app.state.settings
-        latest = await asyncio.to_thread(app.state.data_logger.get_latest) or {}
+        latest = reading_for_display(
+            await asyncio.to_thread(app.state.data_logger.get_latest),
+            settings.unit_system,
+            settings.pressure_unit,
+        )
         return {
             "reading": latest,
             "latest_observation_time": format_observation_time(
                 latest.get("timestamp"), settings.timezone
             ),
             "poll_interval_seconds": settings.poll_interval_seconds,
+            "display_units": {
+                field: display_unit_for(field, settings.unit_system, settings.pressure_unit)
+                for field in ("temperature", "pressure", "wind_speed", "wind_gust", "rain_total")
+            },
         }
 
     @app.get("/api/metrics/24h")
@@ -292,7 +346,11 @@ def register_routes(app: FastAPI) -> None:
             "hours": 24,
             "generated_at": observed_at.replace(microsecond=0).isoformat(),
             "timezone": app.state.settings.timezone,
-            "metrics": build_24_hour_metric_cards(rows),
+            "metrics": build_24_hour_metric_cards(
+                rows,
+                app.state.settings.unit_system,
+                app.state.settings.pressure_unit,
+            ),
         }
 
     @app.get("/api/forecast")
@@ -312,6 +370,8 @@ def register_routes(app: FastAPI) -> None:
             data_logger.export_readings,
             settings.retention_days,
             format,
+            settings.unit_system,
+            settings.pressure_unit,
         )
         content_type = "text/csv" if format == "csv" else "application/json"
         return Response(payload, media_type=content_type)

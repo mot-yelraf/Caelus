@@ -19,15 +19,18 @@ class GatewayPoller:
         self.data_logger = app.state.data_logger
         self.task: asyncio.Task[Any] | None = None
         self.stop_event = asyncio.Event()
+        self.schedule_event = asyncio.Event()
 
     async def start(self) -> None:
         if self.task is not None and not self.task.done():
             return
         self.stop_event.clear()
+        self.schedule_event.clear()
         self.task = asyncio.create_task(self._run_loop())
 
     async def stop(self) -> None:
         self.stop_event.set()
+        self.schedule_event.set()
         if self.task is not None:
             try:
                 await self.task
@@ -40,13 +43,19 @@ class GatewayPoller:
                 await asyncio.to_thread(self.poll_once)
             except Exception:
                 logger.exception("Gateway polling failed")
-            try:
-                await asyncio.wait_for(
-                    self.stop_event.wait(),
-                    timeout=self.settings.poll_interval_seconds,
-                )
-            except asyncio.TimeoutError:
-                continue
+            while not self.stop_event.is_set():
+                try:
+                    await asyncio.wait_for(
+                        self.schedule_event.wait(),
+                        timeout=self.settings.poll_interval_seconds,
+                    )
+                except asyncio.TimeoutError:
+                    break
+                self.schedule_event.clear()
+
+    def reset_schedule(self) -> None:
+        """Restart the wait using the current polling interval."""
+        self.schedule_event.set()
 
     def poll_once(self) -> dict[str, Any] | None:
         """Fetch, persist, and return one normalized gateway reading."""

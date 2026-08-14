@@ -2,7 +2,9 @@
 
 import math
 import re
+from copy import deepcopy
 from datetime import datetime, timezone
+from time import monotonic
 from typing import Any, Dict
 from urllib.parse import urlsplit, urlunsplit
 
@@ -12,6 +14,7 @@ from requests.exceptions import RequestException
 from caelus.settings import AppSettings
 
 REQUEST_TIMEOUT_SECONDS = 5
+DISCOVERY_CACHE_SECONDS = 60
 MAX_RESPONSE_BYTES = 512 * 1024
 _NUMBER_RE = re.compile(r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)")
 _INVALID_SENSOR_IDS = {"FFFFFFFF", "FFFFFFFE"}
@@ -165,6 +168,8 @@ def _parse_common(payload: dict[str, Any], output: dict[str, Any]) -> None:
         elif item_id == "0x15":
             if unit in {"lux", "lx"}:
                 output["light_intensity"] = round(value, 1)
+            elif unit in {"klux", "klx"}:
+                output["light_intensity"] = round(value * 1000.0, 1)
             elif unit in {"w/m2", "w/m²", "wm2"}:
                 output["solar_radiation"] = round(value, 1)
         elif item_id == "0x17":
@@ -327,6 +332,7 @@ class EcowittGateway:
             "last_error": "",
             "last_success": "",
         }
+        self._discovery_cache: tuple[float, dict[str, Any]] | None = None
 
     def _request(self, base_url: str, endpoint: str, **params: Any) -> Any:
         try:
@@ -377,6 +383,7 @@ class EcowittGateway:
             "rain_reset_hour": rain_reset_hour_from_totals(rain_totals),
             "live_metric_count": len(normalize_ecowitt_livedata(live, rain_source=rain_source)),
         }
+        self._discovery_cache = (monotonic(), deepcopy(result))
         self.last_status.update(
             state="online",
             label="Ecowitt gateway reachable",
@@ -387,6 +394,18 @@ class EcowittGateway:
             inventory=inventory,
         )
         return result
+
+    def discover_for_save(self, gateway_url: Any) -> dict[str, Any]:
+        """Reuse a recent server-validated discovery when saving its gateway."""
+        base_url = normalize_gateway_base_url(gateway_url)
+        if self._discovery_cache is not None:
+            discovered_at, discovery = self._discovery_cache
+            if (
+                discovery.get("gateway_url") == base_url
+                and monotonic() - discovered_at <= DISCOVERY_CACHE_SECONDS
+            ):
+                return deepcopy(discovery)
+        return self.discover(base_url)
 
     def status(self) -> dict[str, Any]:
         """Return safe configured and runtime gateway status."""

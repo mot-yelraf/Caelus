@@ -6,6 +6,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from caelus.units import convert_reading
+
 
 ADDITIONAL_READING_COLUMNS = {
     "dew_point": "REAL",
@@ -164,7 +166,14 @@ class DataLogger:
             columns = [description[0] for description in cursor.description]
         return [dict(zip(columns, row)) for row in rows]
 
-    def export_readings(self, max_days: int, format: str = "csv") -> str:
+    def export_readings(
+        self,
+        max_days: int,
+        format: str = "csv",
+        unit_system: str | None = None,
+        pressure_unit: str = "auto",
+    ) -> str:
+        """Export elapsed-window readings, optionally in selected display units."""
         cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=max_days)
         with closing(sqlite3.connect(self.db_path)) as connection:
             cursor = connection.cursor()
@@ -175,15 +184,21 @@ class DataLogger:
             rows = cursor.fetchall()
             columns = [description[0] for description in cursor.description]
 
+        records = [dict(zip(columns, row)) for row in rows]
+        if unit_system is not None:
+            records = [
+                convert_reading(record, unit_system, pressure_unit) for record in records
+            ]
+
         if format == "json":
             import json
 
-            return json.dumps([dict(zip(columns, row)) for row in rows], default=str)
+            return json.dumps(records, default=str)
 
         output = io.StringIO(newline="")
         writer = csv.writer(output, lineterminator="\n")
         writer.writerow(columns)
-        writer.writerows(rows)
+        writer.writerows([[record.get(column) for column in columns] for record in records])
         return output.getvalue().rstrip("\n")
 
     def prune_readings(self, retention_days: int) -> None:

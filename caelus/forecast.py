@@ -24,7 +24,7 @@ MET_URL = "https://api.met.no/weatherapi/locationforecast/2.0/complete"
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
 NWS_POINTS_URL = "https://api.weather.gov/points/{latitude:.4f},{longitude:.4f}"
 CACHE_SECONDS = 60 * 60
-CACHE_FORMAT = 4
+CACHE_FORMAT = 5
 
 
 def normalize_forecast_provider(value: Any) -> str:
@@ -396,6 +396,8 @@ def build_forecast(provider: str, rows: list[dict[str, Any]], timezone_name: str
     days = []
     for local_date, day_rows in list(sorted(daily_groups.items()))[:6]:
         days.append(_daily_detail(day_rows, local_date, timezone_name))
+    high_f = max(row["temperature_f"] for row in window)
+    low_f = min(row["temperature_f"] for row in window)
     return {
         "ok": True,
         "cache_format": CACHE_FORMAT,
@@ -405,8 +407,10 @@ def build_forecast(provider: str, rows: list[dict[str, Any]], timezone_name: str
         "condition": condition,
         "icon": _condition_icon(condition),
         "precip_label": _precipitation_chance_label_for_rows(window),
-        "high_f": max(row["temperature_f"] for row in window),
-        "low_f": min(row["temperature_f"] for row in window),
+        "high_f": high_f,
+        "low_f": low_f,
+        "high_c": round(_f_to_c(high_f)),
+        "low_c": round(_f_to_c(low_f)),
         "precip_probability": max(row["precip_probability"] for row in window),
         "precipitation_mm": round(sum(row["precipitation_mm"] for row in window), 1),
         "hours": display_hours,

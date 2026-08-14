@@ -85,6 +85,8 @@ class AppSettings:
     location_provider: str = ""
     forecast_provider: str = "met_no"
     theme: str = "garden"
+    unit_system: str = "imperial"
+    pressure_unit: str = "hpa"
     retention_days: int = 366
     export_format: str = "csv"
     windy_iframe_url: str = "https://embed.windy.com/embed2.html"
@@ -124,6 +126,14 @@ class AppSettings:
             return validate_windy_iframe_url(str(value))
         if name == "theme":
             return normalize_theme(value)
+        if name == "unit_system":
+            if value not in {"imperial", "metric"}:
+                raise ValueError("unsupported display unit system")
+            return value
+        if name == "pressure_unit":
+            if value not in {"auto", "hpa", "inhg"}:
+                raise ValueError("unsupported pressure display unit")
+            return value
         if name == "export_format":
             if value not in ALLOWED_EXPORT_FORMATS:
                 raise ValueError("unsupported export format")
@@ -155,6 +165,7 @@ class AppSettings:
         if name in {
             "location_name", "location_source", "location_provider", "gateway_id",
             "gateway_model",
+            "unit_system", "pressure_unit",
         }:
             if not isinstance(value, str):
                 raise TypeError("must be a string")

@@ -23,6 +23,8 @@ def test_load_preserves_known_values_and_ignores_unknown_fields(tmp_path, monkey
 
     assert settings.theme == "river"
     assert settings.poll_interval_seconds == 300
+    assert settings.unit_system == "imperial"
+    assert settings.pressure_unit == "hpa"
 
 
 def test_load_invalid_json_returns_defaults(tmp_path, monkeypatch, caplog) -> None:

@@ -360,14 +360,22 @@ a { color: inherit; }
 .full-width-map iframe, .full-width-map .windy-map-interaction { min-height: 26rem; }
 .weather-history { padding: 0.85rem 0; }
 .weather-history-heading { display: flex; align-items: end; justify-content: space-between; gap: 1rem; margin-bottom: 0.85rem; padding: 0 0.15rem; }
-.weather-history-heading h2 { margin: 0.15rem 0 0; font: 600 clamp(1.4rem, 2.4vw, 2rem) Georgia, serif; }
+.weather-history-heading h2 { display: flex; align-items: center; flex-wrap: wrap; gap: 0.65rem; margin: 0.15rem 0 0; font: 600 clamp(1.4rem, 2.4vw, 2rem) Georgia, serif; }
+.sensor-online-status { display: inline-flex; align-items: center; gap: 0.4rem; color: var(--muted); font: 700 0.62rem/1 system-ui, sans-serif; letter-spacing: 0.08em; text-transform: uppercase; }
+.sensor-online-status .status-dot { width: 0.45rem; height: 0.45rem; }
+.sensor-online-status.is-online { color: var(--text); }
+.sensor-online-status.is-online .status-dot { background: var(--accent); box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 12%, transparent); }
 .weather-history-heading > p { max-width: 30rem; margin: 0; color: var(--muted); font-size: 0.68rem; text-align: right; }
-.weather-metric-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.85rem; }
+.weather-metric-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.85rem; }
 .weather-metric-card { min-width: 0; padding: 1rem; }
 .weather-metric-card > header { display: flex; align-items: start; justify-content: space-between; gap: 0.75rem; }
 .weather-metric-card h3 { margin: 0.15rem 0 0; font: 600 1rem Georgia, serif; }
 .metric-current { color: var(--accent); font: 500 1.25rem Georgia, serif; white-space: nowrap; }
 .weather-metric-graph { display: block; width: 100%; height: 190px; margin: 0.55rem 0 0.75rem; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: rgba(3, 22, 28, 0.18); }
+.wind-rose-graph { height: 230px; }
+.wind-rose-controls { display: flex; gap: 0.6rem; margin-top: 0.45rem; }
+.wind-rose-controls button { padding: 0; border: 0; border-bottom: 1px solid transparent; background: transparent; color: var(--muted); font-size: 0.58rem; font-weight: 800; letter-spacing: 0.08em; cursor: pointer; }
+.wind-rose-controls button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
 .weather-metric-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 0; }
 .weather-metric-stats div { min-width: 0; padding: 0 0.55rem; text-align: center; }
 .weather-metric-stats div + div { border-left: 1px solid var(--line); }

@@ -77,6 +77,33 @@ def test_lux_is_not_mislabeled_and_malformed_values_are_ignored() -> None:
     assert values == {"light_intensity": 12000.0}
 
 
+def test_gateway_klux_is_converted_to_lux() -> None:
+    values = normalize_ecowitt_livedata(
+        {"common_list": [{"id": "0x15", "val": "26.21 Klux"}]}
+    )
+
+    assert values == {"light_intensity": 26210.0}
+
+
+def test_gateway_absolute_and_relative_hpa_pressures_remain_distinct() -> None:
+    values = normalize_ecowitt_livedata(
+        {
+            "wh25": [
+                {
+                    "intemp": "24.5",
+                    "unit": "C",
+                    "inhumi": "55%",
+                    "abs": "823.5 hPa",
+                    "rel": "1006.0 hPa",
+                }
+            ]
+        }
+    )
+
+    assert values["indoor_absolute_pressure"] == pytest.approx(24.318, abs=0.001)
+    assert values["indoor_pressure"] == pytest.approx(29.708, abs=0.001)
+
+
 def test_inventory_and_stable_gateway_identity_follow_ecowitt_contract() -> None:
     inventory = normalize_sensor_inventory(
         [
@@ -146,3 +173,23 @@ def test_discovery_reads_identity_inventory_and_live_metrics() -> None:
     assert result["live_metric_count"] == 1
     assert "ssid" not in result
     assert result["rain_reset_hour"] == 9
+
+
+def test_save_reuses_recent_server_validated_discovery() -> None:
+    class CountingSession(FakeSession):
+        calls = 0
+
+        @classmethod
+        def get(cls, url, params=None, **kwargs):
+            cls.calls += 1
+            return super().get(url, params=params, **kwargs)
+
+    gateway = EcowittGateway(AppSettings(), session=CountingSession)
+    discovered = gateway.discover("http://gw1100.local")
+    calls_after_discovery = CountingSession.calls
+
+    saved = gateway.discover_for_save("http://gw1100.local")
+
+    assert saved == discovered
+    assert saved is not discovered
+    assert CountingSession.calls == calls_after_discovery

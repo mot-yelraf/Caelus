@@ -136,6 +136,7 @@
       if (paneName === "station") {
         setDashboardRefreshInterval(Number(ecowittInterval?.value));
       }
+      if (paneName === "appearance") window.location.reload();
     } catch (error) {
       if (settingsStatus) {
         settingsStatus.textContent = error.message || "Settings could not be saved.";
@@ -220,11 +221,18 @@
         gateway_url: ecowittUrl.value,
         poll_interval_seconds: Number(ecowittInterval.value),
       });
+      ecowittDiscovery = result;
       renderEcowittInventory(result.inventory);
-      if (ecowittStatus) ecowittStatus.textContent = `${result.gateway_model} saved; Ecowitt polling is enabled.`;
+      if (ecowittStatus) {
+        ecowittStatus.textContent = result.initial_reading_stored
+          ? `${result.gateway_model} saved; the first reading was stored.`
+          : `${result.gateway_model} saved, but its first reading could not be retrieved.`;
+      }
       setDashboardRefreshInterval(Number(result.poll_interval_seconds));
+      await refreshEcowittDashboard();
     } catch (error) {
       if (ecowittStatus) ecowittStatus.textContent = error.message || "Gateway could not be saved.";
+    } finally {
       ecowittSaveButton.disabled = false;
     }
   });
@@ -543,13 +551,18 @@
     const right = width - 12;
     const top = 12;
     const bottom = height - 28;
-    const end = metricDate(generatedAt).getTime();
-    const start = end - (24 * 60 * 60 * 1000);
     const points = (metric.series || []).map((point) => ({
       time: metricDate(point.timestamp).getTime(),
       value: Number(point.value),
-    })).filter((point) => Number.isFinite(point.time) && Number.isFinite(point.value));
+    })).filter((point) => Number.isFinite(point.time) && Number.isFinite(point.value))
+      .sort((a, b) => a.time - b.time);
     if (!points.length) return;
+    const generatedTime = metricDate(generatedAt).getTime();
+    const rollingStart = generatedTime - (24 * 60 * 60 * 1000);
+    const start = Math.max(rollingStart, points[0].time);
+    const latestTime = points[points.length - 1].time;
+    const end = latestTime > start ? latestTime : start + 1;
+    const displayedDuration = end - start;
     let low = Math.min(...points.map((point) => point.value));
     let high = Math.max(...points.map((point) => point.value));
     if (high === low) {
@@ -565,22 +578,21 @@
     context.lineWidth = 1;
     context.font = "10px Inter, sans-serif";
     context.textAlign = "center";
-    for (let hour = 0; hour <= 24; hour += 3) {
-      const tickTime = start + hour * 60 * 60 * 1000;
+    const tickCount = width < 400 ? 4 : 8;
+    for (let tick = 0; tick <= tickCount; tick += 1) {
+      const tickTime = start + displayedDuration * tick / tickCount;
       const tickX = x(tickTime);
       context.beginPath();
       context.moveTo(tickX, top);
       context.lineTo(tickX, bottom);
       context.stroke();
       const tickDate = new Date(tickTime);
-      const parts = new Intl.DateTimeFormat(undefined, {
-        timeZone: timezoneName,
-        hour: "numeric",
-        hour12: true,
-      }).formatToParts(tickDate);
-      const hourText = parts.find((part) => part.type === "hour")?.value || "";
-      const period = parts.find((part) => part.type === "dayPeriod")?.value?.slice(0, 1) || "";
-      context.fillText(`${hourText}${period}`, tickX, height - 9);
+      const tickLabel = new Intl.DateTimeFormat(undefined, displayedDuration < 6 * 60 * 60 * 1000
+        ? {timeZone: timezoneName, hour: "numeric", minute: "2-digit"}
+        : {timeZone: timezoneName, hour: "numeric", hour12: true}
+      ).format(tickDate);
+      context.textAlign = tick === 0 ? "left" : tick === tickCount ? "right" : "center";
+      context.fillText(tickLabel.replace(" ", ""), tickX, height - 9);
     }
 
     const average = Number(metric.stats?.avg);
@@ -615,6 +627,129 @@
     }
   }
 
+  const windDirections = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
+
+  function drawWindRose(canvas, metric, generatedAt, hours) {
+    const context = canvas.getContext("2d");
+    const width = Math.max(320, Math.round(canvas.clientWidth || 520));
+    const height = 230;
+    const ratio = window.devicePixelRatio || 1;
+    canvas.width = Math.round(width * ratio);
+    canvas.height = Math.round(height * ratio);
+    context.scale(ratio, ratio);
+    context.clearRect(0, 0, width, height);
+
+    const styles = getComputedStyle(document.documentElement);
+    const muted = styles.getPropertyValue("--muted").trim() || "rgba(235,247,240,.7)";
+    const line = styles.getPropertyValue("--line").trim() || "rgba(196,235,220,.28)";
+    const ink = styles.getPropertyValue("--ink").trim() || "#eef8f4";
+    const metricWind = metric.wind_speed?.unit === "km/h";
+    const speedBands = metricWind ? [
+      {maximum: 8, label: "0–8", color: "#b9e7fb"},
+      {maximum: 24, label: "8–24", color: "#72c7ed"},
+      {maximum: 48, label: "24–48", color: "#2e91ca"},
+      {maximum: Infinity, label: "48+", color: "#164d80"},
+    ] : [
+      {maximum: 5, label: "0–5", color: "#b9e7fb"},
+      {maximum: 15, label: "5–15", color: "#72c7ed"},
+      {maximum: 30, label: "15–30", color: "#2e91ca"},
+      {maximum: Infinity, label: "30+", color: "#164d80"},
+    ];
+    const end = metricDate(generatedAt).getTime();
+    const start = end - hours * 60 * 60 * 1000;
+    const bins = Array.from({length: 16}, () => ({bands: [0, 0, 0, 0], count: 0, speedTotal: 0}));
+    (metric.wind_speed?.series || []).forEach((point) => {
+      const time = metricDate(point.timestamp).getTime();
+      const direction = Number(point.direction);
+      const speed = Number(point.speed);
+      if (!Number.isFinite(time) || time < start || time > end || !Number.isFinite(direction) || !Number.isFinite(speed)) return;
+      const directionIndex = Math.round(((direction % 360) + 360) % 360 / 22.5) % 16;
+      const bandIndex = speedBands.findIndex((band) => speed < band.maximum);
+      bins[directionIndex].bands[Math.max(0, bandIndex)] += 1;
+      bins[directionIndex].count += 1;
+      bins[directionIndex].speedTotal += speed;
+    });
+
+    const total = bins.reduce((sum, bin) => sum + bin.count, 0);
+    const maxCount = Math.max(...bins.map((bin) => bin.count), 1);
+    const centerX = width / 2;
+    const centerY = 101;
+    const radius = 72;
+    context.strokeStyle = line;
+    context.lineWidth = 1;
+    [0.25, 0.5, 0.75, 1].forEach((fraction) => {
+      context.beginPath();
+      context.arc(centerX, centerY, radius * fraction, 0, Math.PI * 2);
+      context.stroke();
+    });
+    context.beginPath();
+    context.moveTo(centerX - radius, centerY);
+    context.lineTo(centerX + radius, centerY);
+    context.moveTo(centerX, centerY - radius);
+    context.lineTo(centerX, centerY + radius);
+    context.stroke();
+
+    bins.forEach((bin, directionIndex) => {
+      let accumulated = 0;
+      const centerAngle = directionIndex * Math.PI / 8 - Math.PI / 2;
+      const halfWidth = Math.PI / 8 * 0.42;
+      bin.bands.forEach((count, bandIndex) => {
+        if (!count) return;
+        const innerRadius = radius * accumulated / maxCount;
+        accumulated += count;
+        const outerRadius = radius * accumulated / maxCount;
+        context.fillStyle = speedBands[bandIndex].color;
+        context.beginPath();
+        context.arc(centerX, centerY, outerRadius, centerAngle - halfWidth, centerAngle + halfWidth);
+        context.arc(centerX, centerY, innerRadius, centerAngle + halfWidth, centerAngle - halfWidth, true);
+        context.closePath();
+        context.fill();
+      });
+    });
+
+    context.fillStyle = ink;
+    context.font = "700 11px Inter, sans-serif";
+    context.textAlign = "center";
+    context.textBaseline = "middle";
+    context.fillText("N", centerX, centerY - radius - 14);
+    context.fillText("E", centerX + radius + 14, centerY);
+    context.fillText("S", centerX, centerY + radius + 14);
+    context.fillText("W", centerX - radius - 14, centerY);
+
+    if (total) {
+      const dominantIndex = bins.reduce((best, bin, index) => bin.count > bins[best].count ? index : best, 0);
+      const dominantPercent = Math.round(bins[dominantIndex].count / total * 100);
+      context.fillStyle = "rgba(6, 24, 33, 0.88)";
+      context.beginPath();
+      context.arc(centerX, centerY, 23, 0, Math.PI * 2);
+      context.fill();
+      context.fillStyle = "#ffffff";
+      context.font = "700 11px Inter, sans-serif";
+      context.fillText(windDirections[dominantIndex], centerX, centerY - 5);
+      context.font = "700 9px Inter, sans-serif";
+      context.fillText(`${dominantPercent}%`, centerX, centerY + 8);
+    } else {
+      context.fillStyle = muted;
+      context.font = "10px Inter, sans-serif";
+      context.fillText("No wind samples", centerX, centerY);
+    }
+
+    const legendWidth = Math.min(270, width - 24);
+    const legendStart = centerX - legendWidth / 2;
+    context.textAlign = "left";
+    context.font = "700 9px Inter, sans-serif";
+    speedBands.forEach((band, index) => {
+      const x = legendStart + index * legendWidth / 4;
+      context.fillStyle = band.color;
+      context.fillRect(x, 211, 10, 10);
+      context.fillStyle = muted;
+      context.fillText(band.label, x + 14, 216);
+    });
+    context.textAlign = "right";
+    context.fillText(metric.wind_speed?.unit || "mph", legendStart + legendWidth, 216);
+    canvas.windRoseSummary = {bins, total, hours};
+  }
+
   function createMetricCard(metric, generatedAt, timezoneName) {
     const card = document.createElement("article");
     card.className = "glass-card weather-metric-card";
@@ -625,30 +760,69 @@
     const title = document.createElement("h3");
     const current = document.createElement("strong");
     eyebrow.className = "eyebrow";
-    eyebrow.textContent = "24hr graph";
-    title.textContent = metric.label;
+    const isWindRose = metric.key === "wind_dir" && metric.wind_speed;
+    eyebrow.textContent = isWindRose ? "Directional distribution" : "24hr graph";
+    title.textContent = isWindRose ? "24-hour Wind-Rose" : metric.label;
     current.className = "metric-current";
-    current.textContent = metricValue(metric.current, metric.decimals, metric.unit);
+    current.textContent = isWindRose
+      ? metricValue(metric.wind_speed.current, metric.wind_speed.decimals, metric.wind_speed.unit)
+      : metricValue(metric.current, metric.decimals, metric.unit);
     titleBlock.append(eyebrow, title);
+    let windRoseHours = 24;
+    if (isWindRose) {
+      const controls = document.createElement("div");
+      controls.className = "wind-rose-controls";
+      [24, 6].forEach((hours) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = `${hours}h`;
+        button.setAttribute("aria-pressed", String(hours === windRoseHours));
+        button.addEventListener("click", () => {
+          windRoseHours = hours;
+          controls.querySelectorAll("button").forEach((item) => item.setAttribute("aria-pressed", String(item === button)));
+          title.textContent = `${hours}-hour Wind-Rose`;
+          canvas.setAttribute("aria-label", `${hours}-hour wind rose with wind-speed bands`);
+          drawWindRose(canvas, metric, generatedAt, windRoseHours);
+        });
+        controls.append(button);
+      });
+      titleBlock.append(controls);
+    }
     heading.append(titleBlock, current);
 
     const canvas = document.createElement("canvas");
-    canvas.className = "weather-metric-graph";
+    canvas.className = `weather-metric-graph${isWindRose ? " wind-rose-graph" : ""}`;
     canvas.setAttribute("role", "img");
-    canvas.setAttribute("aria-label", `24-hour graph of ${metric.label}`);
+    canvas.setAttribute("aria-label", isWindRose ? "24-hour wind rose with wind-speed bands" : `24-hour graph of ${metric.label}`);
+    if (isWindRose) {
+      canvas.addEventListener("mousemove", (event) => {
+        const summary = canvas.windRoseSummary;
+        if (!summary?.total) return;
+        const rect = canvas.getBoundingClientRect();
+        const centerX = rect.width / 2;
+        const centerY = 101;
+        const angle = (Math.atan2(event.clientY - rect.top - centerY, event.clientX - rect.left - centerX) + Math.PI / 2 + Math.PI * 2) % (Math.PI * 2);
+        const index = Math.round(angle / (Math.PI / 8)) % 16;
+        const bin = summary.bins[index];
+        const percent = Math.round(bin.count / summary.total * 100);
+        const average = bin.count ? (bin.speedTotal / bin.count).toFixed(1) : "0.0";
+        canvas.title = `${summary.hours} Hours wind rose — ${windDirections[index]} ${percent}% — average ${average} ${metric.wind_speed.unit}`;
+      });
+    }
 
     const stats = document.createElement("dl");
     stats.className = "weather-metric-stats";
+    const displayedMetric = isWindRose ? metric.wind_speed : metric;
     [
-      ["Min", metric.stats?.min, metric.stats?.min_at],
-      ["Avg", metric.stats?.avg, null],
-      ["Max", metric.stats?.max, metric.stats?.max_at],
+      [isWindRose ? "24h Min" : "Min", displayedMetric.stats?.min, displayedMetric.stats?.min_at],
+      [isWindRose ? "24h Avg" : "Avg", displayedMetric.stats?.avg, null],
+      [isWindRose ? "24h Max" : "Max", displayedMetric.stats?.max, displayedMetric.stats?.max_at],
     ].forEach(([label, value, timestamp]) => {
       const item = document.createElement("div");
       const term = document.createElement("dt");
       const definition = document.createElement("dd");
       term.textContent = label;
-      definition.textContent = metricValue(value, metric.decimals, metric.unit);
+      definition.textContent = metricValue(value, displayedMetric.decimals, displayedMetric.unit);
       item.append(term, definition);
       if (timestamp) {
         const time = document.createElement("time");
@@ -659,9 +833,12 @@
       stats.append(item);
     });
     card.append(heading, canvas, stats);
-    requestAnimationFrame(() => drawMetricGraph(canvas, metric, generatedAt, timezoneName));
+    const draw = () => isWindRose
+      ? drawWindRose(canvas, metric, generatedAt, windRoseHours)
+      : drawMetricGraph(canvas, metric, generatedAt, timezoneName);
+    requestAnimationFrame(draw);
     if (window.ResizeObserver) {
-      new ResizeObserver(() => drawMetricGraph(canvas, metric, generatedAt, timezoneName)).observe(canvas);
+      new ResizeObserver(draw).observe(canvas);
     }
     return card;
   }
@@ -698,6 +875,27 @@
 
   loadWeatherHistory();
 
+  function renderSensorOnlineStatus(status) {
+    const indicator = document.querySelector("[data-sensor-online-status]");
+    const label = indicator?.querySelector("[data-sensor-online-label]");
+    if (!indicator || !label) return;
+    const online = status?.enabled === true && status?.state === "online";
+    indicator.classList.toggle("is-online", online);
+    label.textContent = online ? "Online" : status?.state === "offline" ? "Offline" : "Standing by";
+  }
+
+  async function refreshSensorOnlineStatus() {
+    try {
+      const response = await fetch("/api/ecowitt/status", {cache: "no-store"});
+      if (!response.ok) throw new Error("gateway status unavailable");
+      renderSensorOnlineStatus(await response.json());
+    } catch (_error) {
+      renderSensorOnlineStatus({state: "offline"});
+    }
+  }
+
+  refreshSensorOnlineStatus();
+
   function renderCurrentReading(reading, observationTime) {
     const available = reading && Object.keys(reading).length > 0;
     document.querySelectorAll("[data-reading-field]").forEach((element) => {
@@ -730,11 +928,18 @@
       const response = await fetch("/api/readings/current", {cache: "no-store"});
       if (!response.ok) throw new Error("current reading unavailable");
       const payload = await response.json();
+      Object.entries(payload.display_units || {}).forEach(([field, unit]) => {
+        const element = document.querySelector(`[data-reading-field="${field}"]`);
+        if (element && field !== "temperature") element.dataset.readingSuffix = unit ? ` ${unit}` : "";
+        const unitElement = document.querySelector(`[data-reading-unit="${field}"]`);
+        if (unitElement) unitElement.textContent = unit;
+      });
       renderCurrentReading(payload.reading, payload.latest_observation_time);
       setDashboardRefreshInterval(Number(payload.poll_interval_seconds), false);
     } catch (_error) {
       // Keep the last displayed reading when a transient refresh fails.
     }
+    await refreshSensorOnlineStatus();
     await loadWeatherHistory();
   }
 

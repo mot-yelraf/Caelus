@@ -59,6 +59,28 @@ def test_background_poller_repeats_and_stops_cleanly() -> None:
     asyncio.run(exercise())
 
 
+def test_reset_schedule_applies_a_changed_interval_immediately() -> None:
+    async def exercise() -> None:
+        poller = make_poller(interval=10)
+        await poller.start()
+        for _ in range(100):
+            if poller.gateway.calls >= 1:
+                break
+            await asyncio.sleep(0.005)
+
+        poller.settings.poll_interval_seconds = 0.01
+        poller.reset_schedule()
+        for _ in range(100):
+            if poller.gateway.calls >= 2:
+                break
+            await asyncio.sleep(0.005)
+        await poller.stop()
+
+        assert poller.gateway.calls >= 2
+
+    asyncio.run(exercise())
+
+
 def test_zero_gateway_values_are_preserved() -> None:
     reading = map_gateway_reading({"windsp": 0.0, "winddir": 0.0})
 
