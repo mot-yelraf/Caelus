@@ -1,9 +1,39 @@
 import os
+import runpy
 import subprocess
+import sys
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+import caelus.app
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+@pytest.mark.parametrize(
+    ("configured_host", "expected_host"),
+    [(None, "0.0.0.0"), ("127.0.0.1", "127.0.0.1")],
+)
+def test_runtime_listens_on_the_lan_with_a_host_override(
+    monkeypatch: pytest.MonkeyPatch, configured_host: str | None, expected_host: str
+) -> None:
+    calls: list[dict[str, object]] = []
+    fake_app = object()
+    fake_uvicorn = SimpleNamespace(
+        run=lambda app, **kwargs: calls.append({"app": app, **kwargs})
+    )
+    monkeypatch.setattr(caelus.app, "create_app", lambda: fake_app)
+    monkeypatch.setitem(sys.modules, "uvicorn", fake_uvicorn)
+    monkeypatch.delenv("CAELUS_HTTP_HOST", raising=False)
+    if configured_host is not None:
+        monkeypatch.setenv("CAELUS_HTTP_HOST", configured_host)
+
+    runpy.run_path(str(ROOT / "Caelus.py"), run_name="__main__")
+
+    assert calls == [{"app": fake_app, "host": expected_host, "port": 8767, "log_level": "info"}]
 
 
 def test_unix_installer_and_launcher_have_valid_bash_syntax() -> None:

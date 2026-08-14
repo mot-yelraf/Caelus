@@ -35,7 +35,7 @@ weather station gateways.
 - Time-based CSV / JSON export and retention settings
 - Four device-persistent scene themes: Mountain Garden, Sunny Beach, Forest
   River, and Desert Bloom
-- Modal System Settings with keyboard navigation and live theme previews
+- Modal Settings with keyboard navigation and live theme previews
 - Poller-aware health reporting at `/healthz`
 
 ## Location and forecast privacy
@@ -56,7 +56,7 @@ IP-geolocation service.
 1. Use the Ecowitt app or gateway interface to join the gateway to 2.4 GHz
    Wi-Fi, pair the outdoor 7-in-1 array, and verify live readings.
 2. Give the gateway a stable LAN address, preferably with a DHCP reservation.
-3. In Caelus, open **System Settings → Station**, enter the gateway base URL
+3. In Caelus, open **Settings → Station**, enter the gateway base URL
    such as `http://192.168.1.100`, and choose **Find Sensors**.
 4. Review the discovered sensor inventory, choose a 60–3600 second retrieval
    interval, and choose **Save Gateway**.
@@ -124,7 +124,11 @@ C:\Users\Alice\Caelus\run_caelus.cmd
 
 The default runtime database is `C:\Users\Alice\Caelus\data\caelus.db`.
 
-After starting Caelus on any platform, open `http://127.0.0.1:8767`.
+After starting Caelus on any platform, open `http://127.0.0.1:8767` on the
+Caelus computer or `http://<Caelus-computer-LAN-IP>:8767` from another device
+on the same network. Caelus listens on all network interfaces by default; keep
+it on a trusted private LAN and allow inbound TCP port 8767 through the host
+firewall if needed.
 
 To choose another runtime folder, set `CAELUS_INSTALL_DIR` before running
 `install.sh`, or pass `-InstallDir` to `install.ps1`. Existing `.venv` and
@@ -138,6 +142,18 @@ CAELUS_HTTP_PORT=8877 /home/pi/Caelus/run_caelus.sh
 
 ```powershell
 $env:CAELUS_HTTP_PORT = "8877"
+C:\Users\Alice\Caelus\run_caelus.cmd
+```
+
+To restrict Caelus to the local computer again, set `CAELUS_HTTP_HOST` to
+`127.0.0.1` before starting it:
+
+```bash
+CAELUS_HTTP_HOST=127.0.0.1 /home/pi/Caelus/run_caelus.sh
+```
+
+```powershell
+$env:CAELUS_HTTP_HOST = "127.0.0.1"
 C:\Users\Alice\Caelus\run_caelus.cmd
 ```
 

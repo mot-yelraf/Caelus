@@ -464,16 +464,34 @@ def test_metric_display_style_settings_contract() -> None:
     assert ">24Hr Graph</option>" in response.text
     assert ">6Hr Graph</option>" in response.text
     assert ">Gauge</option>" in response.text
-    assert "grid-template-columns: repeat(3, minmax(0, 1fr))" in css
+    assert ".metric-style-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr))" in css
+    assert ".metric-style-bulk { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr))" in css
     assert response.text.count('class="appearance-section"') == 3
     assert "<strong>Theme</strong>" in response.text
     assert "<strong>Units</strong>" in response.text
     assert "<strong>Display Style</strong>" in response.text
     assert 'class="appearance-pane-footer"' in response.text
     assert ".appearance-pane-scroll" in css
+    assert '.appearance-section summary::before { content: "▶";' in css
+    assert '.appearance-section[open] summary::before { content: "▼";' in css
+    assert ".appearance-section summary::after" not in css
     script = (root / "static" / "dashboard.js").read_text(encoding="utf-8")
     assert "function updateAllMetricStyles()" in script
     assert 'allMetricStyles?.addEventListener("change"' in script
+
+
+def test_settings_label_and_metric_expansion_contract() -> None:
+    response = TestClient(make_app()).get("/")
+    root = Path(__file__).resolve().parents[1]
+    script = (root / "static" / "dashboard.js").read_text(encoding="utf-8")
+
+    assert "System Settings" not in response.text
+    assert "> Settings</button>" in response.text
+    assert 'data-toggle-weather-metrics aria-expanded="false"' in response.text
+    assert 'aria-controls="weatherMetricGrid"' in response.text
+    assert "card.hidden = !expanded && index >= 4" in script
+    assert 'icon.textContent = expanded ? "▼" : "▶"' in script
+    assert response.text.index("data-toggle-weather-metrics") < response.text.index("24-hour sensor metrics")
 
 
 def test_map_interaction_gate_and_metric_graph_contract() -> None:
@@ -519,9 +537,12 @@ def test_full_screen_metric_graph_range_api_accepts_only_supported_windows() -> 
 
 def test_full_screen_graph_enforces_four_metric_axes_contract() -> None:
     root = Path(__file__).resolve().parents[1]
+    template = (root / "templates" / "dashboard.html").read_text(encoding="utf-8")
     script = (root / "static" / "dashboard.js").read_text(encoding="utf-8")
     css = (root / "static" / "styles.css").read_text(encoding="utf-8")
 
+    assert '<h2 id="graphDialogTitle">Caelus Graphum</h2>' in template
+    assert "Full-Screen Graph" not in template
     assert "if (selected.length > 4)" in script
     assert '"A maximum of four metrics can be graphed."' in script
     assert 'const side = index < 2 ? "left" : "right";' in script

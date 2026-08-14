@@ -61,5 +61,6 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host ""
 Write-Host "Caelus was installed in $InstallDir"
 Write-Host "Start it with: $InstallDir\run_caelus.cmd"
-Write-Host "Then open: http://127.0.0.1:8767"
+Write-Host "Open locally: http://127.0.0.1:8767"
+Write-Host "Open on your LAN: http://<this-computer-LAN-IP>:8767"
 Write-Host "Application data is preserved in: $InstallDir\data"

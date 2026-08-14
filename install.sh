@@ -46,5 +46,6 @@ chmod +x "$INSTALL_DIR/install.sh"
 
 printf '\nCaelus was installed in %s\n' "$INSTALL_DIR"
 printf 'Start it with: %s/run_caelus.sh\n' "$INSTALL_DIR"
-printf 'Then open: http://127.0.0.1:8767\n'
+printf 'Open locally: http://127.0.0.1:8767\n'
+printf 'Open on your LAN: http://<this-computer-LAN-IP>:8767\n'
 printf 'Application data is preserved in: %s/data\n' "$INSTALL_DIR"

@@ -1330,6 +1330,7 @@
   async function loadWeatherHistory() {
     const section = document.querySelector("[data-weather-history]");
     const grid = document.querySelector("[data-weather-metric-grid]");
+    const expansionToggle = section?.querySelector("[data-toggle-weather-metrics]");
     if (!section || !grid) return;
     try {
       const response = await fetch("/api/metrics/24h", {cache: "no-store"});
@@ -1348,6 +1349,24 @@
       metrics.forEach((metric) => {
         grid.append(createMetricCard(metric, payload.generated_at, timezoneName));
       });
+      const cards = Array.from(grid.querySelectorAll(".weather-metric-card"));
+      const setExpanded = (expanded) => {
+        cards.forEach((card, index) => {
+          card.hidden = !expanded && index >= 4;
+        });
+        if (!expansionToggle) return;
+        expansionToggle.setAttribute("aria-expanded", String(expanded));
+        expansionToggle.setAttribute("aria-label", expanded ? "Show fewer weather sensor metrics" : "Show all weather sensor metrics");
+        const icon = expansionToggle.querySelector("span");
+        if (icon) icon.textContent = expanded ? "▼" : "▶";
+      };
+      if (expansionToggle && cards.length > 4) {
+        expansionToggle.hidden = false;
+        expansionToggle.onclick = () => setExpanded(expansionToggle.getAttribute("aria-expanded") !== "true");
+        setExpanded(false);
+      } else if (expansionToggle) {
+        expansionToggle.hidden = true;
+      }
     } catch (_error) {
       grid.replaceChildren();
       const error = document.createElement("p");

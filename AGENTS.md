@@ -21,6 +21,8 @@ project-specific conventions.
 - Main runtime entrypoint: `python3 Caelus.py`
 - Default UI URL: `http://127.0.0.1:8767`
 - Health check: `http://127.0.0.1:8767/healthz`
+- The runtime binds to `0.0.0.0` for LAN access by default. Override the bind
+  address with `CAELUS_HTTP_HOST` when localhost-only access is required.
 - Override the port with `CAELUS_HTTP_PORT`; port 8000 belongs to Sensorius and
   must not be used as the Caelus default.
 - Test suite: `python3 -m pytest -q`
