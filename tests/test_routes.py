@@ -429,11 +429,25 @@ def test_sunlight_card_layout_and_refresh_contract() -> None:
     assert "--daylight-title-color: var(--accent);" in css
     assert "--daylight-data-color: var(--ink);" in css
     assert "--daylight-status-color: var(--warm);" in css
+    assert "border: 1px solid var(--daylight-track-color);" in css
+    assert "border-bottom: 1px solid var(--daylight-horizon-color);" in css
+    assert "--daylight-track-color: #765000;" in css
+    assert "color: var(--daylight-sun-color);" in css
+    assert "--daylight-sun-color: #d96f00;" in css
     assert "function formatSolarTime(value)" in script
     assert 'moon.north_pole_daylight ?? "—"' in script
     assert 'moon.next_season_label ?? "—"' in script
     assert "moon.next_eclipses" in script
     assert "moon.eclipse_calculation_available" in script
+
+
+def test_current_reading_hero_reserves_space_for_precise_values() -> None:
+    root = Path(__file__).resolve().parents[1]
+    css = (root / "static" / "styles.css").read_text(encoding="utf-8")
+
+    assert "grid-template-columns: 7rem minmax(0, 1fr);" in css
+    assert ".reading-hero .temperature-number { font-size: clamp(4rem, 6vw, 6rem); }" in css
+    assert "min-width: 0; text-align: left; white-space: nowrap;" in css
 
 
 def test_sunny_beach_and_daylight_desert_theme_contract() -> None:

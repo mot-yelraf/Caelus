@@ -9,6 +9,9 @@
   --accent: #9af57a;
   --accent-2: #55d5c7;
   --warm: #ffd66b;
+  --daylight-sun-color: #ffb000;
+  --daylight-horizon-color: rgba(255, 214, 107, 0.62);
+  --daylight-track-color: rgba(255, 214, 107, 0.88);
   --danger: #ff876e;
   --shadow: 0 24px 70px rgba(1, 17, 21, 0.28);
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -66,6 +69,8 @@ a { color: inherit; }
   --glass: rgba(3, 38, 61, 0.5);
   --glass-strong: rgba(2, 27, 48, 0.74);
   --line: rgba(184, 239, 255, 0.38);
+  --daylight-horizon-color: rgba(255, 224, 131, 0.68);
+  --daylight-track-color: #ffe083;
   --scene-image: url("/static/backgrounds/sunny-beach.webp");
   --scene-fallback: #35bcd1;
   --scene-position: center center;
@@ -79,6 +84,8 @@ a { color: inherit; }
   --glass: rgba(7, 38, 48, 0.7);
   --glass-strong: rgba(4, 26, 37, 0.86);
   --line: rgba(154, 218, 220, 0.26);
+  --daylight-horizon-color: rgba(255, 220, 120, 0.64);
+  --daylight-track-color: #ffdc78;
   --scene-image: url("/static/backgrounds/river.webp");
   --scene-fallback: #173e3c;
   --scene-position: center center;
@@ -108,7 +115,10 @@ a { color: inherit; }
   --accent: #216844;
   --accent-2: #804126;
   --warm: #765000;
+  --daylight-sun-color: #d96f00;
   --line: rgba(35, 79, 56, 0.3);
+  --daylight-horizon-color: rgba(118, 80, 0, 0.58);
+  --daylight-track-color: #765000;
   --metric-graph-accent: #087e8b;
   --metric-graph-bg: rgba(238, 247, 230, 0.78);
   color: var(--ink);
@@ -334,15 +344,15 @@ a { color: inherit; }
 
 .conditions-row { display: grid; grid-template-columns: 0.82fr 1.48fr 0.82fr; gap: 0.85rem; align-items: stretch; }
 .readings-panel, .forecast-panel, .daylight-card { min-height: 32rem; padding: 1.25rem; }
-.reading-hero { display: grid; grid-template-columns: 8.5rem 1fr; align-items: center; min-height: 12rem; border-bottom: 1px solid var(--line); }
-.reading-hero > div:last-child { text-align: left; }
-.reading-hero .temperature-number { font-size: clamp(4.5rem, 7vw, 6.5rem); }
+.reading-hero { display: grid; grid-template-columns: 7rem minmax(0, 1fr); gap: 0.25rem; align-items: center; min-height: 12rem; border-bottom: 1px solid var(--line); }
+.reading-hero > div:last-child { min-width: 0; text-align: left; white-space: nowrap; }
+.reading-hero .temperature-number { font-size: clamp(4rem, 6vw, 6rem); }
 .reading-hero p { margin: 0.65rem 0 0; color: var(--muted); font-size: 0.72rem; }
-.weather-symbol.compact-symbol { position: relative; top: auto; left: auto; width: 8rem; height: 7rem; transform: none; }
-.compact-symbol .symbol-sun { width: 5rem; height: 5rem; }
-.compact-symbol .symbol-cloud { width: 6.5rem; height: 2.4rem; bottom: 0.6rem; }
-.compact-symbol .symbol-cloud::before { width: 3.5rem; height: 3.5rem; top: -1.8rem; }
-.compact-symbol .symbol-cloud::after { width: 3.8rem; height: 3.8rem; top: -1.45rem; }
+.weather-symbol.compact-symbol { position: relative; top: auto; left: auto; width: 6.5rem; height: 6rem; transform: none; }
+.compact-symbol .symbol-sun { width: 4.25rem; height: 4.25rem; }
+.compact-symbol .symbol-cloud { width: 5.5rem; height: 2.1rem; bottom: 0.5rem; }
+.compact-symbol .symbol-cloud::before { width: 3rem; height: 3rem; top: -1.55rem; }
+.compact-symbol .symbol-cloud::after { width: 3.25rem; height: 3.25rem; top: -1.25rem; }
 .current-reading-list { display: grid; grid-template-columns: 1fr 1fr; }
 .current-reading-list div { min-width: 0; padding: 0.9rem 0.45rem; border-bottom: 1px solid var(--line); }
 .current-reading-list div:nth-child(odd) { border-right: 1px solid var(--line); }
@@ -480,9 +490,9 @@ a { color: inherit; }
 .daylight-card .eyebrow, .daylight-detail-section h3 { color: var(--daylight-title-color); }
 .daylight-card h2 { margin-top: 0.25rem; color: var(--daylight-data-color); font: 500 2rem Georgia, serif; }
 .sun-state { display: block; margin-top: 0.35rem; color: var(--daylight-status-color); font-size: 0.58rem; letter-spacing: 0.08em; text-transform: uppercase; }
-.daylight-orbit { position: relative; height: 8.5rem; margin: 1.4rem 0 0.5rem; overflow: hidden; border-bottom: 1px solid rgba(255,214,107,.28); }
-.daylight-orbit::before { content: ""; position: absolute; left: 5%; right: 5%; bottom: -5rem; height: 10rem; border: 1px solid rgba(255,214,107,.52); border-radius: 50% 50% 0 0; }
-.daylight-sun { position: absolute; z-index: 1; left: var(--daylight-progress, 5%); bottom: calc(0.2rem + var(--sun-rise, 0) * 5.4rem); color: var(--warm); font-size: 1.7rem; line-height: 1; transform: translateX(-50%); filter: drop-shadow(0 0 12px rgba(255,214,107,.58)); }
+.daylight-orbit { position: relative; height: 8.5rem; margin: 1.4rem 0 0.5rem; overflow: hidden; border-bottom: 1px solid var(--daylight-horizon-color); }
+.daylight-orbit::before { content: ""; position: absolute; left: 5%; right: 5%; bottom: -5rem; height: 10rem; border: 1px solid var(--daylight-track-color); border-radius: 50% 50% 0 0; }
+.daylight-sun { position: absolute; z-index: 1; left: var(--daylight-progress, 5%); bottom: calc(0.2rem + var(--sun-rise, 0) * 5.4rem); color: var(--daylight-sun-color); font-size: 1.7rem; line-height: 1; transform: translateX(-50%); filter: drop-shadow(0 0 12px rgba(255,176,0,.58)); }
 .daylight-times { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 0.65rem 0 0; }
 .daylight-times div { display: flex; flex-direction: column; gap: 0.22rem; min-width: 0; }
 .daylight-times div:nth-child(1) { align-items: flex-start; text-align: left; }
@@ -686,7 +696,7 @@ a { color: inherit; }
   .hourly-strip { grid-template-columns: repeat(4, 1fr); row-gap: 0.8rem; }
   .daily-strip { grid-template-columns: repeat(3, 1fr); }
   .forecast-detail-grid { grid-template-columns: 1fr; }
-  .reading-hero { grid-template-columns: 7rem 1fr; }
+  .reading-hero { grid-template-columns: 6.5rem minmax(0, 1fr); }
   .map-row { grid-template-columns: 1fr; }
   .full-width-map { grid-column: 1; }
   .daylight-card { min-height: auto; }
