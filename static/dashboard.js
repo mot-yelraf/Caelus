@@ -1067,6 +1067,33 @@
     const values = (metric.series || []).map((point) => Number(point.value)).filter(Number.isFinite);
     const observedMin = values.length ? Math.min(...values) : 0;
     const observedMax = values.length ? Math.max(...values) : 100;
+    const rainKeys = new Set([
+      "rain_rate", "rain_increment", "rain_total", "rain_event",
+      "rain_week", "rain_month", "rain_year", "rain_lifetime",
+    ]);
+    if (rainKeys.has(metric.key)) {
+      const metricRain = metric.unit.startsWith("mm");
+      const maximumsMm = {
+        rain_rate: 100,
+        rain_increment: 25,
+        rain_total: 100,
+        rain_event: 300,
+        rain_week: 300,
+        rain_month: 500,
+        rain_year: 1500,
+      };
+      const observedMaxMm = metricRain ? observedMax : observedMax * 25.4;
+      const maximumMm = maximumsMm[metric.key]
+        || Math.max(1500, Math.ceil(observedMaxMm / 500) * 500);
+      const maximum = metricRain ? maximumMm : maximumMm / 25.4;
+      const oneMillimeter = metricRain ? 1 : 1 / 25.4;
+      return [
+        0,
+        maximum,
+        ["#d9f2ff", "#a9dcf5", "#6abce5", "#2c8fca", "#0d4f91"],
+        [0, oneMillimeter / maximum, 0.1, 0.25, 0.5, 1],
+      ];
+    }
     const configs = {
       temperature: [-20, 50, ["#2474c6", "#65b8e8", "#65b96e", "#f0c64e", "#cf4b3f"]],
       dew_point: [-20, 50, ["#2474c6", "#65b8e8", "#65b96e", "#f0c64e", "#cf4b3f"]],
@@ -1105,8 +1132,11 @@
     const styles = getComputedStyle(canvas.closest(".glass-card") || document.documentElement);
     const ink = styles.getPropertyValue("--ink").trim() || "#eef8f4";
     const muted = styles.getPropertyValue("--muted").trim() || "rgba(235,247,240,.7)";
-    const value = Number(metric.current);
-    const [minimum, maximum, zones] = gaugeConfig(metric);
+    const rainGauge = metric.key.startsWith("rain_");
+    const rawValue = Number(metric.current);
+    const value = rainGauge && Number.isFinite(rawValue) ? Math.max(0, rawValue) : rawValue;
+    const [minimum, maximum, zones, configuredZoneStops] = gaugeConfig(metric);
+    const zoneStops = configuredZoneStops || zones.map((_color, index) => index / zones.length).concat(1);
     const centerX = width / 2;
     const centerY = 133;
     const radius = 84;
@@ -1119,7 +1149,7 @@
     zones.forEach((color, index) => {
       context.strokeStyle = color;
       context.beginPath();
-      context.arc(centerX, centerY, radius, start + (end - start) * index / zones.length, start + (end - start) * (index + 1) / zones.length);
+      context.arc(centerX, centerY, radius, start + (end - start) * zoneStops[index], start + (end - start) * zoneStops[index + 1]);
       context.stroke();
     });
     context.fillStyle = muted;
@@ -1148,7 +1178,7 @@
     }
     context.fillStyle = ink;
     context.font = "700 15px Inter, sans-serif";
-    context.fillText(metricValue(metric.current, metric.decimals, metric.unit), centerX, 205);
+    context.fillText(metricValue(value, metric.decimals, metric.unit), centerX, 205);
   }
 
   function drawCompassGauge(canvas, metric) {
@@ -1251,7 +1281,8 @@
     card.append(heading, canvas, stats);
 
     const isWindRose = metric.key === "wind_dir" && metric.wind_speed;
-    let displayStyle = metricDisplayStyles[metric.key] || "graph24hr";
+    let displayStyle = metricDisplayStyles[metric.key]
+      || (metric.key === "rain_total" ? "gauge" : "graph24hr");
 
     function updateStats(displayedMetric, hours) {
       const end = metricDate(generatedAt).getTime();
@@ -1350,6 +1381,21 @@
         grid.append(createMetricCard(metric, payload.generated_at, timezoneName));
       });
       const cards = Array.from(grid.querySelectorAll(".weather-metric-card"));
+      const expansionStorageKey = "caelus.weatherMetricsExpanded";
+      const storedExpansionState = () => {
+        try {
+          return window.localStorage.getItem(expansionStorageKey) === "true";
+        } catch (_error) {
+          return expansionToggle?.getAttribute("aria-expanded") === "true";
+        }
+      };
+      const storeExpansionState = (expanded) => {
+        try {
+          window.localStorage.setItem(expansionStorageKey, String(expanded));
+        } catch (_error) {
+          // The state still lasts until the page closes when storage is unavailable.
+        }
+      };
       const setExpanded = (expanded) => {
         cards.forEach((card, index) => {
           card.hidden = !expanded && index >= 4;
@@ -1362,8 +1408,12 @@
       };
       if (expansionToggle && cards.length > 4) {
         expansionToggle.hidden = false;
-        expansionToggle.onclick = () => setExpanded(expansionToggle.getAttribute("aria-expanded") !== "true");
-        setExpanded(false);
+        expansionToggle.onclick = () => {
+          const expanded = expansionToggle.getAttribute("aria-expanded") !== "true";
+          setExpanded(expanded);
+          storeExpansionState(expanded);
+        };
+        setExpanded(storedExpansionState());
       } else if (expansionToggle) {
         expansionToggle.hidden = true;
       }

@@ -490,8 +490,30 @@ def test_settings_label_and_metric_expansion_contract() -> None:
     assert 'data-toggle-weather-metrics aria-expanded="false"' in response.text
     assert 'aria-controls="weatherMetricGrid"' in response.text
     assert "card.hidden = !expanded && index >= 4" in script
+    assert 'window.localStorage.getItem(expansionStorageKey) === "true"' in script
+    assert "storeExpansionState(expanded)" in script
     assert 'icon.textContent = expanded ? "▼" : "▶"' in script
     assert response.text.index("data-toggle-weather-metrics") < response.text.index("24-hour sensor metrics")
+
+
+def test_primary_metric_display_style_defaults() -> None:
+    response = TestClient(make_app()).get("/")
+    root = Path(__file__).resolve().parents[1]
+    script = (root / "static" / "dashboard.js").read_text(encoding="utf-8")
+
+    assert '<span>Outdoor relative humidity</span>' in response.text
+    assert "metric.key === \"rain_total\" ? \"gauge\" : \"graph24hr\"" in script
+    primary_positions = [
+        response.text.index(f'data-metric-style-key="{key}"')
+        for key in ("temperature", "humidity", "wind_dir", "rain_total")
+    ]
+    first_remaining_position = response.text.index('data-metric-style-key="absolute_pressure"')
+    assert primary_positions == sorted(primary_positions)
+    assert primary_positions[-1] < first_remaining_position
+    humidity_control = response.text[primary_positions[1]:primary_positions[2]]
+    rain_control = response.text[primary_positions[3]:first_remaining_position]
+    assert '<option value="graph24hr" selected>24Hr Graph</option>' in humidity_control
+    assert '<option value="gauge" selected>Gauge</option>' in rain_control
 
 
 def test_map_interaction_gate_and_metric_graph_contract() -> None:
@@ -517,6 +539,13 @@ def test_map_interaction_gate_and_metric_graph_contract() -> None:
     assert '`${hours}-hour Wind-Rose`' in script
     assert '{maximum: 5, label: "0–5"' in script
     assert "function drawMetricGauge(" in script
+    assert "rain_total: 100" in script
+    assert "rain_week: 300" in script
+    assert "rain_month: 500" in script
+    assert "rain_year: 1500" in script
+    assert "Math.max(1500, Math.ceil(observedMaxMm / 500) * 500)" in script
+    assert '["#d9f2ff", "#a9dcf5", "#6abce5", "#2c8fca", "#0d4f91"]' in script
+    assert "Math.max(0, rawValue)" in script
     assert "function drawCompassGauge(" in script
     assert 'displayStyle === "graph24hr" ? "graph6hr"' in script
     assert "wind-rose-controls" not in script

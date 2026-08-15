@@ -15,7 +15,7 @@ from caelus.data_logger import DataLogger
 from caelus.forecast import build_decisions, normalize_forecast_provider
 from caelus.gateway import EcowittGatewayError
 from caelus.location import resolve_ip_location
-from caelus.metrics import WEATHER_METRICS, build_24_hour_metric_cards
+from caelus.metrics import build_24_hour_metric_cards, metric_display_options
 from caelus.settings import (
     ALLOWED_EXPORT_FORMATS,
     AppSettings,
@@ -98,7 +98,7 @@ def register_routes(app: FastAPI) -> None:
                     field: display_unit_for(field, settings.unit_system, settings.pressure_unit)
                     for field in ("temperature", "pressure", "wind_speed", "wind_gust", "rain_total")
                 },
-                "metric_display_options": WEATHER_METRICS,
+                "metric_display_options": metric_display_options(),
             },
         )
 

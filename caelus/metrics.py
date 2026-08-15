@@ -20,7 +20,7 @@ WEATHER_METRICS = (
     MetricSpec("dew_point", "Dew point", ""),
     MetricSpec("wind_chill", "Wind chill", ""),
     MetricSpec("heat_index", "Heat index", ""),
-    MetricSpec("humidity", "Outdoor humidity", "%", 0),
+    MetricSpec("humidity", "Outdoor relative humidity", "%", 0),
     MetricSpec("pressure", "Relative pressure", ""),
     MetricSpec("absolute_pressure", "Absolute pressure", ""),
     MetricSpec("wind_speed", "Wind speed", ""),
@@ -43,6 +43,31 @@ WEATHER_METRICS = (
     MetricSpec("indoor_pressure", "Gateway relative pressure", ""),
     MetricSpec("indoor_absolute_pressure", "Gateway absolute pressure", ""),
 )
+
+PINNED_METRIC_KEYS = ("temperature", "humidity", "wind_dir", "rain_total")
+RAIN_METRIC_KEYS = {
+    "rain_rate",
+    "rain_increment",
+    "rain_total",
+    "rain_event",
+    "rain_week",
+    "rain_month",
+    "rain_year",
+    "rain_lifetime",
+}
+
+
+def metric_display_options() -> tuple[MetricSpec, ...]:
+    """Return settings controls with the primary row pinned, then labels A–Z."""
+    pinned_positions = {key: index for index, key in enumerate(PINNED_METRIC_KEYS)}
+    return tuple(
+        sorted(
+            WEATHER_METRICS,
+            key=lambda spec: (0, pinned_positions[spec.key])
+            if spec.key in pinned_positions
+            else (1, spec.label.casefold()),
+        )
+    )
 
 
 def _finite_number(value: Any) -> float | None:
@@ -76,9 +101,14 @@ def build_24_hour_metric_cards(
             value = _finite_number(reading.get(spec.key))
             timestamp = reading.get("timestamp")
             if value is not None and timestamp:
+                display_value = convert_value(
+                    spec.key, value, unit_system, pressure_unit
+                )
                 series.append({
                     "timestamp": str(timestamp),
-                    "value": convert_value(spec.key, value, unit_system, pressure_unit),
+                    "value": max(0.0, display_value)
+                    if spec.key in RAIN_METRIC_KEYS
+                    else display_value,
                 })
         if not series:
             continue
@@ -129,4 +159,7 @@ def build_24_hour_metric_cards(
             "stats": wind_speed_card["stats"],
             "series": _sample_series(paired_wind_series),
         }
-    return cards
+    display_positions = {
+        spec.key: index for index, spec in enumerate(metric_display_options())
+    }
+    return sorted(cards, key=lambda card: display_positions[card["key"]])
