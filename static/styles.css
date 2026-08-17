@@ -492,7 +492,7 @@ a { color: inherit; }
 .sun-state { display: block; margin-top: 0.35rem; color: var(--daylight-status-color); font-size: 0.58rem; letter-spacing: 0.08em; text-transform: uppercase; }
 .daylight-orbit { position: relative; height: 8.5rem; margin: 1.4rem 0 0.5rem; overflow: hidden; border-bottom: 1px solid var(--daylight-horizon-color); }
 .daylight-orbit::before { content: ""; position: absolute; left: 5%; right: 5%; bottom: -5rem; height: 10rem; border: 1px solid var(--daylight-track-color); border-radius: 50% 50% 0 0; }
-.daylight-sun { position: absolute; z-index: 1; left: var(--daylight-progress, 5%); bottom: calc(0.2rem + var(--sun-rise, 0) * 5.4rem); color: var(--daylight-sun-color); font-size: 1.7rem; line-height: 1; transform: translateX(-50%); filter: drop-shadow(0 0 12px rgba(255,176,0,.58)); }
+.daylight-sun { position: absolute; z-index: 1; left: var(--daylight-progress, 5%); bottom: calc(var(--sun-rise, 0) * 5rem); color: var(--daylight-sun-color); font-size: 1.7rem; line-height: 1; transform: translate(-50%, 50%); filter: drop-shadow(0 0 12px rgba(255,176,0,.58)); }
 .daylight-times { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 0.65rem 0 0; }
 .daylight-times div { display: flex; flex-direction: column; gap: 0.22rem; min-width: 0; }
 .daylight-times div:nth-child(1) { align-items: flex-start; text-align: left; }

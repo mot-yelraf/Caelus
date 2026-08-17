@@ -434,6 +434,9 @@ def test_sunlight_card_layout_and_refresh_contract() -> None:
     assert "--daylight-track-color: #765000;" in css
     assert "color: var(--daylight-sun-color);" in css
     assert "--daylight-sun-color: #d96f00;" in css
+    assert "bottom: calc(var(--sun-rise, 0) * 5rem);" in css
+    assert "transform: translate(-50%, 50%);" in css
+    assert "Math.sqrt(1 - horizontalOffset ** 2)" in script
     assert "function formatSolarTime(value)" in script
     assert 'moon.north_pole_daylight ?? "—"' in script
     assert 'moon.next_season_label ?? "—"' in script
