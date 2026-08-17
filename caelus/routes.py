@@ -3,6 +3,7 @@ import json
 import secrets
 from dataclasses import fields, replace
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, Dict
 from zoneinfo import ZoneInfo
 
@@ -27,6 +28,24 @@ from caelus.settings import (
 from caelus.units import convert_reading, display_unit_for
 
 GRAPH_RANGE_HOURS = {1, 6, 12, 24, 72, 168, 336, 696}
+FAVICON_SVG = (
+    Path(__file__).resolve().parents[1]
+    / "static"
+    / "icons"
+    / "caelus-weather-compass.svg"
+).read_text(encoding="utf-8")
+FAVICON_PNG = (
+    Path(__file__).resolve().parents[1]
+    / "static"
+    / "icons"
+    / "caelus-favicon-32.png"
+).read_bytes()
+FAVICON_ICO = (
+    Path(__file__).resolve().parents[1]
+    / "static"
+    / "icons"
+    / "caelus-favicon.ico"
+).read_bytes()
 
 
 def format_observation_time(value: Any, timezone_name: str) -> str:
@@ -60,6 +79,35 @@ def reading_for_display(
 
 
 def register_routes(app: FastAPI) -> None:
+    @app.api_route("/favicon.ico", methods=["GET", "HEAD"], include_in_schema=False)
+    async def favicon_ico(request: Request) -> Response:
+        """Serve the multi-size Caelus icon for conventional favicon probes."""
+        return Response(
+            content=b"" if request.method == "HEAD" else FAVICON_ICO,
+            media_type="image/x-icon",
+        )
+
+    @app.api_route(
+        "/caelus-favicon.png", methods=["GET", "HEAD"], include_in_schema=False
+    )
+    async def favicon_png(request: Request) -> Response:
+        """Serve the Safari-compatible Caelus PNG favicon."""
+        return Response(
+            content=b"" if request.method == "HEAD" else FAVICON_PNG,
+            media_type="image/png",
+        )
+
+    @app.api_route("/favicon.svg", methods=["GET", "HEAD"], include_in_schema=False)
+    @app.api_route(
+        "/caelus-favicon.svg", methods=["GET", "HEAD"], include_in_schema=False
+    )
+    async def favicon_svg(request: Request) -> Response:
+        """Serve the cache-distinct Caelus SVG favicon."""
+        return Response(
+            content="" if request.method == "HEAD" else FAVICON_SVG,
+            media_type="image/svg+xml",
+        )
+
     @app.get("/", response_class=HTMLResponse)
     async def dashboard(request: Request) -> Any:
         settings: AppSettings = app.state.settings

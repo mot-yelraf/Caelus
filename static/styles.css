@@ -409,7 +409,8 @@ a { color: inherit; }
 .forecast-empty { min-height: 22rem; display: grid; place-content: center; text-align: center; color: var(--muted); }
 .forecast-empty span { color: var(--accent-2); font-size: 4rem; }
 .forecast-empty p { max-width: 20rem; font-size: 0.75rem; }
-.graph-trigger { min-height: 2.35rem; padding: 0 0.9rem; border: 1px solid rgba(255,255,255,.24); background: rgba(255,255,255,.08); color: var(--ink); font-weight: 750; cursor: pointer; }
+.graph-trigger { display: inline-flex; align-items: center; gap: 0.4rem; min-height: 2.35rem; padding: 0 0.9rem; border: 1px solid rgba(255,255,255,.24); background: rgba(255,255,255,.08); color: var(--ink); font-weight: 750; cursor: pointer; }
+.graph-trigger img { display: block; width: 1.35rem; height: 1.35rem; }
 .graph-trigger:hover { background: rgba(255,255,255,.15); }
 .graph-dialog { width: calc(100vw - 1rem); height: calc(100vh - 1rem); max-width: none; max-height: none; margin: auto; padding: 0; overflow: hidden; color: #183a32; border: 1px solid rgba(220,242,232,.75); background: #f4f8f5; box-shadow: 0 30px 100px rgba(0,15,19,.62); }
 .graph-dialog::backdrop { background: rgba(2,18,23,.82); backdrop-filter: blur(8px); }
@@ -660,6 +661,7 @@ a { color: inherit; }
   .brand-mark { width: 2.75rem; height: 2.75rem; }
   .primary-nav a { display: none; }
   .graph-trigger { min-height: 2.1rem; }
+  .graph-trigger span { display: none; }
   .settings-trigger { font-size: 0; }
   .settings-trigger span { font-size: 1rem; }
   .dashboard-shell { padding-top: 1.4rem; }

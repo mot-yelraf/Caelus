@@ -71,6 +71,52 @@ def test_dashboard_displays_zero_values() -> None:
     assert "0.0 mph" in response.text
 
 
+def test_favicon_serves_caelus_icon() -> None:
+    client = TestClient(make_app())
+    response = client.get("/favicon.ico")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/x-icon"
+    assert response.content.startswith(b"\x00\x00\x01\x00")
+
+    response = client.head("/favicon.ico")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/x-icon"
+    assert response.content == b""
+
+    response = client.get("/caelus-favicon.png")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/png"
+    assert response.content.startswith(b"\x89PNG\r\n\x1a\n")
+
+    response = client.head("/caelus-favicon.png")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/png"
+    assert response.content == b""
+
+    for favicon_path in ("/favicon.svg", "/caelus-favicon.svg"):
+        response = client.get(favicon_path)
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "image/svg+xml"
+        assert "Caelus weather compass" in response.text
+
+        response = client.head(favicon_path)
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "image/svg+xml"
+        assert response.content == b""
+
+    favicon_svg = (
+        Path(__file__).resolve().parents[1]
+        / "static"
+        / "icons"
+        / "caelus-weather-compass.svg"
+    ).read_text(encoding="utf-8")
+    assert "<image" not in favicon_svg
+    assert "data:image" not in favicon_svg
+    assert "Caelus weather compass" in favicon_svg
+    assert 'viewBox="0 0 512 512"' in favicon_svg
+
+
 def test_observation_time_is_local_without_seconds_or_offset() -> None:
     assert (
         format_observation_time("2026-08-12T12:35:15.584178", "America/Denver")
@@ -173,7 +219,12 @@ def test_dashboard_includes_scene_themes_settings_modal_and_lunar_cycle() -> Non
     assert "data-save-settings" not in response.text
     assert '<dialog class="forecast-dialog" id="forecastDialog"' in response.text
     assert '<dialog class="graph-dialog" id="graphDialog"' in response.text
+    assert 'rel="icon" href="/caelus-favicon.svg" type="image/svg+xml"' in response.text
+    assert response.text.count('rel="icon"') == 1
+    assert "apple-touch-icon" not in response.text
     assert "data-open-graph" in response.text
+    assert 'data-open-graph aria-label="Open graph"' in response.text
+    assert '<img src="/static/icons/dashboard-graph.svg" alt="" width="22" height="22" /><span>Graph</span>' in response.text
     assert 'href="#moon"' not in response.text
     assert 'href="#conditions"' not in response.text
     assert 'href="#map"' not in response.text
@@ -545,6 +596,7 @@ def test_map_interaction_gate_and_metric_graph_contract() -> None:
     assert "function drawMetricGraph(" in script
     assert "const height = 230;" in script
     assert ".weather-metric-graph { display: block; width: 100%; height: 230px;" in css
+    assert ".graph-trigger span { display: none; }" in css
     assert "const rollingStart = generatedTime - (hours * 60 * 60 * 1000)" in script
     assert "const start = Math.max(rollingStart, points[0].time)" in script
     assert "const end = latestTime > start ? latestTime : start + 1" in script

@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#123c45" />
     <title>Caelus · Living Weather</title>
+    <link rel="icon" href="/caelus-favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/static/styles.css?v={{ version }}" />
     <script src="/static/dashboard.js?v={{ version }}" defer></script>
   </head>
@@ -16,7 +17,7 @@
     <header class="site-header">
       <a class="brand" href="#top" aria-label="Caelus home"><img class="brand-mark" src="/static/icons/caelus-weather-compass-titled.png" alt="" width="512" height="512" /><span><span class="brand-title-row"><strong>Caelus</strong><em class="brand-version">{{ version | default('restart needed', true) }}</em></span><small>living weather</small></span></a>
       <nav class="primary-nav" aria-label="Dashboard controls">
-        <button class="graph-trigger" type="button" data-open-graph>Graph</button>
+        <button class="graph-trigger" type="button" data-open-graph aria-label="Open graph"><img src="/static/icons/dashboard-graph.svg" alt="" width="22" height="22" /><span>Graph</span></button>
         <button class="settings-trigger" type="button" data-open-settings><span aria-hidden="true">⚙</span> Settings</button>
       </nav>
     </header>
