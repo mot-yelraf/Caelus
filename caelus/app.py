@@ -1,5 +1,6 @@
 import asyncio
 import secrets
+from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
@@ -16,7 +17,18 @@ BASE_DIR = Path(__file__).resolve().parent
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="Caelus")
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        if app.state.settings.use_ip_location:
+            await asyncio.to_thread(resolve_ip_location, app.state.settings)
+        await asyncio.to_thread(app.state.forecast_service.get, app.state.settings)
+        await app.state.poller.start()
+        try:
+            yield
+        finally:
+            await app.state.poller.stop()
+
+    app = FastAPI(title="Caelus", lifespan=lifespan)
     app.state.templates = Jinja2Templates(directory=str(BASE_DIR.parent / "templates"))
     app.state.settings = AppSettings.load()
     app.state.db_path = BASE_DIR.parent / "data" / "caelus.db"
@@ -29,15 +41,4 @@ def create_app() -> FastAPI:
     app.mount("/static", StaticFiles(directory=str(BASE_DIR.parent / "static")), name="static")
     register_routes(app)
 
-    async def on_startup() -> None:
-        if app.state.settings.use_ip_location:
-            await asyncio.to_thread(resolve_ip_location, app.state.settings)
-        await asyncio.to_thread(app.state.forecast_service.get, app.state.settings)
-        await app.state.poller.start()
-
-    async def on_shutdown() -> None:
-        await app.state.poller.stop()
-
-    app.add_event_handler("startup", on_startup)
-    app.add_event_handler("shutdown", on_shutdown)
     return app

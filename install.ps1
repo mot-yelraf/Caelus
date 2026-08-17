@@ -39,7 +39,7 @@ foreach ($Directory in $Directories) {
 }
 
 if ([System.IO.Path]::GetFullPath($SourceDir) -ne [System.IO.Path]::GetFullPath($InstallDir)) {
-    foreach ($File in @("Caelus.py", "requirements.txt", "README.md", "install.sh", "install.ps1", "run_caelus.sh", "run_caelus.ps1", "run_caelus.cmd")) {
+    foreach ($File in @("Caelus.py", "requirements.txt", "README.md", "install.sh", "install.ps1", "run_caelus.sh", "run_caelus_gui.sh", "run_caelus.ps1", "run_caelus_gui.ps1", "run_caelus.cmd", "run_caelus_gui.cmd")) {
         Copy-Item (Join-Path $SourceDir $File) (Join-Path $InstallDir $File) -Force
     }
     Copy-Item (Join-Path $SourceDir "caelus\*.py") (Join-Path $InstallDir "caelus") -Force
@@ -57,10 +57,15 @@ $VenvPython = Join-Path $InstallDir ".venv\Scripts\python.exe"
 if ($LASTEXITCODE -ne 0) {
     throw "Python dependency installation failed."
 }
+& $VenvPython -c "import webview"
+if ($LASTEXITCODE -ne 0) {
+    throw "pywebview could not be imported after installation."
+}
 
 Write-Host ""
 Write-Host "Caelus was installed in $InstallDir"
-Write-Host "Start it with: $InstallDir\run_caelus.cmd"
+Write-Host "Start the desktop app with: $InstallDir\run_caelus_gui.cmd"
+Write-Host "Start the headless server with: $InstallDir\run_caelus.cmd"
 Write-Host "Open locally: http://127.0.0.1:8767"
 Write-Host "Open on your LAN: http://<this-computer-LAN-IP>:8767"
 Write-Host "Application data is preserved in: $InstallDir\data"

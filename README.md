@@ -72,10 +72,17 @@ switches. Disabling the gateway stops polling without deleting historical data.
 
 The installers copy the application into a user-owned runtime folder, create a
 private `.venv`, install the pinned modules in `requirements.txt`, and preserve
-the runtime `data` folder during later installations or updates. Administrator
-access is not required unless Python or the operating system's venv package is
-missing. The installation includes Skyfield and its packaged DE421 ephemeris,
-so eclipse calculations do not download astronomy data while Caelus is running.
+the runtime `data` folder during later installations or updates. The installed
+desktop launcher opens Caelus in a centered, resizable pywebview window. Its
+default size is 1600 × 1000 pixels and is reduced automatically when the usable
+display is smaller. The installation includes Skyfield and its packaged DE421
+ephemeris, so eclipse calculations do not download astronomy data while Caelus
+is running.
+
+The desktop launcher starts the local server when necessary and stops that
+server when its window closes. If a healthy Caelus server is already running,
+the desktop window attaches to it and leaves it running when the window closes.
+The separate server launcher remains available for unattended and LAN use.
 
 ### macOS
 
@@ -90,10 +97,12 @@ chmod +x /Users/alice/Downloads/Caelus/install.sh
 Start the installed application with:
 
 ```bash
-/Users/alice/Caelus/run_caelus.sh
+/Users/alice/Caelus/run_caelus_gui.sh
 ```
 
-The default runtime database is `/Users/alice/Caelus/data/caelus.db`.
+The application appears as Caelus in the macOS Dock and app switcher. The
+default runtime database is `/Users/alice/Caelus/data/caelus.db`. To run only
+the server, use `/Users/alice/Caelus/run_caelus.sh`.
 
 ### Linux and Raspberry Pi OS Bookworm/Trixie
 
@@ -101,7 +110,7 @@ Install Python and venv support if needed:
 
 ```bash
 sudo apt update
-sudo apt install python3 python3-venv
+sudo apt install python3 python3-venv python3-gi gir1.2-gtk-3.0 gir1.2-webkit2-4.1
 ```
 
 Then install and run Caelus. For a Raspberry Pi user named `pi`:
@@ -109,11 +118,15 @@ Then install and run Caelus. For a Raspberry Pi user named `pi`:
 ```bash
 chmod +x /home/pi/Caelus-source/install.sh
 /home/pi/Caelus-source/install.sh
-/home/pi/Caelus/run_caelus.sh
+/home/pi/Caelus/run_caelus_gui.sh
 ```
 
 The default runtime database is `/home/pi/Caelus/data/caelus.db`. The same
 commands work on x86-64 or ARM Linux with the appropriate absolute home path.
+The first GUI launch creates the per-user application menu entry and hicolor
+icon under `/home/pi/.local/share`. Use `/home/pi/Caelus/run_caelus.sh` for a
+headless server. A graphical GTK session using X11 or Wayland is required for
+the desktop launcher.
 
 ### Windows 10/11
 
@@ -122,13 +135,17 @@ Then open PowerShell and run the native installer, for example:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File C:\Users\Alice\Downloads\Caelus\install.ps1
-C:\Users\Alice\Caelus\run_caelus.cmd
+C:\Users\Alice\Caelus\run_caelus_gui.cmd
 ```
 
-The default runtime database is `C:\Users\Alice\Caelus\data\caelus.db`.
+The desktop window uses the installed Microsoft Edge WebView2 runtime and shows
+the native Caelus icon in its window and taskbar. The default runtime database
+is `C:\Users\Alice\Caelus\data\caelus.db`. Use
+`C:\Users\Alice\Caelus\run_caelus.cmd` for a headless server.
 
-After starting Caelus on any platform, open `http://127.0.0.1:8767` on the
-Caelus computer or `http://<Caelus-computer-LAN-IP>:8767` from another device
+After starting the Caelus server on any platform, open
+`http://127.0.0.1:8767` on the Caelus computer or
+`http://<Caelus-computer-LAN-IP>:8767` from another device
 on the same network. Caelus listens on all network interfaces by default; keep
 it on a trusted private LAN and allow inbound TCP port 8767 through the host
 firewall if needed.
@@ -136,6 +153,19 @@ firewall if needed.
 To choose another runtime folder, set `CAELUS_INSTALL_DIR` before running
 `install.sh`, or pass `-InstallDir` to `install.ps1`. Existing `.venv` and
 `data` directories in that dedicated runtime folder are reused.
+
+Override the desktop window geometry when needed. Omitting `CAELUS_GUI_X` and
+`CAELUS_GUI_Y` lets the operating system center the window:
+
+```bash
+CAELUS_GUI_WIDTH=1400 CAELUS_GUI_HEIGHT=900 /home/pi/Caelus/run_caelus_gui.sh
+```
+
+```powershell
+$env:CAELUS_GUI_WIDTH = "1400"
+$env:CAELUS_GUI_HEIGHT = "900"
+C:\Users\Alice\Caelus\run_caelus_gui.cmd
+```
 
 Override the application port when needed:
 

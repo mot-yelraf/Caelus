@@ -36,8 +36,15 @@ def test_runtime_listens_on_the_lan_with_a_host_override(
     assert calls == [{"app": fake_app, "host": expected_host, "port": 8767, "log_level": "info"}]
 
 
+def test_application_uses_lifespan_instead_of_removed_fastapi_event_helpers() -> None:
+    source = (ROOT / "caelus" / "app.py").read_text(encoding="utf-8")
+
+    assert "lifespan=lifespan" in source
+    assert ".add_event_handler(" not in source
+
+
 def test_unix_installer_and_launcher_have_valid_bash_syntax() -> None:
-    for name in ("install.sh", "run_caelus.sh"):
+    for name in ("install.sh", "run_caelus.sh", "run_caelus_gui.sh"):
         result = subprocess.run(
             ["bash", "-n", str(ROOT / name)],
             capture_output=True,
@@ -53,7 +60,9 @@ def test_unix_installer_preserves_runtime_state_and_uses_private_venv() -> None:
     assert '${CAELUS_INSTALL_DIR:-${HOME}/Caelus}' in script
     assert 'mkdir -p "$INSTALL_DIR"' in script
     assert '"$PYTHON_BIN" -m venv "$INSTALL_DIR/.venv"' in script
+    assert '"$PYTHON_BIN" -m venv --system-site-packages "$INSTALL_DIR/.venv"' in script
     assert '"$INSTALL_DIR/.venv/bin/python" -m pip install' in script
+    assert 'cp "$SOURCE_DIR/run_caelus_gui.sh"' in script
     assert 'cp "$SOURCE_DIR/data' not in script
     assert 'rm -' not in script
 
@@ -64,9 +73,10 @@ def test_unix_install_layout_is_idempotent_and_preserves_data(tmp_path) -> None:
         """#!/usr/bin/env bash
 set -eu
 if [ "${1:-}" = "-m" ] && [ "${2:-}" = "venv" ]; then
-  mkdir -p "$3/bin"
-  cp "$0" "$3/bin/python"
-  chmod +x "$3/bin/python"
+  for argument in "$@"; do venv_path="$argument"; done
+  mkdir -p "$venv_path/bin"
+  cp "$0" "$venv_path/bin/python"
+  chmod +x "$venv_path/bin/python"
 fi
 exit 0
 """,
@@ -102,6 +112,9 @@ exit 0
     assert (runtime / "static" / "dashboard.js").exists()
     assert (runtime / "templates" / "dashboard.html").exists()
     assert (runtime / "run_caelus.sh").stat().st_mode & 0o111
+    assert (runtime / "run_caelus_gui.sh").stat().st_mode & 0o111
+    assert (runtime / "caelus" / "desktop.py").exists()
+    assert (runtime / "static" / "icons" / "caelus-desktop-icon.png").exists()
     assert marker.read_text(encoding="utf-8") == "historical data"
 
 
@@ -114,6 +127,8 @@ def test_windows_installer_uses_user_runtime_and_private_venv() -> None:
     assert 'pip install --disable-pip-version-check' in installer
     assert 'Copy-Item (Join-Path $SourceDir "data' not in installer
     assert ".venv\\Scripts\\python.exe" in launcher
+    assert '"run_caelus_gui.cmd"' in installer
+    assert (ROOT / "run_caelus_gui.ps1").is_file()
 
 
 def test_requirements_are_pinned_and_avoid_native_uvicorn_extras() -> None:
@@ -124,4 +139,5 @@ def test_requirements_are_pinned_and_avoid_native_uvicorn_extras() -> None:
     assert "uvicorn==0.34.3" in requirements
     assert "skyfield==1.54" in requirements
     assert "skyfield-data==5.0.0" in requirements
+    assert "pywebview==5.4" in requirements
     assert not any("uvicorn[standard]" in line for line in requirements)
