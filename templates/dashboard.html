@@ -98,9 +98,12 @@
       <section class="glass-card lunar-header" id="moon" data-lunar-header>
         {% set moon_altitude = moon.get('moon_altitude') %}
         {% set phase_illuminations = (0, 15, 50, 85, 100, 85, 50, 15) %}
+        {% set previous_phases = moon.get('previous_phases', moon.cycle[:4]) %}
+        {% set upcoming_phases = moon.get('upcoming_phases', moon.cycle[4:]) %}
         <div class="lunar-arc" aria-hidden="true"></div>
-        <div class="lunar-side lunar-side-left">
-          {% for phase in moon.cycle[:4] %}<div class="lunar-step"><canvas class="lunar-step-disk" width="96" height="96" data-phase-moon data-phase-index="{{ phase.index }}" data-illumination="{{ phase.get('illumination', phase_illuminations[phase.index]) }}" data-bright-limb-angle="{{ phase.get('bright_limb_angle', 0) }}" data-disk-rotation="{{ phase.get('disk_rotation', 0) }}" role="img" aria-label="Local view of the {{ phase.name }}"></canvas><small>{{ phase.name }}</small></div>{% endfor %}
+        <div class="lunar-side lunar-side-left" data-lunar-period="previous" aria-label="Previous four moon phases">
+          <p class="lunar-side-title">Previous phases</p>
+          {% for phase in previous_phases %}<div class="lunar-step"><canvas class="lunar-step-disk" width="96" height="96" data-phase-moon data-phase-index="{{ phase.index }}" data-illumination="{{ phase.get('illumination', phase_illuminations[phase.index]) }}" data-bright-limb-angle="{{ phase.get('bright_limb_angle', 0) }}" data-disk-rotation="{{ phase.get('disk_rotation', 0) }}" data-representative-date="{{ phase.get('representative_date', '') }}" role="img" aria-label="Observer-local view of the {{ phase.name }}"></canvas><small data-phase-name>{{ phase.name }}</small><time data-phase-date datetime="{{ phase.get('representative_date', '') }}">{{ phase.get('date_label', '') }}</time></div>{% endfor %}
         </div>
         <div class="lunar-current">
           <p class="eyebrow">Moon now · live</p>
@@ -108,8 +111,9 @@
           <h2 id="currentMoonName">{{ moon.name }}</h2>
           <p><strong id="currentMoonIllumination">{{ moon.illumination }}%</strong> illuminated · lunar day <span id="currentMoonAge">{{ moon.age_days }}</span><br /><span class="observer-view-label" id="moonLocalView">Observer-local orientation{% if moon_altitude is not none %} · {{ moon_altitude }}° altitude{% if moon_altitude < 0 %} (below horizon){% endif %}{% endif %}</span></p>
         </div>
-        <div class="lunar-side lunar-side-right">
-          {% for phase in moon.cycle[4:] %}<div class="lunar-step"><canvas class="lunar-step-disk" width="96" height="96" data-phase-moon data-phase-index="{{ phase.index }}" data-illumination="{{ phase.get('illumination', phase_illuminations[phase.index]) }}" data-bright-limb-angle="{{ phase.get('bright_limb_angle', 0) }}" data-disk-rotation="{{ phase.get('disk_rotation', 0) }}" role="img" aria-label="Local view of the {{ phase.name }}"></canvas><small>{{ phase.name }}</small></div>{% endfor %}
+        <div class="lunar-side lunar-side-right" data-lunar-period="upcoming" aria-label="Upcoming four moon phases">
+          <p class="lunar-side-title">Upcoming phases</p>
+          {% for phase in upcoming_phases %}<div class="lunar-step"><canvas class="lunar-step-disk" width="96" height="96" data-phase-moon data-phase-index="{{ phase.index }}" data-illumination="{{ phase.get('illumination', phase_illuminations[phase.index]) }}" data-bright-limb-angle="{{ phase.get('bright_limb_angle', 0) }}" data-disk-rotation="{{ phase.get('disk_rotation', 0) }}" data-representative-date="{{ phase.get('representative_date', '') }}" role="img" aria-label="Observer-local view of the {{ phase.name }}"></canvas><small data-phase-name>{{ phase.name }}</small><time data-phase-date datetime="{{ phase.get('representative_date', '') }}">{{ phase.get('date_label', '') }}</time></div>{% endfor %}
         </div>
         <div class="solar-times"><span>☀ Sunrise <strong id="sunriseTime">{{ moon.sunrise }}</strong></span><span>Sunset <strong id="sunsetTime">{{ moon.sunset }}</strong> ◐</span><small id="lunarUpdated">Updated {{ moon.updated_at[11:16] }} UTC</small></div>
       </section>

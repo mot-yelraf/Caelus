@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 import caelus.routes as routes_module
 from caelus import __version__
-from caelus.astronomy import moon_phase_context
+from caelus.astronomy import FULL_MOON_NAMES, moon_phase_context
 from caelus.routes import format_observation_time, register_routes
 from caelus.settings import AppSettings
 
@@ -237,8 +237,9 @@ def test_dashboard_includes_scene_themes_settings_modal_and_lunar_cycle() -> Non
     assert '<span class="brand-mark">C</span>' not in response.text
     for theme in ("garden", "island", "river", "desert"):
         assert f'name="theme" value="{theme}"' in response.text
-    for phase in ("New moon", "First quarter", "Full moon", "Last quarter"):
+    for phase in ("New moon", "First quarter", "Last quarter"):
         assert phase in response.text
+    assert any(name in response.text for name in FULL_MOON_NAMES.values())
     for heading in ("Current readings", "Today’s forecast", "Sunlight today", "Regional radar"):
         assert heading in response.text
     conditions_position = response.text.index('class="conditions-row"')
@@ -250,6 +251,9 @@ def test_dashboard_includes_scene_themes_settings_modal_and_lunar_cycle() -> Non
     assert "Environmental decisions" not in response.text
     assert 'id="currentMoonDisk"' in response.text
     assert response.text.count("data-phase-moon") == 8
+    assert 'data-lunar-period="previous"' in response.text
+    assert 'data-lunar-period="upcoming"' in response.text
+    assert response.text.count("data-phase-date") == 8
     assert "🌒" not in response.text
     assert "Observer-local orientation" in response.text
     assert 'id="northPoleDaylight"' in response.text
