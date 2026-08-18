@@ -142,3 +142,34 @@ def test_waxing_and_waning_local_views_have_opposite_light_polarity() -> None:
     quarter_separation = abs((waxing_quarter - waning_quarter + 180) % 360 - 180)
     assert crescent_separation > 120
     assert quarter_separation > 120
+
+
+def test_lunar_timeline_has_four_previous_and_upcoming_named_events() -> None:
+    settings = SimpleNamespace(
+        timezone="America/Denver",
+        location_name="Silver City",
+        latitude=32.77,
+        longitude=-108.28,
+    )
+
+    result = astronomy_context(
+        settings, datetime(2026, 8, 9, 18, 0, tzinfo=timezone.utc)
+    )
+
+    previous = result["previous_phases"]
+    upcoming = result["upcoming_phases"]
+    assert len(previous) == 4
+    assert len(upcoming) == 4
+    assert [item["representative_date"] for item in previous] == sorted(
+        item["representative_date"] for item in previous
+    )
+    assert [item["representative_date"] for item in upcoming] == sorted(
+        item["representative_date"] for item in upcoming
+    )
+    assert previous[1]["name"] == "Buck Moon"
+    assert all(item["representative_date"] < "2026-08-09" for item in previous)
+    assert all(item["representative_date"] > "2026-08-09" for item in upcoming)
+    assert all(
+        {"date_label", "bright_limb_angle", "disk_rotation"}.issubset(item)
+        for item in previous + upcoming
+    )

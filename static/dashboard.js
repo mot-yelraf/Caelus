@@ -446,6 +446,17 @@
     renderMoonDisk(document.getElementById("currentMoonDisk"), moon);
   }
 
+  function phaseFromCanvas(canvas) {
+    return {
+      index: Number(canvas.dataset.phaseIndex),
+      illumination: canvas.dataset.illumination,
+      bright_limb_angle: canvas.dataset.brightLimbAngle,
+      disk_rotation: canvas.dataset.diskRotation,
+      representative_date: canvas.dataset.representativeDate,
+      name: canvas.closest(".lunar-step")?.querySelector("[data-phase-name]")?.textContent || "Moon phase",
+    };
+  }
+
   function pairedPhaseCycle(phases) {
     const paired = phases.map((phase) => ({...phase}));
     [[1, 7], [2, 6], [3, 5]].forEach(([waxingIndex, waningIndex]) => {
@@ -465,6 +476,35 @@
       waning.bright_limb_angle = (pairedAngle + 180) % 360;
     });
     return paired;
+  }
+
+  function updatePhaseStrip(period, phases) {
+    const steps = document.querySelectorAll(`[data-lunar-period="${period}"] .lunar-step`);
+    phases.slice(0, steps.length).forEach((phase, position) => {
+      const step = steps[position];
+      const canvas = step.querySelector("[data-phase-moon]");
+      const name = step.querySelector("[data-phase-name]");
+      const date = step.querySelector("[data-phase-date]");
+      if (!canvas) return;
+      canvas.dataset.phaseIndex = phase.index;
+      canvas.dataset.illumination = phase.illumination;
+      canvas.dataset.brightLimbAngle = phase.bright_limb_angle;
+      canvas.dataset.diskRotation = phase.disk_rotation;
+      canvas.dataset.representativeDate = phase.representative_date;
+      if (name) name.textContent = phase.name;
+      if (date) {
+        date.textContent = phase.date_label;
+        date.setAttribute("datetime", phase.representative_date);
+      }
+      renderMoonDisk(canvas, phase);
+    });
+  }
+
+  function updatePhaseTimeline(previousPhases, upcomingPhases) {
+    const previousCount = previousPhases.length;
+    const paired = pairedPhaseCycle([...previousPhases, ...upcomingPhases]);
+    updatePhaseStrip("previous", paired.slice(0, previousCount));
+    updatePhaseStrip("upcoming", paired.slice(previousCount));
   }
 
   moonSurfaceImage.addEventListener("load", () => {
@@ -500,15 +540,9 @@
       name: document.getElementById("currentMoonName")?.textContent || "Moon",
     });
   }
-  const initialPhaseCycle = Array.from(document.querySelectorAll("[data-phase-moon]")).map((canvas) => ({
-      index: Number(canvas.dataset.phaseIndex),
-      illumination: canvas.dataset.illumination,
-      bright_limb_angle: canvas.dataset.brightLimbAngle,
-      disk_rotation: canvas.dataset.diskRotation,
-      name: canvas.getAttribute("aria-label")?.replace("Local view of the ", "") || "Moon phase",
-  }));
-  pairedPhaseCycle(initialPhaseCycle).forEach((phase) => {
-    renderMoonDisk(document.querySelector(`[data-phase-index="${phase.index}"]`), phase);
+  const initialPhaseCanvases = Array.from(document.querySelectorAll("[data-phase-moon]"));
+  pairedPhaseCycle(initialPhaseCanvases.map(phaseFromCanvas)).forEach((phase, position) => {
+    renderMoonDisk(initialPhaseCanvases[position], phase);
   });
   updateDaylightTrack(document.getElementById("daylightSun")?.dataset.daylightProgress || 0);
 
@@ -1540,9 +1574,7 @@
       if (!response.ok) return;
       const moon = await response.json();
       renderLocalMoon(moon);
-      pairedPhaseCycle(moon.cycle || []).forEach((phase) => {
-        renderMoonDisk(document.querySelector(`[data-phase-index="${phase.index}"]`), phase);
-      });
+      updatePhaseTimeline(moon.previous_phases || [], moon.upcoming_phases || []);
       document.getElementById("currentMoonName").textContent = moon.name;
       document.getElementById("currentMoonIllumination").textContent = `${moon.illumination}%`;
       document.getElementById("currentMoonAge").textContent = moon.age_days;
