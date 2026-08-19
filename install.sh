@@ -24,31 +24,31 @@ case "$remembered_install_dir" in
   ""|/) remembered_install_dir="$DEFAULT_INSTALL_DIR" ;;
 esac
 
-choose_install_parent() {
-  initial_parent="$1"
+choose_install_location() {
+  initial_location="$1"
   case "$(uname -s)" in
     Darwin)
-      osascript - "$initial_parent" <<'APPLESCRIPT'
+      osascript - "$initial_location" <<'APPLESCRIPT'
 on run argv
   set initialFolder to POSIX file (item 1 of argv)
-  set chosenFolder to choose folder with prompt "Choose where Caelus should be installed. A Caelus folder will be created here." default location initialFolder
+  set chosenFolder to choose folder with prompt "Choose the Caelus folder or a parent folder. If needed, a Caelus folder will be created." default location initialFolder
   return POSIX path of chosenFolder
 end run
 APPLESCRIPT
       ;;
     Linux)
       if [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ] && command -v zenity >/dev/null 2>&1; then
-        zenity --file-selection --directory --title="Choose where Caelus should be installed" --filename="${initial_parent}/"
+        zenity --file-selection --directory --title="Choose the Caelus folder or its parent" --filename="${initial_location}/"
         return
       fi
       if [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ] && command -v kdialog >/dev/null 2>&1; then
-        kdialog --getexistingdirectory "$initial_parent" --title "Choose where Caelus should be installed"
+        kdialog --getexistingdirectory "$initial_location" --title "Choose the Caelus folder or its parent"
         return
       fi
       if [ -z "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
         return 2
       fi
-      "$PYTHON_BIN" - "$initial_parent" <<'PYTHON'
+      "$PYTHON_BIN" - "$initial_location" <<'PYTHON'
 import sys
 
 try:
@@ -59,7 +59,7 @@ try:
     root.withdraw()
     root.update_idletasks()
     selected = filedialog.askdirectory(
-        title="Choose where Caelus should be installed",
+        title="Choose the Caelus folder or its parent",
         initialdir=sys.argv[1],
         mustexist=True,
     )
@@ -76,24 +76,37 @@ PYTHON
   esac
 }
 
+resolve_selected_install_dir() {
+  selected_location="${1%/}"
+  [ -n "$selected_location" ] || selected_location="/"
+  selected_name="$(basename -- "$selected_location")"
+  case "$selected_name" in
+    [Cc][Aa][Ee][Ll][Uu][Ss]) printf '%s\n' "$selected_location" ;;
+    *) printf '%s/Caelus\n' "$selected_location" ;;
+  esac
+}
+
 if [ "${CAELUS_INSTALL_DIR+x}" = "x" ]; then
   INSTALL_DIR="$CAELUS_INSTALL_DIR"
 else
-  initial_parent="$(dirname -- "$remembered_install_dir")"
-  if [ ! -d "$initial_parent" ]; then
-    initial_parent="$HOME"
+  initial_location="$remembered_install_dir"
+  if [ ! -d "$initial_location" ]; then
+    initial_location="$(dirname -- "$remembered_install_dir")"
+  fi
+  if [ ! -d "$initial_location" ]; then
+    initial_location="$HOME"
   fi
   selection_status=0
-  selected_parent="$(choose_install_parent "$initial_parent")" || selection_status=$?
+  selected_location="$(choose_install_location "$initial_location")" || selection_status=$?
   if [ "$selection_status" -eq 1 ]; then
     fail "Installation was cancelled."
-  elif [ "$selection_status" -eq 0 ] && [ -n "$selected_parent" ]; then
-    INSTALL_DIR="${selected_parent%/}/Caelus"
+  elif [ "$selection_status" -eq 0 ] && [ -n "$selected_location" ]; then
+    INSTALL_DIR="$(resolve_selected_install_dir "$selected_location")"
   elif [ -t 0 ]; then
-    printf 'Install Caelus under which directory? [%s] ' "$initial_parent"
-    IFS= read -r selected_parent
-    selected_parent="${selected_parent:-$initial_parent}"
-    INSTALL_DIR="${selected_parent%/}/Caelus"
+    printf 'Choose the Caelus folder or its parent [%s] ' "$initial_location"
+    IFS= read -r selected_location
+    selected_location="${selected_location:-$initial_location}"
+    INSTALL_DIR="$(resolve_selected_install_dir "$selected_location")"
   else
     INSTALL_DIR="$remembered_install_dir"
     printf 'No graphical folder chooser is available; using %s\n' "$INSTALL_DIR"

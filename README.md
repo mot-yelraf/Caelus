@@ -25,7 +25,8 @@ For illustrated setup and operating instructions, see the
 - Calculated eight-phase moon cycle with illumination, lunar age, and a live
   observer-local disk whose bright limb follows the Sun in the user's sky; a
   detailed lunar surface texture remains visible through the calculated phase
-  and every phase marker is rendered as a representative local-sky view
+  and every phase marker is rendered as a representative local-sky view, with
+  an optional reference view and sunrise-to-sunrise Sun/Moon event timelines
 - Sunrise, solar noon, sunset, total daylight, polar daylight, the next
   seasonal event, and locally visible eclipse details calculated offline with
   Skyfield beside the regional map
@@ -153,8 +154,10 @@ on the same network. Caelus listens on all network interfaces by default; keep
 it on a trusted private LAN and allow inbound TCP port 8767 through the host
 firewall if needed.
 
-The graphical selector chooses the parent directory and creates or reuses a
-`Caelus` folder beneath it. macOS remembers the resulting absolute path in
+The graphical selector accepts either the `Caelus` installation folder itself
+or its parent directory. Selecting a folder named `Caelus` uses it directly;
+selecting any other folder creates or reuses a `Caelus` folder beneath it.
+macOS remembers the resulting absolute path in
 `/Users/<name>/.config/caelus/install-location`; Linux and Raspberry Pi use
 `/home/<name>/.config/caelus/install-location` unless `XDG_CONFIG_HOME` is set;
 Windows uses

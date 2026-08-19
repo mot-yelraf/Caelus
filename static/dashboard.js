@@ -646,6 +646,14 @@
 
   const moonSurfaceImage = new Image();
   const moonRenders = new Map();
+  let lunarViewMode = "local";
+
+  function referenceBrightLimbAngle(phaseIndex) {
+    const index = Number(phaseIndex);
+    if (index >= 1 && index <= 3) return 90;
+    if (index >= 5 && index <= 7) return 270;
+    return 0;
+  }
 
   function renderMoonDisk(canvas, moon) {
     if (!canvas) return;
@@ -724,25 +732,70 @@
     canvas.dataset.illumination = String(illuminationPercent);
     canvas.dataset.brightLimbAngle = String(moon.bright_limb_angle || 0);
     canvas.dataset.diskRotation = String(moon.disk_rotation || 0);
-    canvas.setAttribute("aria-label", `Observer-local view of the ${moon.name}, ${illuminationPercent} percent illuminated`);
+    const viewLabel = moon.view_label || "Observer-local view";
+    canvas.setAttribute("aria-label", `${viewLabel} of the ${moon.name}, ${illuminationPercent} percent illuminated`);
     canvas.title = moon.representative_date
-      ? `${moon.name} · local view near lunar transit on ${moon.representative_date}`
-      : `${moon.name} · local view now`;
+      ? `${moon.name} · ${viewLabel.toLowerCase()} near lunar transit on ${moon.representative_date}`
+      : `${moon.name} · ${viewLabel.toLowerCase()} now`;
   }
 
   function renderLocalMoon(moon) {
-    renderMoonDisk(document.getElementById("currentMoonDisk"), moon);
+    const canvas = document.getElementById("currentMoonDisk");
+    if (!canvas) return;
+    canvas.dataset.phaseIndex = moon.phase_index;
+    canvas.dataset.illumination = moon.illumination;
+    canvas.dataset.localBrightLimbAngle = moon.bright_limb_angle || 0;
+    canvas.dataset.localDiskRotation = moon.disk_rotation || 0;
+    renderMoonForView(canvas, {...moon, index: moon.phase_index});
   }
 
   function phaseFromCanvas(canvas) {
     return {
       index: Number(canvas.dataset.phaseIndex),
       illumination: canvas.dataset.illumination,
-      bright_limb_angle: canvas.dataset.brightLimbAngle,
-      disk_rotation: canvas.dataset.diskRotation,
+      bright_limb_angle: canvas.dataset.localBrightLimbAngle,
+      disk_rotation: canvas.dataset.localDiskRotation,
       representative_date: canvas.dataset.representativeDate,
       name: canvas.closest(".lunar-step")?.querySelector("[data-phase-name]")?.textContent || "Moon phase",
     };
+  }
+
+  function renderMoonForView(canvas, moon) {
+    const reference = lunarViewMode === "reference";
+    renderMoonDisk(canvas, {
+      ...moon,
+      bright_limb_angle: reference ? referenceBrightLimbAngle(moon.index) : moon.bright_limb_angle,
+      disk_rotation: reference ? 0 : moon.disk_rotation,
+      view_label: reference ? "Reference diagram" : "Observer-local view",
+    });
+  }
+
+  function renderSelectedLunarView() {
+    const current = document.getElementById("currentMoonDisk");
+    if (current) {
+      renderMoonForView(current, {
+        index: Number(current.dataset.phaseIndex),
+        illumination: current.dataset.illumination,
+        bright_limb_angle: current.dataset.localBrightLimbAngle,
+        disk_rotation: current.dataset.localDiskRotation,
+        name: document.getElementById("currentMoonName")?.textContent || "Moon",
+      });
+    }
+    document.querySelectorAll("[data-phase-moon]").forEach((canvas) => {
+      renderMoonForView(canvas, phaseFromCanvas(canvas));
+    });
+    const reference = lunarViewMode === "reference";
+    document.querySelectorAll("[data-lunar-view]").forEach((button) => {
+      const active = button.dataset.lunarView === lunarViewMode;
+      button.classList.toggle("is-active", active);
+      button.setAttribute("aria-pressed", active ? "true" : "false");
+    });
+    const status = document.getElementById("lunarViewStatus");
+    if (status) status.textContent = reference ? "Reference phase diagram" : "Observer-local phase timeline";
+    const orientation = document.getElementById("moonLocalView");
+    if (orientation) {
+      orientation.hidden = reference;
+    }
   }
 
   function pairedPhaseCycle(phases) {
@@ -776,15 +829,15 @@
       if (!canvas) return;
       canvas.dataset.phaseIndex = phase.index;
       canvas.dataset.illumination = phase.illumination;
-      canvas.dataset.brightLimbAngle = phase.bright_limb_angle;
-      canvas.dataset.diskRotation = phase.disk_rotation;
+      canvas.dataset.localBrightLimbAngle = phase.bright_limb_angle;
+      canvas.dataset.localDiskRotation = phase.disk_rotation;
       canvas.dataset.representativeDate = phase.representative_date;
       if (name) name.textContent = phase.name;
       if (date) {
         date.textContent = phase.date_label;
         date.setAttribute("datetime", phase.representative_date);
       }
-      renderMoonDisk(canvas, phase);
+      renderMoonForView(canvas, phase);
     });
   }
 
@@ -794,6 +847,13 @@
     updatePhaseStrip("previous", paired.slice(0, previousCount));
     updatePhaseStrip("upcoming", paired.slice(previousCount));
   }
+
+  document.querySelectorAll("[data-lunar-view]").forEach((button) => {
+    button.addEventListener("click", () => {
+      lunarViewMode = button.dataset.lunarView === "reference" ? "reference" : "local";
+      renderSelectedLunarView();
+    });
+  });
 
   moonSurfaceImage.addEventListener("load", () => {
     moonRenders.forEach((moon, canvas) => renderMoonDisk(canvas, moon));
@@ -810,6 +870,71 @@
     sunMarker.dataset.daylightProgress = String(progress);
   }
 
+  function positionLunarEventMarker(markerId, eventAt, startAt, endAt) {
+    const marker = document.getElementById(markerId);
+    if (!marker) return;
+    const eventMs = Date.parse(String(eventAt || ""));
+    const startMs = Date.parse(String(startAt || ""));
+    const endMs = Date.parse(String(endAt || ""));
+    const available = Number.isFinite(eventMs)
+      && Number.isFinite(startMs)
+      && Number.isFinite(endMs)
+      && endMs > startMs
+      && eventMs >= startMs
+      && eventMs <= endMs;
+    marker.classList.toggle("is-unavailable", !available);
+    if (!available) return;
+    const percent = Math.max(0, Math.min(100, ((eventMs - startMs) / (endMs - startMs)) * 100));
+    marker.style.setProperty("--timeline-left", `${percent.toFixed(2)}%`);
+  }
+
+  function updateLunarEventTimeline(moon) {
+    const timeline = document.getElementById("lunarEventTimeline");
+    if (!timeline) return;
+    const startAt = moon.timeline_start_at || "";
+    const endAt = moon.timeline_end_at || "";
+    const hasWindow = Boolean(startAt && endAt);
+    const values = {
+      sunriseTime: moon.sunrise,
+      sunsetTime: moon.sunset,
+      nextSunriseTime: moon.next_sunrise,
+      moonriseTime: moon.timeline_moonrise,
+      moonsetTime: moon.timeline_moonset,
+    };
+    Object.entries(values).forEach(([id, value]) => {
+      const element = document.getElementById(id);
+      if (element) element.textContent = /^\d{1,2}:\d{2}$/.test(String(value || "")) ? value : "—";
+    });
+    document.getElementById("lunarSunriseMarker")?.classList.toggle("is-unavailable", !hasWindow);
+    document.getElementById("lunarNextSunriseMarker")?.classList.toggle("is-unavailable", !hasWindow);
+    positionLunarEventMarker("lunarSunsetMarker", moon.timeline_sunset_at, startAt, endAt);
+    positionLunarEventMarker("lunarMoonriseMarker", moon.timeline_moonrise_at, startAt, endAt);
+    positionLunarEventMarker("lunarMoonsetMarker", moon.timeline_moonset_at, startAt, endAt);
+    Object.entries({
+      startAt,
+      sunsetAt: moon.timeline_sunset_at || "",
+      endAt,
+      moonriseAt: moon.timeline_moonrise_at || "",
+      moonsetAt: moon.timeline_moonset_at || "",
+    }).forEach(([key, value]) => { timeline.dataset[key] = value; });
+  }
+
+  const initialLunarTimeline = document.getElementById("lunarEventTimeline");
+  if (initialLunarTimeline) {
+    updateLunarEventTimeline({
+      sunrise: document.getElementById("sunriseTime")?.textContent,
+      sunset: document.getElementById("sunsetTime")?.textContent,
+      next_sunrise: document.getElementById("nextSunriseTime")?.textContent,
+      timeline_moonrise: document.getElementById("moonriseTime")?.textContent,
+      timeline_moonset: document.getElementById("moonsetTime")?.textContent,
+      timeline_start_at: initialLunarTimeline.dataset.startAt,
+      timeline_sunset_at: initialLunarTimeline.dataset.sunsetAt,
+      timeline_end_at: initialLunarTimeline.dataset.endAt,
+      timeline_moonrise_at: initialLunarTimeline.dataset.moonriseAt,
+      timeline_moonset_at: initialLunarTimeline.dataset.moonsetAt,
+    });
+  }
+
   function formatSolarTime(value) {
     const match = String(value || "").match(/^(\d{1,2}):(\d{2})$/);
     if (!match) return "—";
@@ -822,6 +947,7 @@
   const initialMoonDisk = document.getElementById("currentMoonDisk");
   if (initialMoonDisk) {
     renderLocalMoon({
+      phase_index: initialMoonDisk.dataset.phaseIndex,
       illumination: initialMoonDisk.dataset.illumination,
       bright_limb_angle: initialMoonDisk.dataset.brightLimbAngle,
       disk_rotation: initialMoonDisk.dataset.diskRotation,
@@ -1869,8 +1995,7 @@
       document.getElementById("moonLocalView").textContent = moon.moon_altitude == null
         ? "Observer-local orientation"
         : `Observer-local orientation · ${moon.moon_altitude}° altitude${moon.moon_altitude < 0 ? " (below horizon)" : ""}`;
-      document.getElementById("sunriseTime").textContent = moon.sunrise;
-      document.getElementById("sunsetTime").textContent = moon.sunset;
+      updateLunarEventTimeline(moon);
       document.getElementById("mapSunriseTime").textContent = moon.sunrise_display || formatSolarTime(moon.sunrise);
       document.getElementById("mapSunsetTime").textContent = moon.sunset_display || formatSolarTime(moon.sunset);
       document.getElementById("solarNoonTime").textContent = moon.solar_noon_display || formatSolarTime(moon.solar_noon);
@@ -1906,6 +2031,7 @@
       document.getElementById("sunState").textContent = moon.sun_is_up ? "Sun above horizon" : "Sun below horizon";
       updateDaylightTrack(moon.daylight_progress);
       document.getElementById("lunarUpdated").textContent = `Updated ${moon.updated_at.slice(11, 16)} UTC`;
+      renderSelectedLunarView();
     } catch (_error) {
       return;
     }

@@ -56,6 +56,15 @@ def test_astronomy_context_includes_local_daylight_duration() -> None:
     assert result["sunrise_display"] == "6:31 AM"
     assert result["solar_noon_display"].endswith(" PM")
     assert result["sunset_display"] == "8:05 PM"
+    assert result["next_sunrise"] == "06:32"
+
+    timeline_start = datetime.fromisoformat(result["timeline_start_at"])
+    timeline_sunset = datetime.fromisoformat(result["timeline_sunset_at"])
+    timeline_end = datetime.fromisoformat(result["timeline_end_at"])
+    assert timeline_start < timeline_sunset < timeline_end
+    for event_key in ("timeline_moonrise_at", "timeline_moonset_at"):
+        event = datetime.fromisoformat(result[event_key])
+        assert timeline_start <= event <= timeline_end
 
 
 def test_sunlight_context_includes_poles_season_and_eclipse_contract() -> None:

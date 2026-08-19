@@ -190,7 +190,7 @@ Windy is a separate cross-origin service. Caelus cannot directly operate the con
 
 ### Moon Phase and Weather Archive
 
-The lunar header shows four phases before and four phases after the live Moon. The center disk is calculated for the saved observer location: illumination, lunar age, altitude, bright-limb direction, and lunar-surface rotation reflect the local sky instead of a fixed phase icon.
+The **Lunar Calendar** header shows four phases before and four phases after the live Moon. The center disk is calculated for the saved observer location: illumination, lunar age, altitude, bright-limb direction, and lunar-surface rotation reflect the local sky instead of a fixed phase icon. Choose **Local** for that observer-local view or **Ref** for a conventional upright phase diagram. The Sun and Moon rows share a sunrise-to-next-sunrise scale, placing sunset, moonrise, and moonset in chronological context.
 
 ![Observer-local Moon and archive controls](screenshots/dashboard-lunar-archive.png)
 

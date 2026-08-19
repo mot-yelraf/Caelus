@@ -100,22 +100,43 @@
         {% set phase_illuminations = (0, 15, 50, 85, 100, 85, 50, 15) %}
         {% set previous_phases = moon.get('previous_phases', moon.cycle[:4]) %}
         {% set upcoming_phases = moon.get('upcoming_phases', moon.cycle[4:]) %}
+        <div class="lunar-heading">
+          <h2>Lunar Calendar</h2>
+          <div class="lunar-view-toggle" role="group" aria-label="Lunar Calendar view mode" title="Local sky view or reference Moon diagram">
+            <button type="button" class="is-active" data-lunar-view="local" aria-pressed="true">Local</button>
+            <button type="button" data-lunar-view="reference" aria-pressed="false">Ref</button>
+          </div>
+        </div>
+        <p class="lunar-view-status" id="lunarViewStatus">Observer-local phase timeline</p>
         <div class="lunar-arc" aria-hidden="true"></div>
         <div class="lunar-side lunar-side-left" data-lunar-period="previous" aria-label="Previous four moon phases">
           <p class="lunar-side-title">Previous phases</p>
-          {% for phase in previous_phases %}<div class="lunar-step"><canvas class="lunar-step-disk" width="96" height="96" data-phase-moon data-phase-index="{{ phase.index }}" data-illumination="{{ phase.get('illumination', phase_illuminations[phase.index]) }}" data-bright-limb-angle="{{ phase.get('bright_limb_angle', 0) }}" data-disk-rotation="{{ phase.get('disk_rotation', 0) }}" data-representative-date="{{ phase.get('representative_date', '') }}" role="img" aria-label="Observer-local view of the {{ phase.name }}"></canvas><small data-phase-name>{{ phase.name }}</small><time data-phase-date datetime="{{ phase.get('representative_date', '') }}">{{ phase.get('date_label', '') }}</time></div>{% endfor %}
+          {% for phase in previous_phases %}<div class="lunar-step"><canvas class="lunar-step-disk" width="96" height="96" data-phase-moon data-phase-index="{{ phase.index }}" data-illumination="{{ phase.get('illumination', phase_illuminations[phase.index]) }}" data-local-bright-limb-angle="{{ phase.get('bright_limb_angle', 0) }}" data-local-disk-rotation="{{ phase.get('disk_rotation', 0) }}" data-representative-date="{{ phase.get('representative_date', '') }}" role="img" aria-label="Observer-local view of the {{ phase.name }}"></canvas><small data-phase-name>{{ phase.name }}</small><time data-phase-date datetime="{{ phase.get('representative_date', '') }}">{{ phase.get('date_label', '') }}</time></div>{% endfor %}
         </div>
         <div class="lunar-current">
           <p class="eyebrow">Moon now · live</p>
-          <canvas class="lunar-current-disk" id="currentMoonDisk" width="192" height="192" data-illumination="{{ moon.illumination }}" data-bright-limb-angle="{{ moon.get('bright_limb_angle', 0) }}" data-disk-rotation="{{ moon.get('disk_rotation', 0) }}" role="img" aria-label="Observer-local view of the {{ moon.name }}, {{ moon.illumination }} percent illuminated"></canvas>
+          <canvas class="lunar-current-disk" id="currentMoonDisk" width="192" height="192" data-phase-index="{{ moon.get('phase_index', 0) }}" data-illumination="{{ moon.illumination }}" data-bright-limb-angle="{{ moon.get('bright_limb_angle', 0) }}" data-disk-rotation="{{ moon.get('disk_rotation', 0) }}" data-local-bright-limb-angle="{{ moon.get('bright_limb_angle', 0) }}" data-local-disk-rotation="{{ moon.get('disk_rotation', 0) }}" role="img" aria-label="Observer-local view of the {{ moon.name }}, {{ moon.illumination }} percent illuminated"></canvas>
           <h2 id="currentMoonName">{{ moon.name }}</h2>
           <p><strong id="currentMoonIllumination">{{ moon.illumination }}%</strong> illuminated · lunar day <span id="currentMoonAge">{{ moon.age_days }}</span><br /><span class="observer-view-label" id="moonLocalView">Observer-local orientation{% if moon_altitude is not none %} · {{ moon_altitude }}° altitude{% if moon_altitude < 0 %} (below horizon){% endif %}{% endif %}</span></p>
         </div>
         <div class="lunar-side lunar-side-right" data-lunar-period="upcoming" aria-label="Upcoming four moon phases">
           <p class="lunar-side-title">Upcoming phases</p>
-          {% for phase in upcoming_phases %}<div class="lunar-step"><canvas class="lunar-step-disk" width="96" height="96" data-phase-moon data-phase-index="{{ phase.index }}" data-illumination="{{ phase.get('illumination', phase_illuminations[phase.index]) }}" data-bright-limb-angle="{{ phase.get('bright_limb_angle', 0) }}" data-disk-rotation="{{ phase.get('disk_rotation', 0) }}" data-representative-date="{{ phase.get('representative_date', '') }}" role="img" aria-label="Observer-local view of the {{ phase.name }}"></canvas><small data-phase-name>{{ phase.name }}</small><time data-phase-date datetime="{{ phase.get('representative_date', '') }}">{{ phase.get('date_label', '') }}</time></div>{% endfor %}
+          {% for phase in upcoming_phases %}<div class="lunar-step"><canvas class="lunar-step-disk" width="96" height="96" data-phase-moon data-phase-index="{{ phase.index }}" data-illumination="{{ phase.get('illumination', phase_illuminations[phase.index]) }}" data-local-bright-limb-angle="{{ phase.get('bright_limb_angle', 0) }}" data-local-disk-rotation="{{ phase.get('disk_rotation', 0) }}" data-representative-date="{{ phase.get('representative_date', '') }}" role="img" aria-label="Observer-local view of the {{ phase.name }}"></canvas><small data-phase-name>{{ phase.name }}</small><time data-phase-date datetime="{{ phase.get('representative_date', '') }}">{{ phase.get('date_label', '') }}</time></div>{% endfor %}
         </div>
-        <div class="solar-times"><span>☀ Sunrise <strong id="sunriseTime">{{ moon.sunrise }}</strong></span><span>Sunset <strong id="sunsetTime">{{ moon.sunset }}</strong> ◐</span><small id="lunarUpdated">Updated {{ moon.updated_at[11:16] }} UTC</small></div>
+        <div class="lunar-timeline-footer">
+          <div class="lunar-event-timeline" id="lunarEventTimeline" role="img" aria-label="Sun and Moon events from sunrise to the next sunrise" data-start-at="{{ moon.get('timeline_start_at', '') }}" data-sunset-at="{{ moon.get('timeline_sunset_at', '') }}" data-end-at="{{ moon.get('timeline_end_at', '') }}" data-moonrise-at="{{ moon.get('timeline_moonrise_at', '') }}" data-moonset-at="{{ moon.get('timeline_moonset_at', '') }}">
+            <div class="lunar-event-row lunar-event-row-sun"><span class="lunar-event-row-title">Sun</span><div class="lunar-event-track">
+              <span class="lunar-event-marker is-start" id="lunarSunriseMarker" style="--timeline-left:0%"><span>Sunrise</span><strong id="sunriseTime">{{ moon.get('sunrise', '—') }}</strong></span>
+              <span class="lunar-event-marker" id="lunarSunsetMarker"><span>Sunset</span><strong id="sunsetTime">{{ moon.get('sunset', '—') }}</strong></span>
+              <span class="lunar-event-marker is-end" id="lunarNextSunriseMarker" style="--timeline-left:100%"><span>Next sunrise</span><strong id="nextSunriseTime">{{ moon.get('next_sunrise', '—') }}</strong></span>
+            </div></div>
+            <div class="lunar-event-row lunar-event-row-moon"><span class="lunar-event-row-title">Moon</span><div class="lunar-event-track">
+              <span class="lunar-event-marker" id="lunarMoonriseMarker"><span>Moonrise</span><strong id="moonriseTime">{{ moon.get('timeline_moonrise', '—') }}</strong></span>
+              <span class="lunar-event-marker" id="lunarMoonsetMarker"><span>Moonset</span><strong id="moonsetTime">{{ moon.get('timeline_moonset', '—') }}</strong></span>
+            </div></div>
+          </div>
+          <small id="lunarUpdated">Updated {{ moon.updated_at[11:16] }} UTC</small>
+        </div>
       </section>
 
       <section class="glass-card data-card"><div><p class="eyebrow">Weather archive</p><h2>Take your observations with you.</h2><p>Exports follow your {{ settings.retention_days }}-day retention window.</p></div><div class="data-actions"><a href="/export?format=csv">Download CSV</a><a href="/export?format=json">Download JSON</a></div></section>
