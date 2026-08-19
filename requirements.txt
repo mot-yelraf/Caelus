@@ -5,7 +5,7 @@ pydantic==2.11.5
 requests==2.34.2
 python-multipart==0.0.32
 astral==3.2
-skyfield==1.54
+skyfield==1.55
 skyfield-data==5.0.0
 pywebview==5.4
 Pillow==12.3.0
