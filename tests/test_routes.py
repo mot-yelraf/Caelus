@@ -262,6 +262,13 @@ def test_dashboard_includes_scene_themes_settings_modal_and_lunar_cycle() -> Non
     assert response.text.count("data-phase-date") == 8
     assert "🌒" not in response.text
     assert "Observer-local orientation" in response.text
+    assert "Lunar Calendar" in response.text
+    assert 'aria-label="Lunar Calendar view mode"' in response.text
+    assert "Observer-local phase timeline" in response.text
+    assert 'id="lunarEventTimeline"' in response.text
+    assert 'id="lunarNextSunriseMarker"' in response.text
+    assert 'id="lunarMoonriseMarker"' in response.text
+    assert 'id="lunarMoonsetMarker"' in response.text
     assert 'id="northPoleDaylight"' in response.text
     assert 'id="southPoleDaylight"' in response.text
     assert 'id="nextSeasonHeading"' in response.text

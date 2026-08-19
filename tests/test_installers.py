@@ -59,8 +59,9 @@ def test_unix_installer_preserves_runtime_state_and_uses_private_venv() -> None:
 
     assert 'DEFAULT_INSTALL_DIR="${HOME}/Caelus"' in script
     assert 'INSTALL_STATE_FILE="${INSTALL_STATE_DIR}/install-location"' in script
-    assert 'choose_install_parent()' in script
-    assert 'choose folder with prompt "Choose where Caelus should be installed.' in script
+    assert 'choose_install_location()' in script
+    assert 'resolve_selected_install_dir()' in script
+    assert 'choose folder with prompt "Choose the Caelus folder or a parent folder.' in script
     assert 'zenity --file-selection --directory' in script
     assert 'from tkinter import filedialog' in script
     assert '[ "${CAELUS_INSTALL_DIR+x}" = "x" ]' in script
@@ -172,7 +173,10 @@ exit 0
     assert state_file.read_text(encoding="utf-8").strip() == str(remembered_runtime)
 
 
-def test_macos_installer_uses_native_folder_selection(tmp_path) -> None:
+@pytest.mark.parametrize("select_existing_caelus", [False, True])
+def test_macos_installer_uses_native_folder_selection(
+    tmp_path, select_existing_caelus: bool
+) -> None:
     fake_python = tmp_path / "fake-python"
     fake_python.write_text(
         """#!/usr/bin/env bash
@@ -197,14 +201,14 @@ exit 0
         executable = fake_bin / name
         executable.write_text(content, encoding="utf-8")
         executable.chmod(0o755)
-    selected_parent = tmp_path / "Applications"
-    selected_parent.mkdir()
+    selected_location = tmp_path / ("Caelus" if select_existing_caelus else "Applications")
+    selected_location.mkdir()
     state_file = tmp_path / "config" / "caelus" / "install-location"
     environment = {
         **os.environ,
         "CAELUS_PYTHON": str(fake_python),
         "XDG_CONFIG_HOME": str(tmp_path / "config"),
-        "TEST_SELECTED_PARENT": str(selected_parent),
+        "TEST_SELECTED_PARENT": str(selected_location),
         "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}",
     }
     environment.pop("CAELUS_INSTALL_DIR", None)
@@ -217,9 +221,10 @@ exit 0
         text=True,
     )
 
-    runtime = selected_parent / "Caelus"
+    runtime = selected_location if select_existing_caelus else selected_location / "Caelus"
     assert (runtime / "Caelus.py").is_file()
     assert state_file.read_text(encoding="utf-8").strip() == str(runtime)
+    assert not (runtime / "caelus" / "Caelus.py").exists()
 
 
 def test_windows_installer_uses_user_runtime_and_private_venv() -> None:
@@ -230,7 +235,10 @@ def test_windows_installer_uses_user_runtime_and_private_venv() -> None:
     assert 'System.Windows.Forms.FolderBrowserDialog' in installer
     assert '$InstallStateFile = Join-Path $InstallStateDir "install-location.txt"' in installer
     assert '$PSBoundParameters.ContainsKey("InstallDir")' in installer
-    assert '$InstallDir = Join-Path $LocationDialog.SelectedPath "Caelus"' in installer
+    assert '[System.IO.Path]::GetFileName(' in installer
+    assert '-ieq "Caelus"' in installer
+    assert '$InstallDir = $SelectedLocation' in installer
+    assert '$InstallDir = Join-Path $SelectedLocation "Caelus"' in installer
     assert '-m venv (Join-Path $InstallDir ".venv")' in installer
     assert 'pip install --disable-pip-version-check' in installer
     assert 'Copy-Item (Join-Path $SourceDir "data' not in installer

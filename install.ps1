@@ -30,18 +30,26 @@ if (-not $ExplicitInstallDir -and -not [string]::IsNullOrWhiteSpace($env:CAELUS_
 if (-not $ExplicitInstallDir) {
     Add-Type -AssemblyName System.Windows.Forms
     [System.Windows.Forms.Application]::EnableVisualStyles()
-    $InitialParent = Split-Path -Parent $RememberedInstallDir
-    if ([string]::IsNullOrWhiteSpace($InitialParent) -or -not (Test-Path -LiteralPath $InitialParent -PathType Container)) {
-        $InitialParent = $env:USERPROFILE
+    $InitialLocation = $RememberedInstallDir
+    if (-not (Test-Path -LiteralPath $InitialLocation -PathType Container)) {
+        $InitialLocation = Split-Path -Parent $RememberedInstallDir
+    }
+    if ([string]::IsNullOrWhiteSpace($InitialLocation) -or -not (Test-Path -LiteralPath $InitialLocation -PathType Container)) {
+        $InitialLocation = $env:USERPROFILE
     }
     $LocationDialog = New-Object System.Windows.Forms.FolderBrowserDialog
-    $LocationDialog.Description = "Choose where Caelus should be installed. A Caelus folder will be created here."
-    $LocationDialog.SelectedPath = $InitialParent
+    $LocationDialog.Description = "Choose the Caelus folder or a parent folder. If needed, a Caelus folder will be created."
+    $LocationDialog.SelectedPath = $InitialLocation
     $LocationDialog.ShowNewFolderButton = $true
     if ($LocationDialog.ShowDialog() -ne [System.Windows.Forms.DialogResult]::OK) {
         throw "Installation was cancelled."
     }
-    $InstallDir = Join-Path $LocationDialog.SelectedPath "Caelus"
+    $SelectedLocation = [System.IO.Path]::GetFullPath($LocationDialog.SelectedPath)
+    if ([System.IO.Path]::GetFileName($SelectedLocation.TrimEnd([System.IO.Path]::DirectorySeparatorChar)) -ieq "Caelus") {
+        $InstallDir = $SelectedLocation
+    } else {
+        $InstallDir = Join-Path $SelectedLocation "Caelus"
+    }
     $LocationDialog.Dispose()
 }
 
