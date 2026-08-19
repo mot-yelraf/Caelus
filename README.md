@@ -36,8 +36,8 @@ For illustrated setup and operating instructions, see the
   temperatures and wind, humidity ranges, and precipitation outlook
 - Forecast-derived irrigation, frost, and outdoor-work decisions
 - Time-based CSV / JSON export and retention settings
-- Four device-persistent scene themes: Mountain Garden, Sunny Beach, Forest
-  River, and Desert Bloom
+- Four built-in scene themes plus device-persistent custom themes created from
+  local images and accessible color palettes
 - Modal Settings with keyboard navigation and live theme previews
 - Poller-aware health reporting at `/healthz`
 
