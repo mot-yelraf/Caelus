@@ -8,4 +8,4 @@ astral==3.2
 skyfield==1.54
 skyfield-data==5.0.0
 pywebview==5.4
-Pillow==11.2.1
+Pillow==12.3.0
