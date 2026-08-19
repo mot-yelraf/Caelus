@@ -4,7 +4,7 @@
   if (!dialog || !form) return;
 
   const body = document.body;
-  const themeInputs = Array.from(form.querySelectorAll('input[name="theme"]'));
+  const themeInputs = () => Array.from(form.querySelectorAll('input[name="theme"]'));
   const tabs = Array.from(dialog.querySelectorAll("[data-settings-pane]"));
   const panes = Array.from(dialog.querySelectorAll("[data-pane]"));
   const settingsStatus = form.querySelector("[data-settings-status]");
@@ -14,7 +14,8 @@
   const metricDisplayStyles = Object.fromEntries(
     metricStyleSelects.map((select) => [select.dataset.metricStyleKey, select.value])
   );
-  let originalTheme = themeInputs.find((input) => input.checked)?.value || "garden";
+  const customThemeProperties = ["--scene-image", "--scene-position", "--scene-fallback", "--scene-shade", "--scene-vignette", "--accent", "--accent-2", "--line"];
+  let originalTheme = themeInputs().find((input) => input.checked)?.value || "garden";
 
   function syncMetricStyleInput() {
     if (metricStyleInput) metricStyleInput.value = JSON.stringify(metricDisplayStyles);
@@ -44,11 +45,27 @@
   syncMetricStyleInput();
   updateAllMetricStyles();
 
-  function applyTheme(theme) {
+  function applyTheme(theme, styleText = "") {
     Array.from(body.classList)
       .filter((name) => name.startsWith("theme-"))
       .forEach((name) => body.classList.remove(name));
-    body.classList.add(`theme-${theme}`);
+    customThemeProperties.forEach((property) => body.style.removeProperty(property));
+    if (theme.startsWith("custom:")) {
+      body.classList.add("theme-custom");
+      const scratch = document.createElement("span");
+      scratch.style.cssText = styleText;
+      customThemeProperties.forEach((property) => {
+        const value = scratch.style.getPropertyValue(property);
+        if (value) body.style.setProperty(property, value);
+      });
+    } else {
+      body.classList.add(`theme-${theme}`);
+    }
+    body.dataset.themeSelection = theme;
+  }
+
+  function applyThemeInput(input) {
+    if (input) applyTheme(input.value, input.dataset.themeStyle || "");
   }
 
   function activatePane(name, focusTab) {
@@ -66,14 +83,14 @@
   }
 
   function openSettings() {
-    originalTheme = themeInputs.find((input) => input.checked)?.value || "garden";
+    originalTheme = themeInputs().find((input) => input.checked)?.value || "garden";
     dialog.showModal();
     body.classList.add("modal-open");
     activatePane("station", false);
   }
 
   function closeSettings(restoreTheme) {
-    if (restoreTheme) applyTheme(originalTheme);
+    if (restoreTheme) applyThemeInput(themeInputs().find((input) => input.value === originalTheme));
     dialog.close();
     body.classList.remove("modal-open");
   }
@@ -104,8 +121,8 @@
       activatePane(tabs[next].dataset.settingsPane, true);
     });
   });
-  themeInputs.forEach((input) => {
-    input.addEventListener("change", () => applyTheme(input.value));
+  form.addEventListener("change", (event) => {
+    if (event.target.matches('input[name="theme"]')) applyThemeInput(event.target);
   });
   dialog.addEventListener("cancel", (event) => {
     event.preventDefault();
@@ -116,6 +133,277 @@
     const rect = dialog.getBoundingClientRect();
     const inside = event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom;
     if (!inside) closeSettings(true);
+  });
+
+  const customThemeDialog = document.getElementById("customThemeDialog");
+  const customThemeName = customThemeDialog?.querySelector("[data-custom-theme-name]");
+  const customThemeImages = customThemeDialog?.querySelector("[data-custom-theme-images]");
+  const customThemeStatus = customThemeDialog?.querySelector("[data-custom-theme-status]");
+  const customThemeCreate = customThemeDialog?.querySelector("[data-create-custom-theme]");
+  const customThemeList = form.querySelector("[data-custom-theme-list]");
+  let customThemeReturnFocus = null;
+  let themePalettes = [];
+  try {
+    themePalettes = JSON.parse(document.getElementById("themePalettesData")?.textContent || "[]");
+  } catch (_error) {
+    themePalettes = [];
+  }
+
+  function customThemeCsrfToken() {
+    return form.querySelector('input[name="csrf_token"]')?.value || "";
+  }
+
+  function customThemeField(labelText, control) {
+    const label = document.createElement("label");
+    label.className = "field";
+    const text = document.createElement("span");
+    text.textContent = labelText;
+    label.append(text, control);
+    return label;
+  }
+
+  function revokeCustomThemePreviews() {
+    customThemeImages?.querySelectorAll("[data-object-url]").forEach((preview) => {
+      URL.revokeObjectURL(preview.dataset.objectUrl);
+      delete preview.dataset.objectUrl;
+    });
+  }
+
+  function updateCustomThemeRowActions() {
+    const rows = Array.from(customThemeImages?.querySelectorAll(".custom-theme-image-row") || []);
+    rows.forEach((row) => {
+      const remove = row.querySelector("[data-remove-custom-image]");
+      if (remove) remove.disabled = rows.length === 1;
+    });
+    const add = customThemeDialog?.querySelector("[data-add-custom-image]");
+    if (add) add.disabled = rows.length >= 5;
+  }
+
+  function addCustomThemeImageRow() {
+    if (!customThemeImages || customThemeImages.children.length >= 5) return;
+    const row = document.createElement("section");
+    row.className = "custom-theme-image-row";
+    const file = document.createElement("input");
+    file.type = "file";
+    file.accept = "image/webp,image/jpeg,image/png";
+    file.className = "custom-theme-file";
+    const preview = document.createElement("div");
+    preview.className = "custom-theme-upload-preview";
+    preview.setAttribute("role", "img");
+    preview.setAttribute("aria-label", "Selected theme image preview");
+    const palette = document.createElement("select");
+    palette.className = "custom-theme-palette";
+    themePalettes.forEach((item) => {
+      const option = document.createElement("option");
+      option.value = String(item.id || "");
+      option.textContent = String(item.name || item.id || "Palette");
+      palette.appendChild(option);
+    });
+    const swatches = document.createElement("span");
+    swatches.className = "custom-theme-palette-preview";
+    swatches.setAttribute("aria-hidden", "true");
+    swatches.append(document.createElement("i"), document.createElement("i"), document.createElement("i"));
+    const updatePalette = () => {
+      const selected = themePalettes.find((item) => String(item.id) === palette.value) || themePalettes[0] || {};
+      [selected.panel, selected.soft, selected.border].forEach((color, index) => {
+        if (swatches.children[index]) swatches.children[index].style.background = String(color || "#d8e5dc");
+      });
+    };
+    palette.addEventListener("change", updatePalette);
+    updatePalette();
+    const paletteField = customThemeField("Palette", palette);
+    paletteField.appendChild(swatches);
+    const imageName = document.createElement("input");
+    imageName.type = "text";
+    imageName.maxLength = 60;
+    imageName.placeholder = "Image name";
+    imageName.className = "custom-theme-image-name";
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "button-secondary";
+    remove.dataset.removeCustomImage = "";
+    remove.textContent = "Remove Image";
+    remove.addEventListener("click", () => {
+      if (preview.dataset.objectUrl) URL.revokeObjectURL(preview.dataset.objectUrl);
+      row.remove();
+      updateCustomThemeRowActions();
+    });
+    file.addEventListener("change", () => {
+      if (preview.dataset.objectUrl) URL.revokeObjectURL(preview.dataset.objectUrl);
+      const selected = file.files?.[0];
+      if (!selected) {
+        preview.style.backgroundImage = "";
+        delete preview.dataset.objectUrl;
+        return;
+      }
+      const objectUrl = URL.createObjectURL(selected);
+      preview.dataset.objectUrl = objectUrl;
+      preview.style.backgroundImage = `url('${objectUrl}')`;
+      if (!imageName.value.trim()) imageName.value = selected.name.replace(/\.[^.]+$/, "");
+    });
+    const grid = document.createElement("div");
+    grid.className = "custom-theme-image-grid";
+    grid.append(customThemeField("Image selector", file), customThemeField("Image", preview), paletteField);
+    const actions = document.createElement("div");
+    actions.className = "custom-theme-image-actions";
+    actions.append(customThemeField("Image name", imageName), remove);
+    row.append(grid, actions);
+    customThemeImages.appendChild(row);
+    updateCustomThemeRowActions();
+  }
+
+  function closeCustomThemeDialog() {
+    if (!customThemeDialog?.open) return;
+    revokeCustomThemePreviews();
+    customThemeDialog.close();
+    customThemeReturnFocus?.focus({preventScroll: true});
+    customThemeReturnFocus = null;
+  }
+
+  function openCustomThemeDialog(button) {
+    if (!customThemeDialog || !customThemeImages) return;
+    customThemeReturnFocus = button;
+    revokeCustomThemePreviews();
+    customThemeImages.replaceChildren();
+    if (customThemeName) customThemeName.value = "";
+    if (customThemeStatus) customThemeStatus.textContent = "";
+    addCustomThemeImageRow();
+    customThemeDialog.showModal();
+    customThemeName?.focus();
+  }
+
+  function appendCustomThemeCollection(theme) {
+    if (!customThemeList) return;
+    const collection = document.createElement("section");
+    collection.className = "custom-theme-collection";
+    collection.dataset.customThemeId = String(theme.id || "");
+    const header = document.createElement("header");
+    const title = document.createElement("strong");
+    title.textContent = String(theme.name || "Custom Theme");
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "custom-theme-delete";
+    remove.dataset.deleteCustomTheme = String(theme.id || "");
+    remove.textContent = "Delete";
+    header.append(title, remove);
+    const picker = document.createElement("div");
+    picker.className = "theme-picker";
+    (theme.images || []).forEach((image) => {
+      const label = document.createElement("label");
+      label.className = "theme-option custom-theme-option";
+      const radio = document.createElement("input");
+      radio.type = "radio";
+      radio.name = "theme";
+      radio.value = String(image.selection || "");
+      radio.dataset.themeStyle = String(image.style || "");
+      const preview = document.createElement("span");
+      preview.className = "theme-preview";
+      preview.style.backgroundImage = `url('${String(image.thumbnail_url || "")}')`;
+      const badge = document.createElement("b");
+      badge.textContent = "Custom";
+      preview.appendChild(badge);
+      const copy = document.createElement("span");
+      const imageTitle = document.createElement("strong");
+      imageTitle.textContent = String(image.name || "Custom Theme");
+      const paletteName = document.createElement("small");
+      paletteName.textContent = String(image.palette_name || "Custom palette");
+      copy.append(imageTitle, paletteName);
+      label.append(radio, preview, copy);
+      picker.appendChild(label);
+    });
+    collection.append(header, picker);
+    customThemeList.appendChild(collection);
+  }
+
+  async function createCustomTheme() {
+    const rows = Array.from(customThemeImages?.querySelectorAll(".custom-theme-image-row") || []);
+    const name = String(customThemeName?.value || "").trim();
+    if (!name) {
+      if (customThemeStatus) customThemeStatus.textContent = "Enter a theme name.";
+      return;
+    }
+    const payload = new FormData();
+    payload.append("csrf_token", customThemeCsrfToken());
+    payload.append("name", name);
+    for (const row of rows) {
+      const file = row.querySelector(".custom-theme-file")?.files?.[0];
+      const imageName = String(row.querySelector(".custom-theme-image-name")?.value || "").trim();
+      const palette = String(row.querySelector(".custom-theme-palette")?.value || "");
+      if (!file || !imageName) {
+        if (customThemeStatus) customThemeStatus.textContent = "Choose and name every image.";
+        return;
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        if (customThemeStatus) customThemeStatus.textContent = "Each image must be 5 MB or smaller.";
+        return;
+      }
+      payload.append("images", file);
+      payload.append("image_names", imageName);
+      payload.append("palettes", palette);
+    }
+    const originalLabel = customThemeCreate.textContent;
+    customThemeCreate.disabled = true;
+    customThemeCreate.textContent = "Creating…";
+    if (customThemeStatus) customThemeStatus.textContent = "Processing images…";
+    try {
+      const response = await fetch("/api/themes", {method: "POST", body: payload});
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result.ok) throw new Error(result.detail || "Could not create theme.");
+      const created = result.theme;
+      created.images = (created.images || []).map((image) => ({...image, style: result.styles?.[image.selection] || ""}));
+      appendCustomThemeCollection(created);
+      closeCustomThemeDialog();
+      if (settingsStatus) settingsStatus.textContent = "Custom theme created. Choose an image, then save Appearance.";
+    } catch (error) {
+      if (customThemeStatus) customThemeStatus.textContent = error.message || "Could not create theme.";
+    } finally {
+      customThemeCreate.disabled = false;
+      customThemeCreate.textContent = originalLabel;
+    }
+  }
+
+  async function deleteCustomTheme(button) {
+    const themeId = button.dataset.deleteCustomTheme || "";
+    if (!themeId || !window.confirm("Delete this custom theme and its images?")) return;
+    const payload = new FormData();
+    payload.append("csrf_token", customThemeCsrfToken());
+    button.disabled = true;
+    try {
+      const response = await fetch(`/api/themes/${encodeURIComponent(themeId)}`, {method: "DELETE", body: payload});
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result.ok) throw new Error(result.detail || "Could not delete theme.");
+      const collection = button.closest(".custom-theme-collection");
+      if (collection?.querySelector('input[name="theme"]:checked')) {
+        const garden = form.querySelector('input[name="theme"][value="garden"]');
+        if (garden) {
+          garden.checked = true;
+          applyThemeInput(garden);
+        }
+      }
+      collection?.remove();
+      if (settingsStatus) settingsStatus.textContent = "Custom theme deleted.";
+    } catch (error) {
+      button.disabled = false;
+      if (settingsStatus) {
+        settingsStatus.textContent = error.message || "Could not delete theme.";
+        settingsStatus.classList.add("is-error");
+      }
+    }
+  }
+
+  form.querySelector("[data-open-custom-theme]")?.addEventListener("click", (event) => openCustomThemeDialog(event.currentTarget));
+  customThemeDialog?.querySelectorAll("[data-close-custom-theme]").forEach((button) => button.addEventListener("click", closeCustomThemeDialog));
+  customThemeDialog?.addEventListener("cancel", (event) => { event.preventDefault(); closeCustomThemeDialog(); });
+  customThemeDialog?.addEventListener("click", (event) => {
+    if (event.target === customThemeDialog) closeCustomThemeDialog();
+  });
+  customThemeCreate?.addEventListener("click", createCustomTheme);
+  customThemeDialog?.addEventListener("click", (event) => {
+    if (event.target.closest("[data-add-custom-image]")) addCustomThemeImageRow();
+  });
+  customThemeList?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-delete-custom-theme]");
+    if (button) deleteCustomTheme(button);
   });
   form.addEventListener("invalid", (event) => {
     const pane = event.target.closest("[data-pane]");
@@ -164,7 +452,7 @@
         throw new Error(payload.detail || `Settings could not be saved (${response.status})`);
       }
       if (paneName === "appearance") {
-        originalTheme = themeInputs.find((input) => input.checked)?.value || originalTheme;
+        originalTheme = themeInputs().find((input) => input.checked)?.value || originalTheme;
       }
       if (settingsStatus) settingsStatus.textContent = `${originalLabel.replace("Save ", "")} saved.`;
       if (paneName === "station") {

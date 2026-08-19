@@ -1,14 +1,17 @@
+import io
 from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.templating import Jinja2Templates
 from fastapi.testclient import TestClient
+from PIL import Image
 
 import caelus.routes as routes_module
 from caelus import __version__
 from caelus.astronomy import FULL_MOON_NAMES, moon_phase_context
 from caelus.routes import format_observation_time, register_routes
 from caelus.settings import AppSettings
+from caelus.theme_manager import ThemeManager
 
 
 class FakeDataLogger:
@@ -237,6 +240,9 @@ def test_dashboard_includes_scene_themes_settings_modal_and_lunar_cycle() -> Non
     assert '<span class="brand-mark">C</span>' not in response.text
     for theme in ("garden", "island", "river", "desert"):
         assert f'name="theme" value="{theme}"' in response.text
+    assert 'id="customThemeDialog"' in response.text
+    assert "data-open-custom-theme" in response.text
+    assert "Add one to five named images" in response.text
     for phase in ("New moon", "First quarter", "Last quarter"):
         assert phase in response.text
     assert any(name in response.text for name in FULL_MOON_NAMES.values())
@@ -736,6 +742,47 @@ def test_appearance_pane_saves_without_other_settings_fields(tmp_path, monkeypat
     assert AppSettings.load().unit_system == "metric"
     assert AppSettings.load().pressure_unit == "auto"
     assert AppSettings.load().metric_display_styles["temperature"] == "gauge"
+
+
+def test_custom_theme_routes_create_list_delete_and_require_csrf(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(AppSettings, "settings_path", tmp_path / "settings.json")
+    app = make_app()
+    app.state.theme_manager = ThemeManager(tmp_path)
+    image = io.BytesIO()
+    Image.new("RGB", (640, 360), "#78a889").save(image, "PNG")
+    client = TestClient(app)
+
+    denied = client.post(
+        "/api/themes",
+        data={"name": "My Garden", "image_names": "Morning", "palettes": "pale_sage"},
+        files={"images": ("morning.png", image.getvalue(), "image/png")},
+    )
+    assert denied.status_code == 403
+
+    oversized = client.post(
+        "/api/themes",
+        data={"name": "Too Large", "image_names": "Huge", "palettes": "pale_sage", "csrf_token": "test-token"},
+        files={"images": ("huge.png", b"0" * (5 * 1024 * 1024 + 1), "image/png")},
+    )
+    assert oversized.status_code == 422
+    assert "5 MB or smaller" in oversized.json()["detail"]
+
+    created = client.post(
+        "/api/themes",
+        data={"name": "My Garden", "image_names": "Morning", "palettes": "pale_sage", "csrf_token": "test-token"},
+        files={"images": ("morning.png", image.getvalue(), "image/png")},
+    )
+    assert created.status_code == 200
+    payload = created.json()
+    selection = payload["theme"]["images"][0]["selection"]
+    assert payload["styles"][selection].startswith("--scene-image:")
+    assert client.get("/api/themes").json()["themes"][0]["name"] == "My Garden"
+
+    app.state.settings.theme = selection
+    deleted = client.request("DELETE", f"/api/themes/{payload['theme']['id']}", data={"csrf_token": "test-token"})
+    assert deleted.status_code == 200
+    assert deleted.json()["fallback"] == "garden"
+    assert app.state.settings.theme == "garden"
 
 
 def test_settings_rejects_non_http_gateway_with_csrf_token() -> None:

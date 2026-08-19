@@ -9,7 +9,7 @@
     <link rel="stylesheet" href="/static/styles.css?v={{ version }}" />
     <script src="/static/dashboard.js?v={{ version }}" defer></script>
   </head>
-  <body class="theme-{{ settings.theme }}" data-poll-interval-seconds="{{ settings.poll_interval_seconds }}">
+  <body class="{% if settings.theme.startswith('custom:') %}theme-custom{% else %}theme-{{ settings.theme }}{% endif %}" data-theme-selection="{{ settings.theme }}" data-poll-interval-seconds="{{ settings.poll_interval_seconds }}"{% if active_theme_style %} style="{{ active_theme_style }}"{% endif %}>
     {% macro reading(value, suffix='') -%}{{ value if value is not none else '—' }}{{ suffix if value is not none else '' }}{%- endmacro %}
     {% set metric_display = settings.unit_system == 'metric' %}
     <div class="world-scene" aria-hidden="true"><span class="scene-sun"></span><span class="scene-ridge scene-ridge-far"></span><span class="scene-ridge scene-ridge-near"></span></div>
@@ -158,7 +158,11 @@
                 <div class="appearance-sections">
                   <details class="appearance-section" open>
                     <summary><span><strong>Theme</strong><small>Choose the dashboard scenery.</small></span></summary>
-                    <div class="appearance-section-content"><div class="theme-picker">{% for value, label, icon, description in [('garden','Mountain Garden','🌿','Greenhouse glass, forest ridges and rain.'),('island','Sunny Beach','🏝️','Turquoise water, white sand and bright sun.'),('river','Forest River','🏞️','Cool water winding through deep woodland.'),('desert','Desert Bloom','🌵','Sunlit mesas, blue skies and desert blooms.')] %}<label class="theme-option theme-swatch-{{ value }}"><input type="radio" name="theme" value="{{ value }}" {% if settings.theme == value %}checked{% endif %}/><span class="theme-preview"><b>{{ icon }}</b></span><span><strong>{{ label }}</strong><small>{{ description }}</small></span></label>{% endfor %}</div></div>
+                    <div class="appearance-section-content">
+                      <div class="theme-picker" data-theme-picker>{% for value, label, icon, description in [('garden','Mountain Garden','🌿','Greenhouse glass, forest ridges and rain.'),('island','Sunny Beach','🏝️','Turquoise water, white sand and bright sun.'),('river','Forest River','🏞️','Cool water winding through deep woodland.'),('desert','Desert Bloom','🌵','Sunlit mesas, blue skies and desert blooms.')] %}<label class="theme-option theme-swatch-{{ value }}"><input type="radio" name="theme" value="{{ value }}" {% if settings.theme == value %}checked{% endif %}/><span class="theme-preview"><b>{{ icon }}</b></span><span><strong>{{ label }}</strong><small>{{ description }}</small></span></label>{% endfor %}</div>
+                      <div class="custom-theme-list" data-custom-theme-list>{% for theme in custom_themes %}<section class="custom-theme-collection" data-custom-theme-id="{{ theme.id }}"><header><strong>{{ theme.name }}</strong><button type="button" class="custom-theme-delete" data-delete-custom-theme="{{ theme.id }}">Delete</button></header><div class="theme-picker">{% for image in theme.images %}<label class="theme-option custom-theme-option"><input type="radio" name="theme" value="{{ image.selection }}" data-theme-style="{{ custom_theme_styles[image.selection] }}" {% if settings.theme == image.selection %}checked{% endif %}/><span class="theme-preview" style="background-image:url('{{ image.thumbnail_url }}')"><b>Custom</b></span><span><strong>{{ image.name }}</strong><small>{{ image.palette_name }}</small></span></label>{% endfor %}</div></section>{% endfor %}</div>
+                      <div class="custom-theme-toolbar"><button type="button" class="button-secondary" data-open-custom-theme>Custom Theme</button></div>
+                    </div>
                   </details>
                   <details class="appearance-section">
                     <summary><span><strong>Units</strong><small>Set one consistent measurement system.</small></span></summary>
@@ -182,5 +186,13 @@
         <footer class="modal-footer"><p data-settings-status><span class="status-dot is-live"></span> Save changes within each section</p><div><button class="button-secondary" type="button" data-close-settings>Close</button></div></footer>
       </form>
     </dialog>
+    <dialog class="custom-theme-dialog" id="customThemeDialog" aria-labelledby="customThemeTitle">
+      <div class="custom-theme-dialog-shell">
+        <header class="modal-header"><div><p class="eyebrow">Caelus appearance</p><h2 id="customThemeTitle">Create Custom Theme</h2></div><button class="icon-button" type="button" data-close-custom-theme aria-label="Close custom theme dialog">×</button></header>
+        <div class="custom-theme-dialog-body"><label class="field"><span>Theme name</span><input type="text" maxlength="60" placeholder="My Garden" data-custom-theme-name /></label><p class="custom-theme-help">Add one to five named images. WebP, JPEG, or PNG; 16:9 recommended at 1920 × 1080; minimum 320 × 180; maximum 5 MB each. Images are center-cropped and converted to WebP.</p><div class="custom-theme-image-list" data-custom-theme-images></div><p class="custom-theme-status" data-custom-theme-status aria-live="polite"></p></div>
+        <footer class="custom-theme-dialog-actions"><button type="button" class="button-secondary" data-close-custom-theme>Cancel</button><button type="button" class="button-secondary" data-add-custom-image>Add Image</button><button type="button" class="button-primary" data-create-custom-theme>Create Theme</button></footer>
+      </div>
+    </dialog>
+    <script type="application/json" id="themePalettesData">{{ theme_palettes | tojson }}</script>
   </body>
 </html>

@@ -18,6 +18,10 @@ ALLOWED_METRIC_DISPLAY_STYLES = {"graph24hr", "graph6hr", "gauge"}
 
 def normalize_theme(value: str) -> str:
     """Return a supported scene theme, migrating legacy palette names."""
+    from caelus.theme_manager import is_custom_theme_selection
+
+    if is_custom_theme_selection(value):
+        return value
     if value not in ALLOWED_THEMES:
         raise ValueError("unsupported theme")
     return LEGACY_THEME_MAP.get(value, value)
@@ -94,7 +98,7 @@ class AppSettings:
     windy_iframe_url: str = "https://embed.windy.com/embed2.html"
 
     @classmethod
-    def load(cls) -> "AppSettings":
+    def load(cls, theme_manager: Any | None = None) -> "AppSettings":
         cls.settings_path.parent.mkdir(parents=True, exist_ok=True)
         if not cls.settings_path.exists():
             return cls()
@@ -121,6 +125,8 @@ class AppSettings:
         # Older releases allowed pressure to override the unit preset. The
         # control no longer exists, so migrate all loaded values to automatic.
         settings.pressure_unit = "auto"
+        if theme_manager is not None and str(settings.theme).startswith("custom:"):
+            settings.theme = theme_manager.normalize_selection(settings.theme)
         return settings
 
     @staticmethod

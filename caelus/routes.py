@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Dict
 from zoneinfo import ZoneInfo
 
-from fastapi import FastAPI, Form, HTTPException, Request
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
 from caelus import __version__
@@ -26,6 +26,13 @@ from caelus.settings import (
     validate_windy_iframe_url,
 )
 from caelus.units import convert_reading, display_unit_for
+from caelus.theme_manager import (
+    MAX_THEME_IMAGES,
+    MAX_UPLOAD_BYTES,
+    ThemeManager,
+    ThemeValidationError,
+    is_custom_theme_selection,
+)
 
 GRAPH_RANGE_HOURS = {1, 6, 12, 24, 72, 168, 336, 696}
 FAVICON_SVG = (
@@ -79,6 +86,13 @@ def reading_for_display(
 
 
 def register_routes(app: FastAPI) -> None:
+    def theme_manager() -> ThemeManager:
+        manager = getattr(app.state, "theme_manager", None)
+        if not isinstance(manager, ThemeManager):
+            manager = ThemeManager(AppSettings.settings_path.parent)
+            app.state.theme_manager = manager
+        return manager
+
     @app.api_route("/favicon.ico", methods=["GET", "HEAD"], include_in_schema=False)
     async def favicon_ico(request: Request) -> Response:
         """Serve the multi-size Caelus icon for conventional favicon probes."""
@@ -124,6 +138,14 @@ def register_routes(app: FastAPI) -> None:
             else {"ok": False, "provider": settings.forecast_provider, "hours": []}
         )
         moon = await asyncio.to_thread(astronomy_context, settings)
+        manager = theme_manager()
+        custom_theme_styles = {
+            image["selection"]: manager.style_attribute(
+                manager.style_values(image["selection"])
+            )
+            for theme in manager.list_themes()
+            for image in theme["images"]
+        }
         return app.state.templates.TemplateResponse(
             request,
             "dashboard.html",
@@ -147,8 +169,75 @@ def register_routes(app: FastAPI) -> None:
                     for field in ("temperature", "pressure", "wind_speed", "wind_gust", "rain_total")
                 },
                 "metric_display_options": metric_display_options(),
+                "custom_themes": manager.list_themes(),
+                "theme_palettes": manager.palettes(),
+                "custom_theme_styles": custom_theme_styles,
+                "active_theme_style": custom_theme_styles.get(settings.theme, ""),
             },
         )
+
+    @app.get("/api/themes")
+    async def list_custom_themes() -> Response:
+        """List registered custom themes and fixed palette choices."""
+        manager = theme_manager()
+        return JSONResponse({"ok": True, "themes": manager.list_themes(), "palettes": manager.palettes()})
+
+    @app.post("/api/themes")
+    async def create_custom_theme(
+        name: str = Form(""),
+        image_names: list[str] = Form([]),
+        palettes: list[str] = Form([]),
+        images: list[UploadFile] = File([]),
+        csrf_token: str = Form(""),
+    ) -> Response:
+        """Create a custom theme from validated uploaded images."""
+        if not secrets.compare_digest(csrf_token, app.state.csrf_token):
+            raise HTTPException(status_code=403, detail="invalid CSRF token")
+        if not (len(images) == len(image_names) == len(palettes)):
+            raise HTTPException(status_code=422, detail="Every image requires a name and palette.")
+        if not 1 <= len(images) <= MAX_THEME_IMAGES:
+            raise HTTPException(status_code=422, detail="Choose between one and five images.")
+        uploads = []
+        try:
+            for image, image_name, palette in zip(images, image_names, palettes):
+                content = await image.read(MAX_UPLOAD_BYTES + 1)
+                if len(content) > MAX_UPLOAD_BYTES:
+                    raise ThemeValidationError("Each image must be 5 MB or smaller.")
+                uploads.append({"name": image_name, "palette": palette, "content": content})
+            created = await asyncio.to_thread(theme_manager().create_theme, name=name, images=uploads)
+        except ThemeValidationError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        finally:
+            for image in images:
+                await image.close()
+        styles = {
+            image["selection"]: theme_manager().style_attribute(
+                theme_manager().style_values(image["selection"])
+            )
+            for image in created["images"]
+        }
+        return JSONResponse({"ok": True, "theme": created, "styles": styles})
+
+    @app.delete("/api/themes/{theme_id}")
+    async def delete_custom_theme(theme_id: str, csrf_token: str = Form("")) -> Response:
+        """Delete a custom theme collection and fall back if it was selected."""
+        if not secrets.compare_digest(csrf_token, app.state.csrf_token):
+            raise HTTPException(status_code=403, detail="invalid CSRF token")
+        manager = theme_manager()
+        selected_theme = app.state.settings.theme
+        selected_collection = None
+        if is_custom_theme_selection(selected_theme):
+            selected_collection = selected_theme.split(":")[1]
+        try:
+            deleted = await asyncio.to_thread(manager.delete_theme, theme_id)
+        except ThemeValidationError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Custom theme was not found.")
+        if selected_collection == theme_id:
+            app.state.settings.theme = "garden"
+            await asyncio.to_thread(app.state.settings.save)
+        return JSONResponse({"ok": True, "fallback": "garden" if selected_collection == theme_id else None})
 
     @app.get("/healthz")
     async def healthz() -> Response:
@@ -228,7 +317,12 @@ def register_routes(app: FastAPI) -> None:
                     forecast_provider or candidate.forecast_provider
                 )
             if settings_pane in {"all", "appearance"}:
-                candidate.theme = normalize_theme(theme or candidate.theme)
+                requested_theme = normalize_theme(theme or candidate.theme)
+                candidate.theme = (
+                    theme_manager().normalize_selection(requested_theme)
+                    if is_custom_theme_selection(requested_theme)
+                    else requested_theme
+                )
                 candidate.unit_system = AppSettings._validate_value(
                     "unit_system", unit_system or candidate.unit_system
                 )

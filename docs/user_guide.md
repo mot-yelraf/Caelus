@@ -90,15 +90,41 @@ Forecast requests send the saved latitude and longitude to the selected provider
 
 ### Appearance
 
-![Appearance settings](screenshots/settings-appearance.png)
+![Appearance settings with the Custom Theme action](screenshots/settings-appearance-custom-themes.png)
 
 The appearance pane contains three expandable sections:
 
-- **Theme**: Mountain Garden, Sunny Beach, Forest River, or Desert Bloom. Selecting a theme previews it immediately; **Save Appearance** makes it persistent.
+- **Theme**: Mountain Garden, Sunny Beach, Forest River, Desert Bloom, or a custom image theme. Selecting any theme previews it immediately; **Save Appearance** makes it persistent.
 - **Units**: Imperial (`°F`, mph, inHg, inches) or Metric (`°C`, km/h, hPa, millimetres).
 - **Display Style**: set all metric cards to one initial style, then adjust individual exceptions.
 
 Changing units, scenery, or card style does not modify the underlying weather history.
+
+#### Create a Custom Theme
+
+Select **Custom Theme** at the bottom of the expanded Theme section to open the creator.
+
+![Create Custom Theme dialog](screenshots/custom-theme-dialog.png)
+
+1. Enter a collection name, such as **My Garden**.
+2. Choose an image, give it a display name, and select a palette. The palette controls the preview accents and is limited to Caelus's tested, readable choices.
+3. Select **Add Image** to add more image choices to the same collection. A collection can contain one to five images, and each image can use a different palette.
+4. Select **Create Theme**. Caelus validates and processes every image, then adds the collection to **Appearance > Theme**.
+5. Select one of the new image cards and choose **Save Appearance** to make it the active dashboard theme.
+
+Custom Theme image requirements:
+
+- WebP, JPEG, or PNG format.
+- Static images only; animated images are rejected.
+- At least 320 x 180 pixels and no more than 20 million pixels.
+- No more than 5 MB per image.
+- A 16:9 image at 1920 x 1080 is recommended. Other aspect ratios are center-cropped.
+- Theme and image names are required and may contain up to 60 characters.
+- Every image must use one of the eight supplied palettes: Pale Sage, Pale Earth, Pale Water, Pale Sky, Pale Blossom, Pale Fruit, Warm Neutral, or Cool Neutral.
+
+Caelus converts accepted images to 1920 x 1080 WebP files and creates 480 x 270 WebP thumbnails. On a standard installation, the manifest is stored at `/Users/<name>/Caelus/data/theme_settings/themes.json` on macOS, `/home/<name>/Caelus/data/theme_settings/themes.json` on Linux or Raspberry Pi, or `C:\Users\<name>\Caelus\data\theme_settings\themes.json` on Windows. Processed images are stored beside it under the absolute `data/theme_assets` path for that installation. Back up the entire installed `data` directory to preserve custom themes with settings and history.
+
+Select **Delete** beside a collection to remove that collection and its generated images. If the deleted collection is active, Caelus immediately falls back to Mountain Garden and saves that fallback. Deletion cannot be undone except by restoring a backup or recreating the theme.
 
 ### Data & Map
 

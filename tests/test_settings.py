@@ -9,6 +9,7 @@ from caelus.settings import (
     validate_gateway_url,
     validate_windy_iframe_url,
 )
+from caelus.theme_manager import ThemeManager
 
 
 def test_load_preserves_known_values_and_ignores_unknown_fields(tmp_path, monkeypatch) -> None:
@@ -73,6 +74,16 @@ def test_legacy_themes_migrate_to_scene_themes() -> None:
     assert normalize_theme("light") == "garden"
     assert normalize_theme("dark") == "river"
     assert normalize_theme("midnight") == "island"
+
+
+def test_load_custom_theme_falls_back_when_assets_are_missing(tmp_path, monkeypatch) -> None:
+    manager = ThemeManager(tmp_path)
+    selection = f"custom:{'a' * 32}:{'b' * 32}"
+    settings_path = tmp_path / "settings.json"
+    settings_path.write_text(json.dumps({"theme": selection}), encoding="utf-8")
+    monkeypatch.setattr(AppSettings, "settings_path", settings_path)
+
+    assert AppSettings.load(manager).theme == "garden"
 
 
 def test_metric_display_styles_validate_individually() -> None:
