@@ -6,6 +6,6 @@ requests==2.34.2
 python-multipart==0.0.32
 astral==3.2
 skyfield==1.54
-skyfield-data==5.0.0
+skyfield-data==7.0.0
 pywebview==5.4
 Pillow==12.3.0
