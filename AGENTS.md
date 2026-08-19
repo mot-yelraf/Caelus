@@ -238,6 +238,9 @@ project-specific conventions.
 - Use `curl` for endpoint and health-check validation.
 - When web UI verification is required, prefer Playwright or headless
   Chromium and avoid macOS GUI Chrome headless mode.
+- Before creating a commit, run `python3 scripts/playwright_verify.py` on the
+  host. This successful Playwright check gates the local commit and must not be
+  moved into the GitHub Actions pull-request workflow.
 - If VS Code in-app Browser is unavailable, verify using terminal-based tools.
 - Report the verification surface used and any UI behavior that remains
   unverified.
