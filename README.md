@@ -70,10 +70,13 @@ switches. Disabling the gateway stops polling without deleting historical data.
 
 ## Standalone installation
 
-The installers copy the application into a user-owned runtime folder, create a
-private `.venv`, install the pinned modules in `requirements.txt`, and preserve
-the runtime `data` folder during later installations or updates. The installed
-desktop launcher opens Caelus in a centered, resizable pywebview window. Its
+The installers ask where Caelus should be installed, defaulting to the existing
+`Caelus` folder under the user's home directory. The selected location is saved
+in the user's local configuration and offered again during later installations
+or updates. They copy the application into that user-owned runtime folder,
+create a private `.venv`, install the pinned modules in `requirements.txt`, and
+preserve the runtime `data` folder during later installations or updates. The
+installed desktop launcher opens Caelus in a centered, resizable pywebview window. Its
 default size is 1600 × 1000 pixels and is reduced automatically when the usable
 display is smaller. The installation includes Skyfield and its packaged DE421
 ephemeris, so eclipse calculations do not download astronomy data while Caelus
@@ -150,9 +153,20 @@ on the same network. Caelus listens on all network interfaces by default; keep
 it on a trusted private LAN and allow inbound TCP port 8767 through the host
 firewall if needed.
 
-To choose another runtime folder, set `CAELUS_INSTALL_DIR` before running
-`install.sh`, or pass `-InstallDir` to `install.ps1`. Existing `.venv` and
-`data` directories in that dedicated runtime folder are reused.
+The graphical selector chooses the parent directory and creates or reuses a
+`Caelus` folder beneath it. macOS remembers the resulting absolute path in
+`/Users/<name>/.config/caelus/install-location`; Linux and Raspberry Pi use
+`/home/<name>/.config/caelus/install-location` unless `XDG_CONFIG_HOME` is set;
+Windows uses
+`C:\Users\<name>\AppData\Local\Caelus\install-location.txt`.
+
+For unattended installation or an exact custom folder name, set
+`CAELUS_INSTALL_DIR` before running `install.sh`, or pass `-InstallDir` to
+`install.ps1`. An explicit location skips the dialog and becomes the remembered
+location after installation succeeds. Existing `.venv` and `data` directories
+in that dedicated runtime folder are reused. A headless Unix installer without
+a graphical chooser uses the remembered location, or `/home/<name>/Caelus` on
+Linux and Raspberry Pi when no location has been saved.
 
 Override the desktop window geometry when needed. Omitting `CAELUS_GUI_X` and
 `CAELUS_GUI_Y` lets the operating system center the window:

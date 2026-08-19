@@ -57,7 +57,13 @@ def test_unix_installer_and_launcher_have_valid_bash_syntax() -> None:
 def test_unix_installer_preserves_runtime_state_and_uses_private_venv() -> None:
     script = (ROOT / "install.sh").read_text(encoding="utf-8")
 
-    assert '${CAELUS_INSTALL_DIR:-${HOME}/Caelus}' in script
+    assert 'DEFAULT_INSTALL_DIR="${HOME}/Caelus"' in script
+    assert 'INSTALL_STATE_FILE="${INSTALL_STATE_DIR}/install-location"' in script
+    assert 'choose_install_parent()' in script
+    assert 'choose folder with prompt "Choose where Caelus should be installed.' in script
+    assert 'zenity --file-selection --directory' in script
+    assert 'from tkinter import filedialog' in script
+    assert '[ "${CAELUS_INSTALL_DIR+x}" = "x" ]' in script
     assert 'mkdir -p "$INSTALL_DIR"' in script
     assert '"$PYTHON_BIN" -m venv "$INSTALL_DIR/.venv"' in script
     assert '"$PYTHON_BIN" -m venv --system-site-packages "$INSTALL_DIR/.venv"' in script
@@ -88,6 +94,7 @@ exit 0
         **os.environ,
         "CAELUS_INSTALL_DIR": str(runtime),
         "CAELUS_PYTHON": str(fake_python),
+        "XDG_CONFIG_HOME": str(tmp_path / "config"),
     }
 
     subprocess.run(
@@ -116,6 +123,103 @@ exit 0
     assert (runtime / "caelus" / "desktop.py").exists()
     assert (runtime / "static" / "icons" / "caelus-desktop-icon.png").exists()
     assert marker.read_text(encoding="utf-8") == "historical data"
+    assert (tmp_path / "config" / "caelus" / "install-location").read_text(encoding="utf-8").strip() == str(runtime)
+
+
+def test_unix_installer_reuses_remembered_location_without_a_gui(tmp_path) -> None:
+    fake_python = tmp_path / "fake-python"
+    fake_python.write_text(
+        """#!/usr/bin/env bash
+set -eu
+if [ "${1:-}" = "-m" ] && [ "${2:-}" = "venv" ]; then
+  for argument in "$@"; do venv_path="$argument"; done
+  mkdir -p "$venv_path/bin"
+  cp "$0" "$venv_path/bin/python"
+  chmod +x "$venv_path/bin/python"
+fi
+exit 0
+""",
+        encoding="utf-8",
+    )
+    fake_python.chmod(0o755)
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_uname = fake_bin / "uname"
+    fake_uname.write_text("#!/usr/bin/env bash\nprintf 'TestOS\\n'\n", encoding="utf-8")
+    fake_uname.chmod(0o755)
+    remembered_runtime = tmp_path / "remembered" / "Caelus"
+    state_file = tmp_path / "config" / "caelus" / "install-location"
+    state_file.parent.mkdir(parents=True)
+    state_file.write_text(f"{remembered_runtime}\n", encoding="utf-8")
+    environment = {
+        **os.environ,
+        "CAELUS_PYTHON": str(fake_python),
+        "XDG_CONFIG_HOME": str(tmp_path / "config"),
+        "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}",
+    }
+    environment.pop("CAELUS_INSTALL_DIR", None)
+
+    result = subprocess.run(
+        [str(ROOT / "install.sh")],
+        check=True,
+        capture_output=True,
+        env=environment,
+        text=True,
+    )
+
+    assert f"using {remembered_runtime}" in result.stdout
+    assert (remembered_runtime / "Caelus.py").is_file()
+    assert state_file.read_text(encoding="utf-8").strip() == str(remembered_runtime)
+
+
+def test_macos_installer_uses_native_folder_selection(tmp_path) -> None:
+    fake_python = tmp_path / "fake-python"
+    fake_python.write_text(
+        """#!/usr/bin/env bash
+set -eu
+if [ "${1:-}" = "-m" ] && [ "${2:-}" = "venv" ]; then
+  for argument in "$@"; do venv_path="$argument"; done
+  mkdir -p "$venv_path/bin"
+  cp "$0" "$venv_path/bin/python"
+  chmod +x "$venv_path/bin/python"
+fi
+exit 0
+""",
+        encoding="utf-8",
+    )
+    fake_python.chmod(0o755)
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    for name, content in {
+        "uname": "#!/usr/bin/env bash\nprintf 'Darwin\\n'\n",
+        "osascript": "#!/usr/bin/env bash\nprintf '%s\\n' \"$TEST_SELECTED_PARENT\"\n",
+    }.items():
+        executable = fake_bin / name
+        executable.write_text(content, encoding="utf-8")
+        executable.chmod(0o755)
+    selected_parent = tmp_path / "Applications"
+    selected_parent.mkdir()
+    state_file = tmp_path / "config" / "caelus" / "install-location"
+    environment = {
+        **os.environ,
+        "CAELUS_PYTHON": str(fake_python),
+        "XDG_CONFIG_HOME": str(tmp_path / "config"),
+        "TEST_SELECTED_PARENT": str(selected_parent),
+        "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}",
+    }
+    environment.pop("CAELUS_INSTALL_DIR", None)
+
+    subprocess.run(
+        [str(ROOT / "install.sh")],
+        check=True,
+        capture_output=True,
+        env=environment,
+        text=True,
+    )
+
+    runtime = selected_parent / "Caelus"
+    assert (runtime / "Caelus.py").is_file()
+    assert state_file.read_text(encoding="utf-8").strip() == str(runtime)
 
 
 def test_windows_installer_uses_user_runtime_and_private_venv() -> None:
@@ -123,6 +227,10 @@ def test_windows_installer_uses_user_runtime_and_private_venv() -> None:
     launcher = (ROOT / "run_caelus.cmd").read_text(encoding="utf-8")
 
     assert 'Join-Path $env:USERPROFILE "Caelus"' in installer
+    assert 'System.Windows.Forms.FolderBrowserDialog' in installer
+    assert '$InstallStateFile = Join-Path $InstallStateDir "install-location.txt"' in installer
+    assert '$PSBoundParameters.ContainsKey("InstallDir")' in installer
+    assert '$InstallDir = Join-Path $LocationDialog.SelectedPath "Caelus"' in installer
     assert '-m venv (Join-Path $InstallDir ".venv")' in installer
     assert 'pip install --disable-pip-version-check' in installer
     assert 'Copy-Item (Join-Path $SourceDir "data' not in installer

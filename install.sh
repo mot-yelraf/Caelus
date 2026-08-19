@@ -2,23 +2,116 @@
 set -euo pipefail
 
 SOURCE_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
-INSTALL_DIR="${CAELUS_INSTALL_DIR:-${HOME}/Caelus}"
 PYTHON_BIN="${CAELUS_PYTHON:-python3}"
+DEFAULT_INSTALL_DIR="${HOME}/Caelus"
+INSTALL_STATE_DIR="${XDG_CONFIG_HOME:-${HOME}/.config}/caelus"
+INSTALL_STATE_FILE="${INSTALL_STATE_DIR}/install-location"
 
 fail() {
   printf 'Caelus installation failed: %s\n' "$1" >&2
   exit 1
 }
 
-case "$INSTALL_DIR" in
-  ""|/|"$HOME") fail "CAELUS_INSTALL_DIR must name a dedicated application directory." ;;
-esac
-
 command -v "$PYTHON_BIN" >/dev/null 2>&1 || fail "Python 3.10 or newer was not found."
 "$PYTHON_BIN" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)' \
   || fail "Python 3.10 or newer is required."
 
-mkdir -p "$INSTALL_DIR" "$INSTALL_DIR/caelus" "$INSTALL_DIR/static" \
+remembered_install_dir=""
+if [ -f "$INSTALL_STATE_FILE" ]; then
+  IFS= read -r remembered_install_dir < "$INSTALL_STATE_FILE" || true
+fi
+case "$remembered_install_dir" in
+  ""|/) remembered_install_dir="$DEFAULT_INSTALL_DIR" ;;
+esac
+
+choose_install_parent() {
+  initial_parent="$1"
+  case "$(uname -s)" in
+    Darwin)
+      osascript - "$initial_parent" <<'APPLESCRIPT'
+on run argv
+  set initialFolder to POSIX file (item 1 of argv)
+  set chosenFolder to choose folder with prompt "Choose where Caelus should be installed. A Caelus folder will be created here." default location initialFolder
+  return POSIX path of chosenFolder
+end run
+APPLESCRIPT
+      ;;
+    Linux)
+      if [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ] && command -v zenity >/dev/null 2>&1; then
+        zenity --file-selection --directory --title="Choose where Caelus should be installed" --filename="${initial_parent}/"
+        return
+      fi
+      if [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ] && command -v kdialog >/dev/null 2>&1; then
+        kdialog --getexistingdirectory "$initial_parent" --title "Choose where Caelus should be installed"
+        return
+      fi
+      if [ -z "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
+        return 2
+      fi
+      "$PYTHON_BIN" - "$initial_parent" <<'PYTHON'
+import sys
+
+try:
+    import tkinter as tk
+    from tkinter import filedialog
+
+    root = tk.Tk()
+    root.withdraw()
+    root.update_idletasks()
+    selected = filedialog.askdirectory(
+        title="Choose where Caelus should be installed",
+        initialdir=sys.argv[1],
+        mustexist=True,
+    )
+    root.destroy()
+except Exception:
+    raise SystemExit(2)
+
+if not selected:
+    raise SystemExit(1)
+print(selected)
+PYTHON
+      ;;
+    *) return 2 ;;
+  esac
+}
+
+if [ "${CAELUS_INSTALL_DIR+x}" = "x" ]; then
+  INSTALL_DIR="$CAELUS_INSTALL_DIR"
+else
+  initial_parent="$(dirname -- "$remembered_install_dir")"
+  if [ ! -d "$initial_parent" ]; then
+    initial_parent="$HOME"
+  fi
+  selection_status=0
+  selected_parent="$(choose_install_parent "$initial_parent")" || selection_status=$?
+  if [ "$selection_status" -eq 1 ]; then
+    fail "Installation was cancelled."
+  elif [ "$selection_status" -eq 0 ] && [ -n "$selected_parent" ]; then
+    INSTALL_DIR="${selected_parent%/}/Caelus"
+  elif [ -t 0 ]; then
+    printf 'Install Caelus under which directory? [%s] ' "$initial_parent"
+    IFS= read -r selected_parent
+    selected_parent="${selected_parent:-$initial_parent}"
+    INSTALL_DIR="${selected_parent%/}/Caelus"
+  else
+    INSTALL_DIR="$remembered_install_dir"
+    printf 'No graphical folder chooser is available; using %s\n' "$INSTALL_DIR"
+  fi
+fi
+
+case "$INSTALL_DIR" in
+  ""|/|"$HOME") fail "The install location must name a dedicated application directory." ;;
+  /*) ;;
+  *) fail "The install location must be an absolute path." ;;
+esac
+mkdir -p "$INSTALL_DIR"
+INSTALL_DIR="$(CDPATH= cd -- "$INSTALL_DIR" && pwd -P)"
+case "$INSTALL_DIR" in
+  /|"$HOME") fail "The install location must name a dedicated application directory." ;;
+esac
+
+mkdir -p "$INSTALL_DIR/caelus" "$INSTALL_DIR/static" \
   "$INSTALL_DIR/templates" "$INSTALL_DIR/data"
 
 if [ "$SOURCE_DIR" != "$INSTALL_DIR" ]; then
@@ -61,6 +154,11 @@ fi
 chmod +x "$INSTALL_DIR/run_caelus.sh"
 chmod +x "$INSTALL_DIR/run_caelus_gui.sh"
 chmod +x "$INSTALL_DIR/install.sh"
+
+mkdir -p "$INSTALL_STATE_DIR"
+install_state_temp="${INSTALL_STATE_FILE}.tmp.$$"
+printf '%s\n' "$INSTALL_DIR" > "$install_state_temp"
+mv "$install_state_temp" "$INSTALL_STATE_FILE"
 
 printf '\nCaelus was installed in %s\n' "$INSTALL_DIR"
 printf 'Start the desktop app with: %s/run_caelus_gui.sh\n' "$INSTALL_DIR"

@@ -1,14 +1,56 @@
 [CmdletBinding()]
 param(
-    [string]$InstallDir = (Join-Path $env:USERPROFILE "Caelus")
+    [string]$InstallDir
 )
 
 $ErrorActionPreference = "Stop"
 $SourceDir = $PSScriptRoot
+$DefaultInstallDir = Join-Path $env:USERPROFILE "Caelus"
+$InstallStateRoot = if ([string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
+    Join-Path $env:USERPROFILE "AppData\Local"
+} else {
+    $env:LOCALAPPDATA
+}
+$InstallStateDir = Join-Path $InstallStateRoot "Caelus"
+$InstallStateFile = Join-Path $InstallStateDir "install-location.txt"
+$RememberedInstallDir = $DefaultInstallDir
+if (Test-Path -LiteralPath $InstallStateFile -PathType Leaf) {
+    $StoredInstallDir = (Get-Content -LiteralPath $InstallStateFile -Raw).Trim()
+    if (-not [string]::IsNullOrWhiteSpace($StoredInstallDir)) {
+        $RememberedInstallDir = $StoredInstallDir
+    }
+}
 
-if ([string]::IsNullOrWhiteSpace($InstallDir) -or
-    [System.IO.Path]::GetFullPath($InstallDir) -eq [System.IO.Path]::GetPathRoot($InstallDir) -or
-    [System.IO.Path]::GetFullPath($InstallDir) -eq [System.IO.Path]::GetFullPath($env:USERPROFILE)) {
+$ExplicitInstallDir = $PSBoundParameters.ContainsKey("InstallDir")
+if (-not $ExplicitInstallDir -and -not [string]::IsNullOrWhiteSpace($env:CAELUS_INSTALL_DIR)) {
+    $InstallDir = $env:CAELUS_INSTALL_DIR
+    $ExplicitInstallDir = $true
+}
+
+if (-not $ExplicitInstallDir) {
+    Add-Type -AssemblyName System.Windows.Forms
+    [System.Windows.Forms.Application]::EnableVisualStyles()
+    $InitialParent = Split-Path -Parent $RememberedInstallDir
+    if ([string]::IsNullOrWhiteSpace($InitialParent) -or -not (Test-Path -LiteralPath $InitialParent -PathType Container)) {
+        $InitialParent = $env:USERPROFILE
+    }
+    $LocationDialog = New-Object System.Windows.Forms.FolderBrowserDialog
+    $LocationDialog.Description = "Choose where Caelus should be installed. A Caelus folder will be created here."
+    $LocationDialog.SelectedPath = $InitialParent
+    $LocationDialog.ShowNewFolderButton = $true
+    if ($LocationDialog.ShowDialog() -ne [System.Windows.Forms.DialogResult]::OK) {
+        throw "Installation was cancelled."
+    }
+    $InstallDir = Join-Path $LocationDialog.SelectedPath "Caelus"
+    $LocationDialog.Dispose()
+}
+
+if ([string]::IsNullOrWhiteSpace($InstallDir)) {
+    throw "InstallDir must name a dedicated application directory."
+}
+$InstallDir = [System.IO.Path]::GetFullPath($InstallDir)
+if ($InstallDir -eq [System.IO.Path]::GetPathRoot($InstallDir) -or
+    $InstallDir -eq [System.IO.Path]::GetFullPath($env:USERPROFILE)) {
     throw "InstallDir must name a dedicated application directory."
 }
 
@@ -61,6 +103,11 @@ if ($LASTEXITCODE -ne 0) {
 if ($LASTEXITCODE -ne 0) {
     throw "pywebview could not be imported after installation."
 }
+
+New-Item -ItemType Directory -Path $InstallStateDir -Force | Out-Null
+$InstallStateTemp = "$InstallStateFile.tmp.$PID"
+Set-Content -LiteralPath $InstallStateTemp -Value ([System.IO.Path]::GetFullPath($InstallDir)) -Encoding UTF8
+Move-Item -LiteralPath $InstallStateTemp -Destination $InstallStateFile -Force
 
 Write-Host ""
 Write-Host "Caelus was installed in $InstallDir"
