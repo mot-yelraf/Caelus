@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+
+repository_root=$(git rev-parse --show-toplevel)
+cd "$repository_root"
+
+echo "Running host-side Playwright commit gate..."
+exec python3 scripts/playwright_verify.py

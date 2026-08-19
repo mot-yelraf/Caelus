@@ -108,6 +108,19 @@ Clarity and compatibility take precedence over stylistic cleverness.
 
 ## Testing Expectations
 
+Install and activate the host-side commit gate once per clone:
+
+```bash
+python3 -m pip install -r requirements-dev.txt
+python3 -m playwright install chromium
+git config core.hooksPath .githooks
+```
+
+The tracked pre-commit hook runs `python3 scripts/playwright_verify.py` on the
+developer host. A commit is created only after Chromium verifies the dashboard,
+core dialogs, first-party requests, and browser console. Playwright is not run
+by the GitHub Actions workflow.
+
 Run the smallest relevant tests first, followed by the broader suite when the
 change warrants it:
 
