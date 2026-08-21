@@ -125,14 +125,14 @@
         </div>
         <div class="lunar-timeline-footer">
           <div class="lunar-event-timeline" id="lunarEventTimeline" role="img" aria-label="Sun and Moon events from sunrise to the next sunrise" data-start-at="{{ moon.get('timeline_start_at', '') }}" data-sunset-at="{{ moon.get('timeline_sunset_at', '') }}" data-end-at="{{ moon.get('timeline_end_at', '') }}" data-moonrise-at="{{ moon.get('timeline_moonrise_at', '') }}" data-moonset-at="{{ moon.get('timeline_moonset_at', '') }}">
+            <div class="lunar-event-row lunar-event-row-moon"><span class="lunar-event-row-title">Moon</span><div class="lunar-event-track">
+              <span class="lunar-event-marker" id="lunarMoonriseMarker"><span>Moonrise</span><strong id="moonriseTime">{{ moon.get('timeline_moonrise', '—') }}</strong></span>
+              <span class="lunar-event-marker" id="lunarMoonsetMarker"><span>Moonset</span><strong id="moonsetTime">{{ moon.get('timeline_moonset', '—') }}</strong></span>
+            </div></div>
             <div class="lunar-event-row lunar-event-row-sun"><span class="lunar-event-row-title">Sun</span><div class="lunar-event-track">
               <span class="lunar-event-marker is-start" id="lunarSunriseMarker" style="--timeline-left:0%"><span>Sunrise</span><strong id="sunriseTime">{{ moon.get('sunrise', '—') }}</strong></span>
               <span class="lunar-event-marker" id="lunarSunsetMarker"><span>Sunset</span><strong id="sunsetTime">{{ moon.get('sunset', '—') }}</strong></span>
               <span class="lunar-event-marker is-end" id="lunarNextSunriseMarker" style="--timeline-left:100%"><span>Next sunrise</span><strong id="nextSunriseTime">{{ moon.get('next_sunrise', '—') }}</strong></span>
-            </div></div>
-            <div class="lunar-event-row lunar-event-row-moon"><span class="lunar-event-row-title">Moon</span><div class="lunar-event-track">
-              <span class="lunar-event-marker" id="lunarMoonriseMarker"><span>Moonrise</span><strong id="moonriseTime">{{ moon.get('timeline_moonrise', '—') }}</strong></span>
-              <span class="lunar-event-marker" id="lunarMoonsetMarker"><span>Moonset</span><strong id="moonsetTime">{{ moon.get('timeline_moonset', '—') }}</strong></span>
             </div></div>
           </div>
           <small id="lunarUpdated">Updated {{ moon.updated_at[11:16] }} UTC</small>

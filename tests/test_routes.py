@@ -269,6 +269,9 @@ def test_dashboard_includes_scene_themes_settings_modal_and_lunar_cycle() -> Non
     assert 'id="lunarNextSunriseMarker"' in response.text
     assert 'id="lunarMoonriseMarker"' in response.text
     assert 'id="lunarMoonsetMarker"' in response.text
+    moon_timeline_position = response.text.index('class="lunar-event-row lunar-event-row-moon"')
+    sun_timeline_position = response.text.index('class="lunar-event-row lunar-event-row-sun"')
+    assert moon_timeline_position < sun_timeline_position
     assert 'id="northPoleDaylight"' in response.text
     assert 'id="southPoleDaylight"' in response.text
     assert 'id="nextSeasonHeading"' in response.text
