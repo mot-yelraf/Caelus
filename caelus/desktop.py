@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ctypes
 import os
+import plistlib
 import shutil
 import subprocess
 import sys
@@ -18,6 +19,10 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DESKTOP_ICON_PATH = PROJECT_ROOT / "static" / "icons" / "caelus-desktop-icon.png"
 WINDOWS_ICON_PATH = PROJECT_ROOT / "static" / "icons" / "caelus-desktop-icon.ico"
 LINUX_APP_ID = "weather.caelus.Caelus"
+MACOS_APP_NAME = "Caelus"
+MACOS_BUNDLE_IDENTIFIER = "weather.caelus.Caelus"
+MACOS_RELAUNCH_MARKER = "CAELUS_MACOS_APP_RELAUNCHED"
+MACOS_HEADLESS_MARKER = "CAELUS_GUI_HEADLESS"
 
 DEFAULT_WINDOW_WIDTH = 1600
 DEFAULT_WINDOW_HEIGHT = 1000
@@ -26,6 +31,77 @@ DEFAULT_MIN_HEIGHT = 700
 
 _windows_icon: Any = None
 _direct_opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
+def _environment_flag(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _macos_app_bundle_path() -> Path:
+    return (
+        Path.home()
+        / "Library"
+        / "Application Support"
+        / MACOS_APP_NAME
+        / f"{MACOS_APP_NAME}.app"
+    )
+
+
+def configure_macos_app_bundle(bundle_path: Path | None = None) -> Path:
+    """Create the per-user app bundle that supplies Caelus's process identity."""
+    app_bundle = bundle_path or _macos_app_bundle_path()
+    contents_dir = app_bundle / "Contents"
+    executable_dir = contents_dir / "MacOS"
+    executable_path = executable_dir / MACOS_APP_NAME
+    plist_path = contents_dir / "Info.plist"
+    executable_dir.mkdir(parents=True, exist_ok=True)
+
+    plist_data = plistlib.dumps(
+        {
+            "CFBundleDisplayName": MACOS_APP_NAME,
+            "CFBundleName": MACOS_APP_NAME,
+            "CFBundleExecutable": MACOS_APP_NAME,
+            "CFBundleIdentifier": MACOS_BUNDLE_IDENTIFIER,
+            "CFBundlePackageType": "APPL",
+        }
+    )
+    if not plist_path.is_file() or plist_path.read_bytes() != plist_data:
+        temporary_plist = plist_path.with_suffix(".plist.tmp")
+        temporary_plist.write_bytes(plist_data)
+        temporary_plist.replace(plist_path)
+
+    if not executable_path.is_symlink() or os.readlink(executable_path) != sys.executable:
+        temporary_executable = executable_path.with_name(f".{MACOS_APP_NAME}.tmp")
+        temporary_executable.unlink(missing_ok=True)
+        temporary_executable.symlink_to(sys.executable)
+        temporary_executable.replace(executable_path)
+    return app_bundle
+
+
+def relaunch_with_macos_app_identity() -> bool:
+    """Re-execute an unfrozen macOS GUI launch from Caelus's app bundle."""
+    if (
+        sys.platform != "darwin"
+        or getattr(sys, "frozen", False)
+        or hasattr(sys, "_MEIPASS")
+        or _environment_flag(MACOS_HEADLESS_MARKER)
+        or _environment_flag(MACOS_RELAUNCH_MARKER)
+    ):
+        return False
+
+    try:
+        app_bundle = configure_macos_app_bundle()
+        executable_path = app_bundle / "Contents" / "MacOS" / MACOS_APP_NAME
+        environment = os.environ.copy()
+        environment[MACOS_RELAUNCH_MARKER] = "1"
+        os.execve(
+            executable_path,
+            [str(executable_path), "-m", "caelus.desktop", *sys.argv[1:]],
+            environment,
+        )
+    except OSError as exc:
+        print(f"Caelus could not establish its macOS application identity: {exc}", file=sys.stderr)
+    return False
 
 
 def _base_url() -> str:
@@ -239,6 +315,7 @@ def set_windows_app_icon(window: Any) -> None:
 
 def main() -> int:
     """Start or attach to Caelus and open its native desktop window."""
+    relaunch_with_macos_app_identity()
     base_url = _base_url()
     owned_server: subprocess.Popen[Any] | None = None
     os.environ.setdefault("WEBKIT_DISABLE_COMPOSITING_MODE", "1")

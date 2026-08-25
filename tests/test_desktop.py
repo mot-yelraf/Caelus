@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import plistlib
 import sys
 import struct
 import zlib
@@ -9,6 +11,11 @@ from types import ModuleType, SimpleNamespace
 import pytest
 
 import caelus.desktop as desktop
+
+
+@pytest.fixture(autouse=True)
+def _prevent_real_macos_relaunch(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(desktop.MACOS_RELAUNCH_MARKER, "1")
 
 
 class FakeEvent:
@@ -75,6 +82,93 @@ def test_desktop_icons_are_present_and_transparent() -> None:
     first_scanline = zlib.decompress(compressed)
     assert first_scanline[4] == 0  # Upper-left pixel alpha is transparent.
     assert desktop.WINDOWS_ICON_PATH.read_bytes()[:4] == b"\x00\x00\x01\x00"
+
+
+def test_macos_app_bundle_contains_identity_and_python_symlink(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    interpreter = tmp_path / "venv" / "bin" / "python"
+    monkeypatch.setattr(desktop.sys, "executable", str(interpreter))
+    bundle_path = tmp_path / "Caelus.app"
+
+    assert desktop.configure_macos_app_bundle(bundle_path) == bundle_path
+
+    contents = bundle_path / "Contents"
+    with (contents / "Info.plist").open("rb") as plist_file:
+        assert plistlib.load(plist_file) == {
+            "CFBundleDisplayName": "Caelus",
+            "CFBundleName": "Caelus",
+            "CFBundleExecutable": "Caelus",
+            "CFBundleIdentifier": desktop.MACOS_BUNDLE_IDENTIFIER,
+            "CFBundlePackageType": "APPL",
+        }
+    executable = contents / "MacOS" / "Caelus"
+    assert executable.is_symlink()
+    assert os.readlink(executable) == str(interpreter)
+
+
+def test_macos_relaunch_uses_bundle_module_entrypoint_and_preserves_arguments(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    bundle_path = tmp_path / "Caelus.app"
+    executable = bundle_path / "Contents" / "MacOS" / "Caelus"
+    calls = []
+
+    def fake_execve(path, arguments, environment):
+        calls.append((path, arguments, environment))
+
+    monkeypatch.setattr(desktop.sys, "platform", "darwin")
+    monkeypatch.setattr(desktop.sys, "argv", ["desktop.py", "--example", "value"])
+    monkeypatch.setattr(desktop, "configure_macos_app_bundle", lambda: bundle_path)
+    monkeypatch.setattr(desktop.os, "execve", fake_execve)
+    monkeypatch.delenv(desktop.MACOS_RELAUNCH_MARKER, raising=False)
+    monkeypatch.delenv(desktop.MACOS_HEADLESS_MARKER, raising=False)
+
+    assert desktop.relaunch_with_macos_app_identity() is False
+    assert calls[0][0] == executable
+    assert calls[0][1] == [
+        str(executable),
+        "-m",
+        "caelus.desktop",
+        "--example",
+        "value",
+    ]
+    assert calls[0][2][desktop.MACOS_RELAUNCH_MARKER] == "1"
+
+
+@pytest.mark.parametrize(
+    ("platform", "frozen", "packaged", "headless", "relaunched"),
+    [
+        ("linux", False, False, False, False),
+        ("darwin", True, False, False, False),
+        ("darwin", False, True, False, False),
+        ("darwin", False, False, True, False),
+        ("darwin", False, False, False, True),
+    ],
+)
+def test_macos_relaunch_skips_inapplicable_processes(
+    monkeypatch: pytest.MonkeyPatch,
+    platform: str,
+    frozen: bool,
+    packaged: bool,
+    headless: bool,
+    relaunched: bool,
+) -> None:
+    monkeypatch.setattr(desktop.sys, "platform", platform)
+    monkeypatch.setattr(desktop.sys, "frozen", frozen, raising=False)
+    if packaged:
+        monkeypatch.setattr(desktop.sys, "_MEIPASS", "/bundle", raising=False)
+    else:
+        monkeypatch.delattr(desktop.sys, "_MEIPASS", raising=False)
+    monkeypatch.setenv(desktop.MACOS_HEADLESS_MARKER, "1" if headless else "0")
+    monkeypatch.setenv(desktop.MACOS_RELAUNCH_MARKER, "1" if relaunched else "0")
+    monkeypatch.setattr(
+        desktop,
+        "configure_macos_app_bundle",
+        lambda: pytest.fail("a skipped launch must not create an app bundle"),
+    )
+
+    assert desktop.relaunch_with_macos_app_identity() is False
 
 
 def test_default_window_is_wide_but_not_sensorius_full_width(
