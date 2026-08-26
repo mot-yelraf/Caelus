@@ -123,6 +123,7 @@ exit 0
     assert (runtime / "run_caelus_gui.sh").stat().st_mode & 0o111
     assert (runtime / "caelus" / "desktop.py").exists()
     assert (runtime / "static" / "icons" / "caelus-desktop-icon.png").exists()
+    assert (runtime / "static" / "icons" / "caelus-desktop-icon.icns").exists()
     assert marker.read_text(encoding="utf-8") == "historical data"
     assert (tmp_path / "config" / "caelus" / "install-location").read_text(encoding="utf-8").strip() == str(runtime)
 

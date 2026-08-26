@@ -14,15 +14,22 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+from caelus import __version__
+
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DESKTOP_ICON_PATH = PROJECT_ROOT / "static" / "icons" / "caelus-desktop-icon.png"
 WINDOWS_ICON_PATH = PROJECT_ROOT / "static" / "icons" / "caelus-desktop-icon.ico"
+MACOS_ICON_PATH = PROJECT_ROOT / "static" / "icons" / "caelus-desktop-icon.icns"
 LINUX_APP_ID = "weather.caelus.Caelus"
 MACOS_APP_NAME = "Caelus"
 MACOS_BUNDLE_IDENTIFIER = "weather.caelus.Caelus"
 MACOS_RELAUNCH_MARKER = "CAELUS_MACOS_APP_RELAUNCHED"
 MACOS_HEADLESS_MARKER = "CAELUS_GUI_HEADLESS"
+MACOS_LAUNCH_SERVICES = Path(
+    "/System/Library/Frameworks/CoreServices.framework/Frameworks/"
+    "LaunchServices.framework/Support/lsregister"
+)
 
 DEFAULT_WINDOW_WIDTH = 1600
 DEFAULT_WINDOW_HEIGHT = 1000
@@ -52,9 +59,12 @@ def configure_macos_app_bundle(bundle_path: Path | None = None) -> Path:
     app_bundle = bundle_path or _macos_app_bundle_path()
     contents_dir = app_bundle / "Contents"
     executable_dir = contents_dir / "MacOS"
+    resources_dir = contents_dir / "Resources"
     executable_path = executable_dir / MACOS_APP_NAME
+    icon_path = resources_dir / MACOS_ICON_PATH.name
     plist_path = contents_dir / "Info.plist"
     executable_dir.mkdir(parents=True, exist_ok=True)
+    resources_dir.mkdir(parents=True, exist_ok=True)
 
     plist_data = plistlib.dumps(
         {
@@ -62,7 +72,11 @@ def configure_macos_app_bundle(bundle_path: Path | None = None) -> Path:
             "CFBundleName": MACOS_APP_NAME,
             "CFBundleExecutable": MACOS_APP_NAME,
             "CFBundleIdentifier": MACOS_BUNDLE_IDENTIFIER,
+            "CFBundleIconFile": MACOS_ICON_PATH.name,
             "CFBundlePackageType": "APPL",
+            "CFBundleShortVersionString": __version__.removeprefix("v"),
+            "CFBundleVersion": __version__.removeprefix("v"),
+            "NSHighResolutionCapable": True,
         }
     )
     if not plist_path.is_file() or plist_path.read_bytes() != plist_data:
@@ -75,6 +89,27 @@ def configure_macos_app_bundle(bundle_path: Path | None = None) -> Path:
         temporary_executable.unlink(missing_ok=True)
         temporary_executable.symlink_to(sys.executable)
         temporary_executable.replace(executable_path)
+
+    if not icon_path.is_file() or icon_path.read_bytes() != MACOS_ICON_PATH.read_bytes():
+        temporary_icon = icon_path.with_suffix(".icns.tmp")
+        shutil.copyfile(MACOS_ICON_PATH, temporary_icon)
+        temporary_icon.replace(icon_path)
+
+    os.utime(app_bundle, None)
+    try:
+        result = subprocess.run(
+            [str(MACOS_LAUNCH_SERVICES), "-f", str(app_bundle)],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        if result.returncode:
+            print(
+                "Caelus could not refresh its macOS LaunchServices metadata.",
+                file=sys.stderr,
+            )
+    except OSError as exc:
+        print(f"Caelus could not refresh its macOS LaunchServices metadata: {exc}", file=sys.stderr)
     return app_bundle
 
 
@@ -94,6 +129,10 @@ def relaunch_with_macos_app_identity() -> bool:
         executable_path = app_bundle / "Contents" / "MacOS" / MACOS_APP_NAME
         environment = os.environ.copy()
         environment[MACOS_RELAUNCH_MARKER] = "1"
+        existing_pythonpath = environment.get("PYTHONPATH")
+        environment["PYTHONPATH"] = os.pathsep.join(
+            part for part in (str(PROJECT_ROOT), existing_pythonpath) if part
+        )
         os.execve(
             executable_path,
             [str(executable_path), "-m", "caelus.desktop", *sys.argv[1:]],
