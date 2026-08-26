@@ -68,6 +68,7 @@ def _fake_webview(calls: list) -> tuple[SimpleNamespace, SimpleNamespace]:
 def test_desktop_icons_are_present_and_transparent() -> None:
     assert desktop.DESKTOP_ICON_PATH.is_file()
     assert desktop.WINDOWS_ICON_PATH.is_file()
+    assert desktop.MACOS_ICON_PATH.is_file()
     png = desktop.DESKTOP_ICON_PATH.read_bytes()
     assert png.startswith(b"\x89PNG\r\n\x1a\n")
     assert png[25] == 6  # PNG color type 6 is RGBA.
@@ -82,13 +83,28 @@ def test_desktop_icons_are_present_and_transparent() -> None:
     first_scanline = zlib.decompress(compressed)
     assert first_scanline[4] == 0  # Upper-left pixel alpha is transparent.
     assert desktop.WINDOWS_ICON_PATH.read_bytes()[:4] == b"\x00\x00\x01\x00"
+    icns = desktop.MACOS_ICON_PATH.read_bytes()
+    assert icns[:4] == b"icns"
+    chunk_types = set()
+    offset = 8
+    while offset < len(icns):
+        chunk_types.add(icns[offset : offset + 4])
+        offset += struct.unpack(">I", icns[offset + 4 : offset + 8])[0]
+    assert {b"ic11", b"ic12", b"ic07", b"ic08", b"ic09"} <= chunk_types
 
 
 def test_macos_app_bundle_contains_identity_and_python_symlink(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     interpreter = tmp_path / "venv" / "bin" / "python"
+    launch_services_calls = []
     monkeypatch.setattr(desktop.sys, "executable", str(interpreter))
+    monkeypatch.setattr(
+        desktop.subprocess,
+        "run",
+        lambda *args, **kwargs: launch_services_calls.append((args, kwargs))
+        or SimpleNamespace(returncode=0),
+    )
     bundle_path = tmp_path / "Caelus.app"
 
     assert desktop.configure_macos_app_bundle(bundle_path) == bundle_path
@@ -100,11 +116,23 @@ def test_macos_app_bundle_contains_identity_and_python_symlink(
             "CFBundleName": "Caelus",
             "CFBundleExecutable": "Caelus",
             "CFBundleIdentifier": desktop.MACOS_BUNDLE_IDENTIFIER,
+            "CFBundleIconFile": desktop.MACOS_ICON_PATH.name,
             "CFBundlePackageType": "APPL",
+            "CFBundleShortVersionString": "0.26.237.2",
+            "CFBundleVersion": "0.26.237.2",
+            "NSHighResolutionCapable": True,
         }
     executable = contents / "MacOS" / "Caelus"
     assert executable.is_symlink()
     assert os.readlink(executable) == str(interpreter)
+    assert (contents / "Resources" / desktop.MACOS_ICON_PATH.name).read_bytes() == (
+        desktop.MACOS_ICON_PATH.read_bytes()
+    )
+    assert launch_services_calls[0][0][0] == [
+        str(desktop.MACOS_LAUNCH_SERVICES),
+        "-f",
+        str(bundle_path),
+    ]
 
 
 def test_macos_relaunch_uses_bundle_module_entrypoint_and_preserves_arguments(
@@ -123,6 +151,7 @@ def test_macos_relaunch_uses_bundle_module_entrypoint_and_preserves_arguments(
     monkeypatch.setattr(desktop.os, "execve", fake_execve)
     monkeypatch.delenv(desktop.MACOS_RELAUNCH_MARKER, raising=False)
     monkeypatch.delenv(desktop.MACOS_HEADLESS_MARKER, raising=False)
+    monkeypatch.setenv("PYTHONPATH", "/installed/caelus/modules:/shared/modules")
 
     assert desktop.relaunch_with_macos_app_identity() is False
     assert calls[0][0] == executable
@@ -134,6 +163,11 @@ def test_macos_relaunch_uses_bundle_module_entrypoint_and_preserves_arguments(
         "value",
     ]
     assert calls[0][2][desktop.MACOS_RELAUNCH_MARKER] == "1"
+    assert calls[0][2]["PYTHONPATH"].split(os.pathsep) == [
+        str(desktop.PROJECT_ROOT),
+        "/installed/caelus/modules",
+        "/shared/modules",
+    ]
 
 
 @pytest.mark.parametrize(
