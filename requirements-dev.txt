@@ -1,2 +1,6 @@
 -r requirements.txt
-playwright>=1.55,<2
+anyio==4.9.0
+httpx==0.28.1
+playwright==1.62.0
+pytest==8.4.0
+ruff==0.15.12

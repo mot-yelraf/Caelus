@@ -258,3 +258,11 @@ def test_requirements_are_pinned_and_avoid_native_uvicorn_extras() -> None:
     assert "skyfield-data==5.0.0" in requirements
     assert "pywebview==5.4" in requirements
     assert not any("uvicorn[standard]" in line for line in requirements)
+
+
+def test_development_requirements_pin_the_ci_toolchain() -> None:
+    requirements = (ROOT / "requirements-dev.txt").read_text(encoding="utf-8").splitlines()
+
+    assert "-r requirements.txt" in requirements
+    for package in ("anyio", "httpx", "playwright", "pytest", "ruff"):
+        assert any(line.startswith(f"{package}==") for line in requirements)
