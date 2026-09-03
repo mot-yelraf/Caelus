@@ -264,5 +264,5 @@ def test_development_requirements_pin_the_ci_toolchain() -> None:
     requirements = (ROOT / "requirements-dev.txt").read_text(encoding="utf-8").splitlines()
 
     assert "-r requirements.txt" in requirements
-    for package in ("anyio", "httpx", "playwright", "pytest", "ruff"):
+    for package in ("anyio", "httpx2", "playwright", "pytest", "ruff"):
         assert any(line.startswith(f"{package}==") for line in requirements)
