@@ -2,6 +2,7 @@ import json
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
+import caelus.forecast as forecast_module
 from caelus.forecast import (
     MET_URL,
     ForecastService,
@@ -51,6 +52,7 @@ def test_open_meteo_builds_today_forecast_and_decisions() -> None:
     assert [hour["label"] for hour in forecast["hours"]] == [hour["label"] for hour in rows[:24]]
     assert forecast["hours"][0]["precip_label"] == "Rain chance"
     assert decisions[0]["status"] == "Delay watering"
+    assert all(hour["duration_hours"] == 1.0 for hour in forecast["hours"])
 
 
 def test_open_meteo_builds_six_future_daily_forecasts() -> None:
@@ -191,6 +193,68 @@ def test_met_uses_six_hour_summary_for_longer_range_rows() -> None:
     assert row["condition"] == "Rain showers"
     assert row["precipitation_mm"] == 5.5
     assert row["precip_probability"] == 92
+    assert row["duration_hours"] == 6.0
+
+
+def test_frost_decision_uses_next_24_hours_across_midnight(monkeypatch) -> None:
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            current = cls(2026, 9, 3, 18, tzinfo=timezone.utc)
+            return current.astimezone(tz) if tz else current.replace(tzinfo=None)
+
+    monkeypatch.setattr(forecast_module, "datetime", FixedDateTime)
+    rows = [
+        {
+            "time": time,
+            "temperature_f": temperature,
+            "condition": "Clear",
+            "precip_probability": 0,
+            "precipitation_mm": 0,
+            "wind_mph": 2,
+            "humidity": 50,
+            "cloud_percent": 0,
+            "duration_hours": 1,
+        }
+        for time, temperature in (
+            ("2026-09-03T18:00:00+00:00", 50),
+            ("2026-09-03T21:00:00+00:00", 45),
+            ("2026-09-04T02:00:00+00:00", 25),
+        )
+    ]
+
+    forecast = build_forecast("open_meteo", rows, "UTC")
+    frost = build_decisions(forecast)[1]
+
+    assert forecast["low_f"] == 45
+    assert forecast["decision_low_f"] == 25
+    assert frost["status"] == "Protect tender plants"
+    assert frost["detail"] == "Next 24-hour low 25°F."
+
+
+def test_exact_zero_and_missing_forecast_lows_are_distinct() -> None:
+    freezing = build_decisions({"ok": True, "decision_low_f": 0})[1]
+    unavailable = build_decisions({"ok": True})[1]
+
+    assert freezing["status"] == "Protect tender plants"
+    assert freezing["detail"] == "Next 24-hour low 0°F."
+    assert unavailable["status"] == "Forecast unavailable"
+
+
+def test_outdoor_decision_chooses_a_contiguous_period_with_its_duration() -> None:
+    decision = build_decisions(
+        {
+            "ok": True,
+            "low_f": 50,
+            "decision_hours": [
+                {"time": "2026-09-03T09:00:00+00:00", "duration_hours": 1, "precip_probability": 0, "wind_mph": 2},
+                {"time": "2026-09-03T12:00:00+00:00", "duration_hours": 1, "precip_probability": 90, "wind_mph": 2},
+                {"time": "2026-09-03T17:00:00+00:00", "duration_hours": 1, "precip_probability": 0, "wind_mph": 2},
+            ],
+        }
+    )[2]
+
+    assert decision["status"].endswith("09:00–10:00")
 
 
 def test_legacy_cache_is_retained_if_daily_refresh_fails(tmp_path) -> None:
@@ -221,3 +285,20 @@ def test_legacy_cache_is_retained_if_daily_refresh_fails(tmp_path) -> None:
     assert result["ok"] is True
     assert result["stale"] is True
     assert result["days"] == []
+
+
+def test_non_object_cache_is_discarded_instead_of_crashing(tmp_path) -> None:
+    cache_path = tmp_path / "forecast.json"
+    cache_path.write_text("[]", encoding="utf-8")
+
+    class OfflineSession:
+        @staticmethod
+        def get(*_args, **_kwargs):
+            raise OSError("offline")
+
+    result = ForecastService(cache_path, session=OfflineSession()).get(
+        AppSettings(latitude=32.77, longitude=-108.28, forecast_provider="met_no")
+    )
+
+    assert result["ok"] is False
+    assert result["reason"] == "offline"

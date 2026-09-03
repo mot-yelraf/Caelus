@@ -14,7 +14,7 @@ from astral.moon import moonrise, moonset
 from astral.moon import phase
 from astral.sun import azimuth as sun_azimuth
 from astral.sun import elevation as sun_elevation
-from astral.sun import sun
+from astral.sun import noon, sunrise, sunset
 
 PHASES = (
     ("New moon", "🌑"),
@@ -513,8 +513,17 @@ def astronomy_context(settings: Any, at: datetime | None = None) -> dict[str, An
         )
         today = local.date()
         tomorrow = today + timedelta(days=1)
-        solar = sun(location.observer, date=today, tzinfo=tzinfo)
-        next_solar = sun(location.observer, date=tomorrow, tzinfo=tzinfo)
+        # Calculate only the events the dashboard displays. Astral's aggregate
+        # sun() also requires dawn and dusk, which may not exist at high
+        # latitudes even when sunrise and sunset are available.
+        solar = {
+            "sunrise": sunrise(location.observer, date=today, tzinfo=tzinfo),
+            "sunset": sunset(location.observer, date=today, tzinfo=tzinfo),
+            "noon": noon(location.observer, date=today, tzinfo=tzinfo),
+        }
+        next_solar = {
+            "sunrise": sunrise(location.observer, date=tomorrow, tzinfo=tzinfo)
+        }
 
         def lunar_event_for_day(event_fn: Any, event_date: Any) -> datetime | None:
             """Return one local lunar event, tolerating no-rise/no-set dates."""

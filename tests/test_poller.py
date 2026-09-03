@@ -1,5 +1,7 @@
 import asyncio
-from datetime import datetime
+import threading
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 from caelus.gateway import map_gateway_reading
@@ -113,3 +115,55 @@ def test_unexplained_rain_counter_reset_is_conservative() -> None:
     )
 
     assert reading["rain_increment"] == 0.0
+
+
+def test_rain_counter_reset_boundary_is_checked_before_subtraction() -> None:
+    poller = make_poller()
+    poller.settings.timezone = "UTC"
+    poller.settings.gateway_rain_reset_hour = 0
+    reading = {"rain_total": 0.2}
+
+    poller._add_rain_increment(
+        reading,
+        {"timestamp": "2026-08-12T23:59:00", "rain_total": 0.1},
+        datetime(2026, 8, 13, 0, 1),
+    )
+
+    assert reading["rain_increment"] == 0.2
+
+
+def test_overlapping_poll_requests_are_serialized() -> None:
+    poller = make_poller()
+    poller.gateway.fetch = lambda: {"rain": [{"id": "0x10", "val": "1.1 in"}]}
+    poller.settings.gateway_rain_source = "traditional"
+    poller.settings.timezone = "UTC"
+    poller.settings.gateway_rain_reset_hour = 0
+    poller.data_logger.previous = {
+        "timestamp": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
+        "rain_total": 1.0,
+    }
+    entered = threading.Event()
+    release = threading.Event()
+
+    def latest():
+        if not entered.is_set():
+            entered.set()
+            release.wait(timeout=2)
+        elif poller.data_logger.readings:
+            timestamp, reading = poller.data_logger.readings[-1]
+            return {"timestamp": timestamp.isoformat(), **reading}
+        return poller.data_logger.previous
+
+    poller.data_logger.get_latest = latest
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(poller.poll_once)
+        assert entered.wait(timeout=2)
+        second = pool.submit(poller.poll_once)
+        release.set()
+        first.result(timeout=2)
+        second.result(timeout=2)
+
+    assert [reading["rain_increment"] for _, reading in poller.data_logger.readings] == [
+        0.1,
+        0.0,
+    ]

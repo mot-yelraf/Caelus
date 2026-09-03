@@ -16,6 +16,21 @@
   );
   const customThemeProperties = ["--scene-image", "--scene-position", "--scene-fallback", "--scene-shade", "--scene-vignette", "--accent", "--accent-2", "--line"];
   let originalTheme = themeInputs().find((input) => input.checked)?.value || "garden";
+  let activeMutationRequests = 0;
+
+  function dashboardEditingIsActive() {
+    return Boolean(dialog.open || customThemeDialog?.open || activeMutationRequests);
+  }
+
+  async function mutationFetch(...args) {
+    activeMutationRequests += 1;
+    try {
+      return await fetch(...args);
+    } finally {
+      activeMutationRequests -= 1;
+      resumeDeferredForecastRefresh();
+    }
+  }
 
   function syncMetricStyleInput() {
     if (metricStyleInput) metricStyleInput.value = JSON.stringify(metricDisplayStyles);
@@ -93,6 +108,7 @@
     if (restoreTheme) applyThemeInput(themeInputs().find((input) => input.value === originalTheme));
     dialog.close();
     body.classList.remove("modal-open");
+    resumeDeferredForecastRefresh();
   }
 
   document.querySelectorAll("[data-open-settings]").forEach((button) => {
@@ -258,6 +274,7 @@
     customThemeDialog.close();
     customThemeReturnFocus?.focus({preventScroll: true});
     customThemeReturnFocus = null;
+    resumeDeferredForecastRefresh();
   }
 
   function openCustomThemeDialog(button) {
@@ -346,7 +363,7 @@
     customThemeCreate.textContent = "Creating…";
     if (customThemeStatus) customThemeStatus.textContent = "Processing images…";
     try {
-      const response = await fetch("/api/themes", {method: "POST", body: payload});
+      const response = await mutationFetch("/api/themes", {method: "POST", body: payload});
       const result = await response.json().catch(() => ({}));
       if (!response.ok || !result.ok) throw new Error(result.detail || "Could not create theme.");
       const created = result.theme;
@@ -369,7 +386,7 @@
     payload.append("csrf_token", customThemeCsrfToken());
     button.disabled = true;
     try {
-      const response = await fetch(`/api/themes/${encodeURIComponent(themeId)}`, {method: "DELETE", body: payload});
+      const response = await mutationFetch(`/api/themes/${encodeURIComponent(themeId)}`, {method: "DELETE", body: payload});
       const result = await response.json().catch(() => ({}));
       if (!response.ok || !result.ok) throw new Error(result.detail || "Could not delete theme.");
       const collection = button.closest(".custom-theme-collection");
@@ -446,7 +463,7 @@
       settingsStatus.classList.remove("is-error");
     }
     try {
-      const response = await fetch(form.action, {method: "POST", body: formData});
+      const response = await mutationFetch(form.action, {method: "POST", body: formData});
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload.ok) {
         throw new Error(payload.detail || `Settings could not be saved (${response.status})`);
@@ -504,7 +521,7 @@
   }
 
   async function ecowittRequest(path, body) {
-    const response = await fetch(path, {
+    const response = await mutationFetch(path, {
       method: "POST",
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({...body, csrf_token: csrfToken}),
@@ -623,7 +640,7 @@
       if (detectStatus) detectStatus.textContent = "Finding approximate location…";
       try {
         const csrfToken = form.querySelector('input[name="csrf_token"]')?.value || "";
-        const response = await fetch("/api/location/detect", {
+        const response = await mutationFetch("/api/location/detect", {
           method: "POST",
           headers: {"Content-Type": "application/x-www-form-urlencoded;charset=UTF-8"},
           body: new URLSearchParams({csrf_token: csrfToken}).toString(),
@@ -1001,6 +1018,7 @@
   }
 
   function metricValue(value, decimals, unit) {
+    if (value == null) return "—";
     const numeric = Number(value);
     if (!Number.isFinite(numeric)) return "—";
     return `${numeric.toFixed(Number(decimals) || 0)}${unit ? ` ${unit}` : ""}`;
@@ -1692,7 +1710,7 @@
     formData.append("settings_pane", "appearance");
     formData.append("metric_display_styles", JSON.stringify(metricDisplayStyles));
     try {
-      await fetch(form.action, {method: "POST", body: formData});
+      await mutationFetch(form.action, {method: "POST", body: formData});
     } catch (_error) {
       // The card has already changed locally; the next Appearance save retries it.
     }
@@ -1734,6 +1752,18 @@
       || (metric.key === "rain_total" ? "gauge" : "graph24hr");
 
     function updateStats(displayedMetric, hours) {
+      const statsByHours = displayedMetric.stats_by_hours;
+      const exactStats = statsByHours?.[String(hours)] || (!statsByHours && hours === 24 ? displayedMetric.stats : null);
+      if (exactStats) {
+        [[exactStats.min, exactStats.min_at], [exactStats.avg, null], [exactStats.max, exactStats.max_at]].forEach(([value, timestamp], index) => {
+          statElements[index].term.textContent = isWindRose ? `${hours}h ${["Min", "Avg", "Max"][index]}` : ["Min", "Avg", "Max"][index];
+          statElements[index].definition.textContent = metricValue(value, displayedMetric.decimals, displayedMetric.unit);
+          statElements[index].time.textContent = timestamp ? metricTime(timestamp, timezoneName) : "";
+          statElements[index].time.dateTime = timestamp || "";
+        });
+        return;
+      }
+      if (statsByHours) return;
       const end = metricDate(generatedAt).getTime();
       const start = end - hours * 60 * 60 * 1000;
       const points = (displayedMetric.series || []).map((point) => ({
@@ -1960,8 +1990,14 @@
   setDashboardRefreshInterval(Number(body.dataset.pollIntervalSeconds));
 
   let forecastRefreshDue = false;
+  function resumeDeferredForecastRefresh() {
+    if (forecastRefreshDue && !document.hidden && !dashboardEditingIsActive()) {
+      window.setTimeout(refreshForecastOnTheHour, 0);
+    }
+  }
+
   async function refreshForecastOnTheHour() {
-    if (document.hidden) {
+    if (document.hidden || dashboardEditingIsActive()) {
       forecastRefreshDue = true;
       return;
     }
@@ -1969,7 +2005,11 @@
     try {
       await fetch("/api/forecast?force=true", {cache: "no-store"});
     } finally {
-      window.location.reload();
+      if (dashboardEditingIsActive()) {
+        forecastRefreshDue = true;
+      } else {
+        window.location.reload();
+      }
     }
   }
 

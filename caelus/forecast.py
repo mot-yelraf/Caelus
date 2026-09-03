@@ -24,7 +24,7 @@ MET_URL = "https://api.met.no/weatherapi/locationforecast/2.0/complete"
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
 NWS_POINTS_URL = "https://api.weather.gov/points/{latitude:.4f},{longitude:.4f}"
 CACHE_SECONDS = 60 * 60
-CACHE_FORMAT = 5
+CACHE_FORMAT = 6
 
 
 def normalize_forecast_provider(value: Any) -> str:
@@ -158,6 +158,7 @@ def _hour_record(
     cloud_percent: Any = None,
     condition: str,
     timezone_name: str,
+    duration_hours: float = 1.0,
 ) -> dict[str, Any] | None:
     timestamp = _parse_time(time_value)
     temperature = _safe_float(temperature_f)
@@ -178,6 +179,7 @@ def _hour_record(
         "condition": condition,
         "icon": _condition_icon(condition),
         "precip_label": _precipitation_chance_label(condition),
+        "duration_hours": max(0.01, round(float(duration_hours), 2)),
     }
 
 
@@ -219,11 +221,13 @@ def normalize_met(payload: dict[str, Any], timezone_name: str) -> list[dict[str,
         data = item.get("data") if isinstance(item, dict) else None
         instant = data.get("instant", {}).get("details", {}) if isinstance(data, dict) else {}
         forecast_period: dict[str, Any] = {}
+        duration_hours = 1
         if isinstance(data, dict):
             for period_name in ("next_1_hours", "next_6_hours", "next_12_hours"):
                 candidate = data.get(period_name)
                 if isinstance(candidate, dict):
                     forecast_period = candidate
+                    duration_hours = int(period_name.split("_")[1])
                     break
         details = forecast_period.get("details", {})
         summary = forecast_period.get("summary", {})
@@ -244,6 +248,7 @@ def normalize_met(payload: dict[str, Any], timezone_name: str) -> list[dict[str,
             cloud_percent=instant.get("cloud_area_fraction"),
             condition=condition,
             timezone_name=timezone_name,
+            duration_hours=duration_hours,
         )
         if row:
             rows.append(row)
@@ -270,6 +275,13 @@ def normalize_nws(payload: dict[str, Any], timezone_name: str) -> list[dict[str,
         temperature = _safe_float(period.get("temperature"))
         if str(period.get("temperatureUnit") or "F").upper() == "C" and temperature is not None:
             temperature = _c_to_f(temperature)
+        start = _parse_time(period.get("startTime"))
+        end = _parse_time(period.get("endTime"))
+        duration_hours = (
+            max(0.01, (end - start).total_seconds() / 3600)
+            if start is not None and end is not None
+            else 1.0
+        )
         row = _hour_record(
             time_value=period.get("startTime"),
             temperature_f=temperature,
@@ -281,6 +293,7 @@ def normalize_nws(payload: dict[str, Any], timezone_name: str) -> list[dict[str,
             cloud_percent=_condition_cloud_percent(condition),
             condition=condition,
             timezone_name=timezone_name,
+            duration_hours=duration_hours,
         )
         if row:
             rows.append(row)
@@ -398,6 +411,22 @@ def build_forecast(provider: str, rows: list[dict[str, Any]], timezone_name: str
         days.append(_daily_detail(day_rows, local_date, timezone_name))
     high_f = max(row["temperature_f"] for row in window)
     low_f = min(row["temperature_f"] for row in window)
+    decision_end = now + timedelta(hours=24)
+    decision_hours = []
+    for row in future:
+        starts_at = _parse_time(row.get("time"))
+        if starts_at is None:
+            continue
+        if starts_at.tzinfo is None:
+            starts_at = starts_at.replace(tzinfo=ZoneInfo(timezone_name))
+        duration = max(0.01, float(row.get("duration_hours") or 1))
+        if starts_at < decision_end and starts_at + timedelta(hours=duration) > now:
+            decision_hours.append(row)
+    decision_temperatures = [
+        float(row["temperature_f"])
+        for row in decision_hours
+        if _safe_float(row.get("temperature_f")) is not None
+    ]
     return {
         "ok": True,
         "cache_format": CACHE_FORMAT,
@@ -415,7 +444,18 @@ def build_forecast(provider: str, rows: list[dict[str, Any]], timezone_name: str
         "precipitation_mm": round(sum(row["precipitation_mm"] for row in window), 1),
         "hours": display_hours,
         "days": days,
-        "decision_hours": future[:24],
+        "decision_hours": decision_hours,
+        "decision_horizon_hours": 24,
+        "decision_low_f": min(decision_temperatures) if decision_temperatures else None,
+        "decision_precip_probability": max(
+            (float(row.get("precip_probability") or 0) for row in decision_hours),
+            default=None,
+        ),
+        "decision_precipitation_mm": round(
+            sum(float(row.get("precipitation_mm") or 0) for row in decision_hours), 1
+        )
+        if decision_hours
+        else None,
     }
 
 
@@ -425,17 +465,42 @@ def build_decisions(forecast: dict[str, Any]) -> list[dict[str, str]]:
         return [
             {"icon": "◌", "title": "Forecast decisions", "status": "Waiting for forecast", "detail": "Choose a provider and confirm location."}
         ]
-    rain_probability = int(forecast.get("precip_probability") or 0)
-    rain_mm = float(forecast.get("precipitation_mm") or 0)
-    low_f = int(forecast.get("low_f") or 99)
+    rain_probability_value = forecast.get("decision_precip_probability")
+    if rain_probability_value is None:
+        rain_probability_value = forecast.get("precip_probability")
+    rain_mm_value = forecast.get("decision_precipitation_mm")
+    if rain_mm_value is None:
+        rain_mm_value = forecast.get("precipitation_mm")
+    low_value = forecast.get("decision_low_f")
+    if low_value is None:
+        low_value = forecast.get("low_f")
+    rain_probability = int(_safe_float(rain_probability_value) or 0)
+    rain_mm = float(_safe_float(rain_mm_value) or 0)
+    low_number = _safe_float(low_value)
+    low_f = round(low_number) if low_number is not None else None
     hours = forecast.get("decision_hours") if isinstance(forecast.get("decision_hours"), list) else []
-    suitable = []
+    suitable: list[tuple[datetime, datetime]] = []
     for hour in hours:
         parsed = _parse_time(hour.get("time"))
         if parsed and 8 <= parsed.hour <= 18 and hour.get("precip_probability", 0) < 25 and hour.get("wind_mph", 0) < 16:
-            suitable.append(parsed)
+            duration = max(0.01, float(hour.get("duration_hours") or 1))
+            suitable.append((parsed, parsed + timedelta(hours=duration)))
     if suitable:
-        window = f"{suitable[0].strftime('%H:%M')}–{suitable[-1].strftime('%H:%M')}"
+        groups: list[list[tuple[datetime, datetime]]] = []
+        for period in sorted(suitable):
+            if not groups or period[0] > groups[-1][-1][1] + timedelta(minutes=1):
+                groups.append([period])
+            else:
+                groups[-1].append(period)
+        selected = max(
+            groups,
+            key=lambda group: ((group[-1][1] - group[0][0]).total_seconds(), -group[0][0].timestamp()),
+        )
+        window_start, window_end = selected[0][0], max(period[1] for period in selected)
+        window = f"{window_start.strftime('%H:%M')}–{window_end.strftime('%H:%M')}"
+        local_today = datetime.now(window_start.tzinfo).date()
+        if window_start.date() != local_today or window_end.date() != window_start.date():
+            window = f"{window_start.strftime('%a %b')} {window_start.day} · {window}"
         window_detail = "Low rain chance and manageable wind."
     else:
         window = "No clear window"
@@ -450,8 +515,14 @@ def build_decisions(forecast: dict[str, Any]) -> list[dict[str, str]]:
         {
             "icon": "❄",
             "title": "Frost protection",
-            "status": "Protect tender plants" if low_f <= 36 else "No frost signal",
-            "detail": f"Forecast low {low_f}°F.",
+            "status": "Forecast unavailable"
+            if low_f is None
+            else "Protect tender plants"
+            if low_f <= 36
+            else "No frost signal",
+            "detail": "No temperature forecast is available for the next 24 hours."
+            if low_f is None
+            else f"Next 24-hour low {low_f}°F.",
         },
         {"icon": "☀", "title": "Best outdoor window", "status": window, "detail": window_detail},
     ]
@@ -471,6 +542,10 @@ class ForecastService:
     def _read_cache(self, settings: AppSettings) -> dict[str, Any] | None:
         try:
             payload = json.loads(self.cache_path.read_text(encoding="utf-8"))
+            if not isinstance(payload, dict):
+                return None
+            if payload.get("ok") is not True or not isinstance(payload.get("hours"), list):
+                return None
             cache_needs_refresh = payload.get("cache_format") != CACHE_FORMAT or not isinstance(
                 payload.get("days"), list
             )

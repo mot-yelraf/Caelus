@@ -500,6 +500,7 @@ def register_routes(app: FastAPI) -> None:
                 rows,
                 app.state.settings.unit_system,
                 app.state.settings.pressure_unit,
+                observed_at,
             ),
         }
 

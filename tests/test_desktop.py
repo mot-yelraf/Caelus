@@ -118,8 +118,8 @@ def test_macos_app_bundle_contains_identity_and_python_symlink(
             "CFBundleIdentifier": desktop.MACOS_BUNDLE_IDENTIFIER,
             "CFBundleIconFile": desktop.MACOS_ICON_PATH.name,
             "CFBundlePackageType": "APPL",
-            "CFBundleShortVersionString": "0.26.237.2",
-            "CFBundleVersion": "0.26.237.2",
+            "CFBundleShortVersionString": desktop.__version__.removeprefix("v"),
+            "CFBundleVersion": desktop.__version__.removeprefix("v"),
             "NSHighResolutionCapable": True,
         }
     executable = contents / "MacOS" / "Caelus"
