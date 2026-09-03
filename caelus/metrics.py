@@ -2,6 +2,7 @@
 
 import math
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable
 
 from caelus.units import convert_value, display_unit_for
@@ -80,17 +81,74 @@ def _finite_number(value: Any) -> float | None:
     return numeric if math.isfinite(numeric) else None
 
 
-def _sample_series(series: list[dict[str, Any]], limit: int = 289) -> list[dict[str, Any]]:
-    """Bound browser payload size while retaining both ends of a series."""
+def _sample_series(
+    series: list[dict[str, Any]], limit: int = 289, *, value_key: str = "value"
+) -> list[dict[str, Any]]:
+    """Bound browser payload size while retaining endpoints and extrema."""
     if len(series) <= limit:
         return series
     last = len(series) - 1
-    indices = sorted({round(index * last / (limit - 1)) for index in range(limit)})
-    return [series[index] for index in indices]
+    minimum_index = min(range(len(series)), key=lambda index: series[index][value_key])
+    maximum_index = max(range(len(series)), key=lambda index: series[index][value_key])
+    indices = {0, last, minimum_index, maximum_index}
+    for index in range(limit):
+        indices.add(round(index * last / (limit - 1)))
+        if len(indices) >= limit:
+            break
+    return [series[index] for index in sorted(indices)]
+
+
+def _series_stats(
+    series: list[dict[str, Any]], spec: MetricSpec
+) -> dict[str, Any] | None:
+    """Calculate exact scalar or circular statistics for one metric series."""
+    if not series:
+        return None
+    minimum = min(series, key=lambda point: point["value"])
+    maximum = max(series, key=lambda point: point["value"])
+    values = [point["value"] for point in series]
+    if spec.key == "wind_dir":
+        sine = sum(math.sin(math.radians(value)) for value in values)
+        cosine = sum(math.cos(math.radians(value)) for value in values)
+        if math.hypot(sine, cosine) < 1e-9:
+            average = None
+        else:
+            average = round(math.degrees(math.atan2(sine, cosine)) % 360, spec.decimals)
+            if average == 360:
+                average = 0.0
+        minimum_value = maximum_value = None
+        minimum_at = maximum_at = None
+    else:
+        average = round(sum(values) / len(values), spec.decimals)
+        minimum_value = round(minimum["value"], spec.decimals)
+        minimum_at = minimum["timestamp"]
+        maximum_value = round(maximum["value"], spec.decimals)
+        maximum_at = maximum["timestamp"]
+    return {
+        "min": minimum_value,
+        "min_at": minimum_at,
+        "avg": average,
+        "max": maximum_value,
+        "max_at": maximum_at,
+        "samples": len(series),
+    }
+
+
+def _timestamp(value: Any) -> datetime | None:
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone(timezone.utc).replace(tzinfo=None)
+    return parsed
 
 
 def build_24_hour_metric_cards(
-    rows: Iterable[dict[str, Any]], unit_system: str = "imperial", pressure_unit: str = "hpa"
+    rows: Iterable[dict[str, Any]],
+    unit_system: str = "imperial",
+    pressure_unit: str = "hpa",
+    observed_at: datetime | None = None,
 ) -> list[dict[str, Any]]:
     """Return cards only for weather metrics containing valid numeric data."""
     readings = list(rows)
@@ -112,9 +170,22 @@ def build_24_hour_metric_cards(
                 })
         if not series:
             continue
-        minimum = min(series, key=lambda point: point["value"])
-        maximum = max(series, key=lambda point: point["value"])
-        average = sum(point["value"] for point in series) / len(series)
+        latest_time = observed_at
+        if latest_time is not None and latest_time.tzinfo is not None:
+            latest_time = latest_time.astimezone(timezone.utc).replace(tzinfo=None)
+        if latest_time is None:
+            latest_time = max(
+                (parsed for point in series if (parsed := _timestamp(point["timestamp"]))),
+                default=None,
+            )
+        six_hour_cutoff = latest_time - timedelta(hours=6) if latest_time else None
+        six_hour_series = [
+            point
+            for point in series
+            if six_hour_cutoff is None
+            or ((parsed := _timestamp(point["timestamp"])) is not None and parsed >= six_hour_cutoff)
+        ]
+        complete_stats = _series_stats(series, spec)
         cards.append(
             {
                 "key": spec.key,
@@ -123,13 +194,10 @@ def build_24_hour_metric_cards(
                 "decimals": spec.decimals,
                 "current": round(series[-1]["value"], spec.decimals),
                 "series": _sample_series(series),
-                "stats": {
-                    "min": round(minimum["value"], spec.decimals),
-                    "min_at": minimum["timestamp"],
-                    "avg": round(average, spec.decimals),
-                    "max": round(maximum["value"], spec.decimals),
-                    "max_at": maximum["timestamp"],
-                    "samples": len(series),
+                "stats": complete_stats,
+                "stats_by_hours": {
+                    "6": _series_stats(six_hour_series, spec),
+                    "24": complete_stats,
                 },
             }
         )
@@ -157,7 +225,8 @@ def build_24_hour_metric_cards(
             "unit": wind_speed_card["unit"],
             "decimals": wind_speed_card["decimals"],
             "stats": wind_speed_card["stats"],
-            "series": _sample_series(paired_wind_series),
+            "stats_by_hours": wind_speed_card["stats_by_hours"],
+            "series": _sample_series(paired_wind_series, value_key="speed"),
         }
     display_positions = {
         spec.key: index for index, spec in enumerate(metric_display_options())

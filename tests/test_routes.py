@@ -205,6 +205,8 @@ def test_dashboard_refresh_timers_follow_station_and_forecast_contract() -> None
     assert "window.setInterval(refreshEcowittDashboard, safeSeconds * 1000)" in script
     assert 'fetch("/api/forecast?force=true", {cache: "no-store"})' in script
     assert "nextHour.setMinutes(60, 1, 0)" in script
+    assert "document.hidden || dashboardEditingIsActive()" in script
+    assert "resumeDeferredForecastRefresh()" in script
     assert "window.setInterval(refreshAstronomy, 5 * 60 * 1000)" in script
 
 
@@ -623,6 +625,7 @@ def test_map_interaction_gate_and_metric_graph_contract() -> None:
     assert "const yTickCount = 4;" in script
     assert "context.fillText(formatAxisValue(tickValue), left - 8, tickY);" in script
     assert "points.reduce((sum, point) => sum + point.value, 0) / points.length" in script
+    assert "displayedMetric.stats_by_hours" in script
     assert "`AVG ${metricValue(average, metric.decimals, metric.unit)}`" in script
     assert "function drawWindRose(" in script
     assert '`${hours}-hour Wind-Rose`' in script

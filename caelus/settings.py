@@ -1,5 +1,7 @@
 import json
 import logging
+import os
+import threading
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Any, ClassVar
@@ -73,6 +75,7 @@ def build_windy_iframe_url(value: str, latitude: float, longitude: float) -> str
 @dataclass
 class AppSettings:
     settings_path: ClassVar[Path] = Path(__file__).resolve().parent.parent / "data" / "settings.json"
+    _save_lock: ClassVar[threading.Lock] = threading.Lock()
     gateway_enabled: bool = True
     gateway_url: str = "http://192.168.1.100"
     gateway_id: str = ""
@@ -209,6 +212,12 @@ class AppSettings:
         return value
 
     def save(self) -> None:
-        self.settings_path.parent.mkdir(parents=True, exist_ok=True)
-        with self.settings_path.open("w", encoding="utf-8") as handle:
-            json.dump(self.__dict__, handle, indent=2)
+        """Persist settings atomically so interrupted writes keep the last good file."""
+        with self._save_lock:
+            self.settings_path.parent.mkdir(parents=True, exist_ok=True)
+            temporary = self.settings_path.with_suffix(f"{self.settings_path.suffix}.tmp")
+            with temporary.open("w", encoding="utf-8") as handle:
+                json.dump(self.__dict__, handle, indent=2)
+                handle.flush()
+                os.fsync(handle.fileno())
+            temporary.replace(self.settings_path)

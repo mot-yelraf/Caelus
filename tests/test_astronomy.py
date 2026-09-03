@@ -67,6 +67,25 @@ def test_astronomy_context_includes_local_daylight_duration() -> None:
         assert timeline_start <= event <= timeline_end
 
 
+def test_missing_twilight_does_not_blank_available_reykjavik_astronomy() -> None:
+    settings = SimpleNamespace(
+        timezone="Atlantic/Reykjavik",
+        location_name="Reykjavik",
+        latitude=64.1466,
+        longitude=-21.9426,
+    )
+
+    result = astronomy_context(
+        settings, datetime(2026, 6, 21, 12, 0, tzinfo=timezone.utc)
+    )
+
+    assert result["sunrise"] != "—"
+    assert result["sunset"] != "—"
+    assert result["moon_altitude"] is not None
+    assert result["next_season_label"] != "Seasonal event unavailable"
+    assert result["sun_is_up"] is True
+
+
 def test_sunlight_context_includes_poles_season_and_eclipse_contract() -> None:
     settings = SimpleNamespace(
         timezone="America/Denver",

@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta
+
 from caelus.metrics import build_24_hour_metric_cards, metric_display_options
 
 
@@ -32,6 +34,46 @@ def test_metric_card_graph_series_is_bounded_but_stats_use_every_reading() -> No
     assert card["series"][-1]["value"] == 599.0
     assert card["stats"]["samples"] == 600
     assert card["stats"]["avg"] == 299.5
+
+
+def test_metric_sampling_preserves_extrema_and_six_hour_stats_are_exact() -> None:
+    observed_at = datetime(2026, 8, 13)
+    start = observed_at - timedelta(hours=24)
+    rows = [
+        {
+            "timestamp": (start + timedelta(minutes=index)).isoformat(),
+            "wind_gust": 100 if index == 1 else (25 if index >= 24 * 60 - 360 else 0),
+        }
+        for index in range(24 * 60 + 1)
+    ]
+
+    card = build_24_hour_metric_cards(rows, observed_at=observed_at)[0]
+
+    assert len(card["series"]) <= 289
+    assert max(point["value"] for point in card["series"]) == 100
+    assert card["stats_by_hours"]["24"]["max"] == 100.0
+    assert card["stats_by_hours"]["6"]["min"] == 25.0
+    assert card["stats_by_hours"]["6"]["max"] == 25.0
+
+
+def test_wind_direction_uses_circular_mean_and_handles_undefined_resultant() -> None:
+    north = build_24_hour_metric_cards(
+        [
+            {"timestamp": "2026-08-12T10:00:00", "wind_dir": 350},
+            {"timestamp": "2026-08-12T11:00:00", "wind_dir": 10},
+        ]
+    )[0]
+    undefined = build_24_hour_metric_cards(
+        [
+            {"timestamp": "2026-08-12T10:00:00", "wind_dir": 90},
+            {"timestamp": "2026-08-12T11:00:00", "wind_dir": 270},
+        ]
+    )[0]
+
+    assert north["stats"]["avg"] == 0.0
+    assert north["stats"]["min"] is None
+    assert north["stats"]["max"] is None
+    assert undefined["stats"]["avg"] is None
 
 
 def test_metric_cards_pin_primary_row_then_sort_remaining_labels() -> None:

@@ -135,3 +135,4 @@ def test_ecowitt_configuration_round_trips_sensor_inventory(tmp_path, monkeypatc
     assert restored.gateway_inventory[0]["name"] == "7-in-1"
     assert restored.gateway_rain_reset_hour == 9
     assert restored.poll_interval_seconds == 120
+    assert not settings_path.with_suffix(".json.tmp").exists()

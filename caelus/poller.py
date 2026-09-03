@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import threading
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -20,6 +21,7 @@ class GatewayPoller:
         self.task: asyncio.Task[Any] | None = None
         self.stop_event = asyncio.Event()
         self.schedule_event = asyncio.Event()
+        self._poll_lock = threading.Lock()
 
     async def start(self) -> None:
         if self.task is not None and not self.task.done():
@@ -59,23 +61,24 @@ class GatewayPoller:
 
     def poll_once(self) -> dict[str, Any] | None:
         """Fetch, persist, and return one normalized gateway reading."""
-        reading = self.gateway.fetch()
-        if not reading:
-            return None
+        with self._poll_lock:
+            reading = self.gateway.fetch()
+            if not reading:
+                return None
 
-        mapped = map_gateway_reading(
-            reading,
-            rain_source=getattr(self.settings, "gateway_rain_source", "traditional"),
-        )
-        if not mapped:
-            return None
-        timestamp = datetime.now(timezone.utc).replace(tzinfo=None)
-        latest_reader = getattr(self.data_logger, "get_latest", None)
-        latest = latest_reader() if callable(latest_reader) else None
-        self._add_rain_increment(mapped, latest, timestamp)
-        self.data_logger.log_reading(timestamp, mapped)
-        self.data_logger.prune_readings(self.settings.retention_days)
-        return mapped
+            mapped = map_gateway_reading(
+                reading,
+                rain_source=getattr(self.settings, "gateway_rain_source", "traditional"),
+            )
+            if not mapped:
+                return None
+            timestamp = datetime.now(timezone.utc).replace(tzinfo=None)
+            latest_reader = getattr(self.data_logger, "get_latest", None)
+            latest = latest_reader() if callable(latest_reader) else None
+            self._add_rain_increment(mapped, latest, timestamp)
+            self.data_logger.log_reading(timestamp, mapped)
+            self.data_logger.prune_readings(self.settings.retention_days)
+            return mapped
 
     def _add_rain_increment(
         self,
@@ -93,10 +96,6 @@ class GatewayPoller:
             prior_total = float(prior)
         except (TypeError, ValueError):
             return
-        if current_total >= prior_total:
-            reading["rain_increment"] = round(current_total - prior_total, 3)
-            return
-
         crossed_reset = False
         try:
             prior_time = datetime.fromisoformat(str(previous.get("timestamp")))
@@ -115,4 +114,9 @@ class GatewayPoller:
             crossed_reset = reset <= current_local
         except (TypeError, ValueError):
             pass
-        reading["rain_increment"] = round(current_total, 3) if crossed_reset else 0.0
+        if crossed_reset:
+            reading["rain_increment"] = round(current_total, 3)
+        elif current_total >= prior_total:
+            reading["rain_increment"] = round(current_total - prior_total, 3)
+        else:
+            reading["rain_increment"] = 0.0
