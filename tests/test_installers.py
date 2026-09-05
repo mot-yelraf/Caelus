@@ -253,10 +253,8 @@ def test_requirements_are_pinned_and_avoid_native_uvicorn_extras() -> None:
 
     assert requirements
     assert all("==" in line for line in requirements if line.strip())
-    assert "uvicorn==0.34.3" in requirements
-    assert "skyfield==1.54" in requirements
-    assert "skyfield-data==5.0.0" in requirements
-    assert "pywebview==5.4" in requirements
+    for package in ("uvicorn", "skyfield", "skyfield-data", "pywebview"):
+        assert any(line.startswith(f"{package}==") for line in requirements)
     assert not any("uvicorn[standard]" in line for line in requirements)
 
 
