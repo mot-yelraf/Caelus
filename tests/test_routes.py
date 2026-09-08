@@ -220,7 +220,7 @@ def test_dashboard_includes_scene_themes_settings_modal_and_lunar_cycle() -> Non
     assert "data-ecowitt-discover" in response.text
     assert "data-ecowitt-save" in response.text
     assert "data-ecowitt-disable" in response.text
-    assert "no Nodus sensors or switches are supported" in response.text
+    assert 'class="settings-tip"' not in response.text
     assert "data-save-settings" not in response.text
     assert '<dialog class="forecast-dialog" id="forecastDialog"' in response.text
     assert '<dialog class="graph-dialog" id="graphDialog"' in response.text
@@ -244,7 +244,7 @@ def test_dashboard_includes_scene_themes_settings_modal_and_lunar_cycle() -> Non
         assert f'name="theme" value="{theme}"' in response.text
     assert 'id="customThemeDialog"' in response.text
     assert "data-open-custom-theme" in response.text
-    assert "Add one to five named images" in response.text
+    assert 'class="custom-theme-help"' not in response.text
     for phase in ("New moon", "First quarter", "Last quarter"):
         assert phase in response.text
     assert any(name in response.text for name in FULL_MOON_NAMES.values())
@@ -286,7 +286,9 @@ def test_dashboard_includes_scene_themes_settings_modal_and_lunar_cycle() -> Non
         or "Solar eclipse" in response.text
     )
     assert 'id="daylightHours"' not in response.text
-    assert '<footer class="site-footer"><p>Created By Peace Hill Studios</p></footer>' in response.text
+    assert "Created By Peace Hill Studios" not in response.text
+    assert 'src="/static/peace-hill-studios-512.png"' in response.text
+    assert 'class="modal-footer"' not in response.text
     assert "data-reset-windy" in response.text
     assert "data-windy-map" in response.text
     assert "data-windy-interaction" in response.text
@@ -504,9 +506,9 @@ def test_sunlight_card_layout_and_refresh_contract() -> None:
     assert "--daylight-status-color: var(--warm);" in css
     assert "border: 1px solid var(--daylight-track-color);" in css
     assert "border-bottom: 1px solid var(--daylight-horizon-color);" in css
-    assert "--daylight-track-color: #765000;" in css
+    assert "--daylight-track-color: var(--surface-accent);" in css
     assert "color: var(--daylight-sun-color);" in css
-    assert "--daylight-sun-color: #d96f00;" in css
+    assert "--daylight-sun-color: #ffb000;" in css
     assert "bottom: calc(var(--sun-rise, 0) * 5rem);" in css
     assert "transform: translate(-50%, 50%);" in css
     assert "Math.sqrt(1 - horizontalOffset ** 2)" in script
@@ -535,7 +537,7 @@ def test_sunny_beach_and_daylight_desert_theme_contract() -> None:
     assert "Ocean Island" not in template
     assert "sunny-beach.webp" in css
     assert "desert-clear.webp" in css
-    assert ".theme-desert .glass-card:not(.lunar-header)" in css
+    assert ".theme-desert, .theme-swatch-desert" in css
     assert (root / "static" / "backgrounds" / "sunny-beach.webp").is_file()
     assert (root / "static" / "backgrounds" / "desert-clear.webp").is_file()
     assert not (root / "static" / "backgrounds" / "island.webp").exists()
@@ -560,7 +562,7 @@ def test_metric_display_style_settings_contract() -> None:
     assert "<strong>Theme</strong>" in response.text
     assert "<strong>Units</strong>" in response.text
     assert "<strong>Display Style</strong>" in response.text
-    assert 'class="appearance-pane-footer"' in response.text
+    assert 'data-save-pane="appearance"' in response.text
     assert ".appearance-pane-scroll" in css
     assert '.appearance-section summary::before { content: "▶";' in css
     assert '.appearance-section[open] summary::before { content: "▼";' in css

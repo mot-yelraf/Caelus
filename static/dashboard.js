@@ -14,7 +14,7 @@
   const metricDisplayStyles = Object.fromEntries(
     metricStyleSelects.map((select) => [select.dataset.metricStyleKey, select.value])
   );
-  const customThemeProperties = ["--scene-image", "--scene-position", "--scene-fallback", "--scene-shade", "--scene-vignette", "--accent", "--accent-2", "--line"];
+  const customThemeProperties = ["--surface-light", "--surface-tint", "--surface-ink", "--surface-muted", "--surface-accent", "--surface-border", "--scene-image", "--scene-position", "--scene-fallback", "--scene-shade", "--scene-vignette", "--accent", "--accent-2", "--line"];
   let originalTheme = themeInputs().find((input) => input.checked)?.value || "garden";
   let activeMutationRequests = 0;
 
@@ -77,6 +77,9 @@
       body.classList.add(`theme-${theme}`);
     }
     body.dataset.themeSelection = theme;
+    document.querySelectorAll(".weather-metric-card").forEach((card) => {
+      card.dispatchEvent(new Event("themechange"));
+    });
   }
 
   function applyThemeInput(input) {
@@ -1815,6 +1818,7 @@
       persistMetricDisplayStyles();
     }
 
+    card.addEventListener("themechange", render);
     card.addEventListener("click", cycleDisplayStyle);
     card.addEventListener("keydown", (event) => {
       if (event.key !== "Enter" && event.key !== " ") return;
