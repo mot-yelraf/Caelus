@@ -20,12 +20,12 @@ THUMBNAIL_SIZE = (480, 270)
 CUSTOM_THEME_PREFIX = "custom:"
 
 THEME_PALETTES = {
-    "pale_sage": {"name": "Pale Sage", "panel": "#e4f1e4", "strong": "#f7fcf7", "soft": "#cfe2cf", "border": "#668366", "text": "#1d301f", "muted": "#49604c", "accent": "#477a50"},
+    "pale_sage": {"name": "Pale Sage", "panel": "#e4f1e4", "strong": "#f7fcf7", "soft": "#cfe2cf", "border": "#668366", "text": "#1d301f", "muted": "#49604c", "accent": "#3f7048"},
     "pale_earth": {"name": "Pale Earth", "panel": "#efe2c6", "strong": "#fffaf1", "soft": "#dcc8a4", "border": "#8b704b", "text": "#2f2114", "muted": "#65513c", "accent": "#73522f"},
     "pale_water": {"name": "Pale Water", "panel": "#dcebf3", "strong": "#f8fcff", "soft": "#bfd8e6", "border": "#5f8298", "text": "#122633", "muted": "#385569", "accent": "#22658c"},
-    "pale_sky": {"name": "Pale Sky", "panel": "#dfeaf8", "strong": "#f8fbff", "soft": "#c5d8ef", "border": "#6687ad", "text": "#142b43", "muted": "#425d79", "accent": "#356ea3"},
+    "pale_sky": {"name": "Pale Sky", "panel": "#dfeaf8", "strong": "#f8fbff", "soft": "#c5d8ef", "border": "#6687ad", "text": "#142b43", "muted": "#425d79", "accent": "#306596"},
     "pale_blossom": {"name": "Pale Blossom", "panel": "#f1e1ed", "strong": "#fff8fd", "soft": "#dfc4d8", "border": "#95708b", "text": "#382033", "muted": "#6b4a62", "accent": "#8b4776"},
-    "pale_fruit": {"name": "Pale Fruit", "panel": "#fde1d3", "strong": "#fff8f3", "soft": "#efc6b2", "border": "#a96d53", "text": "#3b1c12", "muted": "#704739", "accent": "#a64f31"},
+    "pale_fruit": {"name": "Pale Fruit", "panel": "#fde1d3", "strong": "#fff8f3", "soft": "#efc6b2", "border": "#a96d53", "text": "#3b1c12", "muted": "#704739", "accent": "#9c462b"},
     "warm_neutral": {"name": "Warm Neutral", "panel": "#ece7df", "strong": "#fffdf9", "soft": "#d8d0c4", "border": "#80766a", "text": "#302b25", "muted": "#5e574f", "accent": "#6d5d49"},
     "cool_neutral": {"name": "Cool Neutral", "panel": "#e4eaec", "strong": "#fbfdfe", "soft": "#cad5d9", "border": "#687b82", "text": "#203035", "muted": "#4b5e64", "accent": "#496f78"},
 }
@@ -167,6 +167,12 @@ class ThemeManager:
             "--scene-fallback": palette["border"],
             "--scene-shade": "linear-gradient(180deg,rgba(2,20,28,.12),rgba(2,19,24,.34) 58%,rgba(1,14,18,.58))",
             "--scene-vignette": "radial-gradient(ellipse at center,transparent 42%,rgba(0,12,18,.3) 100%)",
+            "--surface-light": palette["strong"],
+            "--surface-tint": palette["panel"],
+            "--surface-ink": palette["text"],
+            "--surface-muted": palette["muted"],
+            "--surface-accent": palette["accent"],
+            "--surface-border": palette["border"],
             "--accent": palette["strong"],
             "--accent-2": palette["soft"],
             "--line": "rgba(235,247,240,.38)",

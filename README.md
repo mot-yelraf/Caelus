@@ -38,7 +38,9 @@ For illustrated setup and operating instructions, see the
 - Forecast-derived irrigation, frost, and outdoor-work decisions
 - Time-based CSV / JSON export and retention settings
 - Four built-in scene themes plus device-persistent custom themes created from
-  local images and accessible color palettes
+  local images and accessible color palettes. Each theme pairs light and tinted
+  surfaces across settings and dashboard tiles, with contrasting text; theme
+  selectors preview their own palette.
 - Modal Settings with keyboard navigation and live theme previews
 - Poller-aware health reporting at `/healthz`
 
