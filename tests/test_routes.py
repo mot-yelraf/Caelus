@@ -222,7 +222,8 @@ def test_dashboard_includes_scene_themes_settings_modal_and_lunar_cycle() -> Non
     assert "data-ecowitt-disable" in response.text
     assert 'class="settings-tip"' not in response.text
     assert "data-save-settings" not in response.text
-    assert '<dialog class="forecast-dialog" id="forecastDialog"' in response.text
+    assert 'id="forecastDialog"' not in response.text
+    assert "data-open-forecast" not in response.text
     assert '<dialog class="graph-dialog" id="graphDialog"' in response.text
     assert 'rel="icon" href="/caelus-favicon.svg" type="image/svg+xml"' in response.text
     assert response.text.count('rel="icon"') == 1
@@ -242,7 +243,7 @@ def test_dashboard_includes_scene_themes_settings_modal_and_lunar_cycle() -> Non
     assert response.text.count("data-graph-hours=") == 8
     assert response.text.count("data-graph-metric") == 26
     assert "data-render-graph" not in response.text
-    assert "6-day forecast" in response.text
+    assert "6-day details" not in response.text
     assert f'<p class="eyebrow">Caelus {__version__}</p>' in response.text
     assert "brand-version" not in response.text
     assert "Caelus control room" not in response.text
@@ -376,10 +377,32 @@ def test_dashboard_pages_hourly_forecast_in_groups_of_eight() -> None:
     assert "Hours 1–8 of 24" in response.text
     assert "<strong>37%</strong> Rain chance" in response.text
     assert "0% rain chance" in response.text
-    assert "42% snow chance" in response.text
-    assert "<dt>Snow chance</dt><dd>42%</dd>" in response.text
+    assert '<small class="forecast-day-rain">Snow 42%</small>' in response.text
+    assert '<small class="forecast-day-humidity">RH 30–70%</small>' in response.text
+    assert '<small class="forecast-day-wind">Wind 2–9 mph</small>' in response.text
+    assert '<em>55°</em>–80°</strong>' in response.text
+    assert "Updated from" not in response.text
     assert "PoP" not in response.text
     assert "0.0 mm" not in response.text
+
+    payload = app.state.forecast_service.get(app.state.settings)
+    payload.update(high_c=26.7, low_c=12.8, stale=True)
+    app.state.forecast_service.get = lambda _settings: payload
+    app.state.settings.unit_system = "metric"
+    response = TestClient(app).get("/")
+    assert '<em>13°</em>–27°</strong>' in response.text
+    assert '<small class="forecast-day-wind">Wind 3–14 km/h</small>' in response.text
+    assert "Cached · provider unavailable" in response.text
+
+    day = payload["days"][0]
+    day.update(humidity_low=0, humidity_high=0, wind_low_mph=0, wind_high_mph=0)
+    response = TestClient(app).get("/")
+    assert '<small class="forecast-day-humidity">RH 0–0%</small>' in response.text
+    assert '<small class="forecast-day-wind">Wind 0–0 km/h</small>' in response.text
+    day.update(humidity_low=None, wind_high_mph=None)
+    response = TestClient(app).get("/")
+    assert '<small class="forecast-day-humidity">RH —</small>' in response.text
+    assert '<small class="forecast-day-wind">Wind —</small>' in response.text
 
 
 def test_24_hour_metrics_endpoint_returns_only_valid_stored_metrics() -> None:

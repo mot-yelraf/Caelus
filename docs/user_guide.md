@@ -150,9 +150,7 @@ Values are displayed in the unit system selected under **Settings > Appearance >
 
 The forecast card shows today’s condition, high and low temperature, precipitation chance, up to 24 hourly samples, and six future daily summaries. Use the arrow at the right of the hourly row to page through later hours.
 
-Select **6-day details** for daily temperature ranges, relative-humidity ranges, wind descriptions and speeds, precipitation chances, and early/late sky summaries.
-
-![Six-day forecast details](screenshots/six-day-forecast.png)
+Each daily card shows the date, weather glyph, minimum–maximum temperature, minimum–maximum relative humidity (RH), precipitation chance, and minimum–maximum wind speed. Temperature and wind use your selected units. A dash means the provider did not supply that range. On mobile, the six cards wrap into two rows.
 
 The provider label identifies the active forecast source. When a provider is temporarily unavailable, Caelus preserves and labels the last good cached forecast rather than replacing it with an empty result.
 

@@ -45,7 +45,7 @@
         </article>
 
         <article class="glass-card forecast-panel">
-          <div class="card-heading"><div><p class="eyebrow">Today’s forecast</p><h2>{{ forecast.condition if forecast.ok else 'Forecast standing by' }}</h2></div><span class="provider-label">{{ forecast.provider_label or settings.forecast_provider | replace('_', ' ') }}</span></div>
+          <div class="card-heading"><div><p class="eyebrow">Today’s forecast</p><h2>{{ forecast.condition if forecast.ok else 'Forecast standing by' }}</h2></div><span class="provider-label">{{ forecast.provider_label or settings.forecast_provider | replace('_', ' ') }}{% if forecast.stale %}<small class="forecast-cache-note">Cached · provider unavailable</small>{% endif %}</span></div>
           {% if forecast.ok %}
             <div class="forecast-summary"><span class="forecast-main-icon" aria-hidden="true">{{ forecast.icon }}</span><div><span><strong>{{ forecast.high_c if metric_display else forecast.high_f }}°</strong> high</span><span><strong>{{ forecast.low_c if metric_display else forecast.low_f }}°</strong> low</span><span><strong>{{ forecast.precip_probability }}%</strong> {{ forecast.precip_label }}</span></div></div>
             {% set hour_count = forecast.hours | length %}
@@ -57,8 +57,21 @@
               <button class="hourly-page-button hourly-page-next" type="button" data-hourly-next aria-label="Show next forecast hour"{% if hour_count <= 8 %} hidden{% endif %}>&gt;</button>
             </div>
             <p class="hourly-page-status" data-hourly-status aria-live="polite">Hours 1–{{ 8 if hour_count > 8 else hour_count }} of {{ hour_count }}</p>
-            <p class="forecast-meta">{{ 'Cached forecast · provider temporarily unavailable' if forecast.stale else 'Updated from ' ~ forecast.provider_label }}</p>
-            {% if forecast.days %}<div class="future-heading"><span>Looking ahead</span><button type="button" data-open-forecast>6-day details</button></div><div class="daily-strip">{% for day in forecast.days %}<article class="forecast-day"><time datetime="{{ day.date }}">{{ day.label }}</time><span aria-hidden="true">{{ day.icon }}</span><strong>{{ day.high_c | round | int if metric_display else day.high_f }}° <em>{{ day.low_c | round | int if metric_display else day.low_f }}°</em></strong><small>{{ day.precip_probability }}% {{ day.precip_label | lower }}</small></article>{% endfor %}</div>{% endif %}
+            {% if forecast.days %}
+              <div class="future-heading"><span>Looking ahead</span></div>
+              <div class="daily-strip">
+                {% for day in forecast.days %}
+                  <article class="forecast-day" aria-label="{{ day.label }} forecast" title="{{ day.summary }}">
+                    <time datetime="{{ day.date }}">{{ day.label }}</time>
+                    <span aria-hidden="true">{{ day.icon }}</span>
+                    <strong aria-label="Temperature minimum to maximum"><em>{{ day.low_c | round | int if metric_display else day.low_f }}°</em>–{{ day.high_c | round | int if metric_display else day.high_f }}°</strong>
+                    <small class="forecast-day-humidity">RH {% if day.humidity_low is not none and day.humidity_high is not none %}{{ day.humidity_low }}–{{ day.humidity_high }}%{% else %}—{% endif %}</small>
+                    <small class="forecast-day-rain">{{ day.precip_label | replace(' chance', '') }} {{ day.precip_probability }}%</small>
+                    <small class="forecast-day-wind">Wind {% if day.wind_low_mph is not none and day.wind_high_mph is not none %}{% if metric_display %}{{ (day.wind_low_mph * 1.609344) | round | int }}–{{ (day.wind_high_mph * 1.609344) | round | int }} km/h{% else %}{{ day.wind_low_mph }}–{{ day.wind_high_mph }} mph{% endif %}{% else %}—{% endif %}</small>
+                  </article>
+                {% endfor %}
+              </div>
+            {% endif %}
           {% else %}
             <div class="forecast-empty"><span>◌</span><p>{{ forecast.reason or 'Set a location to load today’s forecast.' }}</p></div>
           {% endif %}
@@ -156,12 +169,6 @@
           <section class="graph-stage" aria-labelledby="graphStageTitle"><header><div><p class="eyebrow">Selected observations</p><h3 id="graphStageTitle">Last 24 hours</h3></div><p data-graph-stage-meta>Choose up to four metrics.</p></header><div class="graph-canvas-wrap"><canvas data-full-screen-graph role="img" aria-label="Full-screen weather metric graph"></canvas><p class="graph-stage-message" data-graph-stage-message>Select a metric to graph it.</p></div></section>
         </div>
       </div>
-    </dialog>
-
-    <dialog class="forecast-dialog" id="forecastDialog" aria-labelledby="forecastDialogTitle">
-      <header><div><p class="eyebrow">Weather outlook</p><h2 id="forecastDialogTitle">6-day forecast</h2></div><button type="button" data-close-forecast aria-label="Close six-day forecast">×</button></header>
-      <p class="forecast-dialog-meta">Forecast from {{ forecast.provider_label or settings.forecast_provider | replace('_', ' ') }} · {{ '%.4f' | format(settings.latitude) }}, {{ '%.4f' | format(settings.longitude) }}</p>
-      {% if forecast.days %}<div class="forecast-detail-grid">{% for day in forecast.days %}<article><h3>{{ day.label }}</h3><p>{{ day.summary }}</p><dl><dt>Temp</dt><dd>{{ day.low_c }}–{{ day.high_c }}°C{% if not metric_display %} / {{ day.low_f }}–{{ day.high_f }}°F{% endif %}</dd><dt>RH</dt><dd>{% if day.humidity_low is not none %}{{ day.humidity_low }}–{{ day.humidity_high }}%{% else %}—{% endif %}</dd><dt>Wind</dt><dd>Mostly {{ day.wind_descriptor }}<br />{% if metric_display %}{{ (day.wind_low_mph * 1.609344) | round | int }}–{{ (day.wind_high_mph * 1.609344) | round | int }} km/h{% else %}{{ day.wind_low_mph }}–{{ day.wind_high_mph }} mph{% endif %}</dd><dt>{{ day.precip_label }}</dt><dd>{{ day.precip_probability }}%</dd></dl></article>{% endfor %}</div>{% else %}<p class="forecast-dialog-empty">Future forecast data is not available yet.</p>{% endif %}
     </dialog>
 
     <dialog class="settings-dialog" id="settingsDialog" aria-labelledby="settingsTitle">

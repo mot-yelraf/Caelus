@@ -621,21 +621,6 @@
     }
   });
 
-  const forecastDialog = document.getElementById("forecastDialog");
-  document.querySelectorAll("[data-open-forecast]").forEach((button) => {
-    button.addEventListener("click", () => {
-      forecastDialog?.showModal();
-      body.classList.add("modal-open");
-    });
-  });
-  forecastDialog?.querySelectorAll("[data-close-forecast]").forEach((button) => {
-    button.addEventListener("click", () => forecastDialog.close());
-  });
-  forecastDialog?.addEventListener("close", () => body.classList.remove("modal-open"));
-  forecastDialog?.addEventListener("click", (event) => {
-    if (event.target === forecastDialog) forecastDialog.close();
-  });
-
   document.querySelectorAll("[data-hourly-carousel]").forEach((carousel) => {
     const hours = Array.from(carousel.querySelectorAll("[data-hourly-index]"));
     const previousButton = carousel.querySelector("[data-hourly-previous]");

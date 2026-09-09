@@ -83,6 +83,24 @@ def verify_dashboard(page: Page, base_url: str) -> None:
     assert icon_size == [180, 180]
     assert page.locator('[data-reading-field="temperature"]').inner_text() == "72.5"
 
+    # Daily ranges must fit within the tile's previous desktop/mobile footprint.
+    assert page.locator("[data-open-forecast], #forecastDialog, .forecast-meta").count() == 0
+    expect(page.locator(".forecast-day")).to_have_count(6)
+    expect(page.locator(".forecast-day-humidity").first).to_have_text("RH 30–85%")
+    expect(page.locator(".forecast-day-wind").first).to_have_text("Wind 0–12 mph")
+    for width, maximum_height in ((1480, 550), (1024, 559), (760, 767), (390, 787)):
+        page.set_viewport_size({"width": width, "height": 1200})
+        panel = page.locator(".forecast-panel")
+        bounds = panel.bounding_box()
+        assert bounds and bounds["height"] <= maximum_height
+        assert panel.evaluate("el => el.scrollHeight <= el.clientHeight")
+        for card in page.locator(".forecast-day").all():
+            assert card.evaluate("el => el.scrollWidth <= el.clientWidth")
+        panel.screenshot(path=RESULTS / f"forecast-{width}.png")
+    page.locator("[data-hourly-next]").click()
+    expect(page.locator("[data-hourly-status]")).to_have_text("Hours 2–9 of 24")
+    page.locator("[data-hourly-previous]").click()
+
     # Simulate settings saved by another device while this dashboard stays open.
     remote_save = page.context.request.post(f"{base_url}/settings", form={
         "csrf_token": "playwright-test-token", "settings_pane": "location",
