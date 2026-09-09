@@ -26,8 +26,7 @@
 
     <main id="top" class="dashboard-shell">
       <section class="station-intro" aria-labelledby="station-title">
-        <div><p class="eyebrow">Personal weather station</p><h1 id="station-title">{{ settings.location_name or 'Your weather, alive.' }}</h1><p class="station-subtitle" data-observation-status>{% if latest %}Last observation <time datetime="{{ latest.get('timestamp', '') }}">{{ latest_observation_time }}</time>{% else %}Waiting for the first gateway observation{% endif %}</p></div>
-        <div class="station-state {{ 'is-live' if latest else 'is-waiting' }}" data-station-state><span class="status-dot"></span><span data-station-state-label>{{ 'Station reporting' if latest else 'Gateway standing by' }}</span></div>
+        <div><p class="eyebrow">Personal weather station</p><h1 id="station-title">{{ settings.location_name or 'Your weather, alive.' }}</h1><p class="station-subtitle"><span class="station-state {{ 'is-live' if latest else 'is-waiting' }}" data-station-state><span class="status-dot" aria-hidden="true"></span><span data-station-state-label>{{ 'Station reporting' if latest else 'Gateway standing by' }}</span></span> : <span data-observation-status>{% if latest %}Last observation <time datetime="{{ latest.get('timestamp', '') }}">{{ latest_observation_time }}</time>{% else %}Waiting for the first gateway observation{% endif %}</span></p></div>
       </section>
 
       <section class="conditions-row" id="conditions" aria-label="Weather overview">
@@ -90,7 +89,6 @@
       <section class="weather-history" id="weather-history" aria-labelledby="weatherHistoryTitle" data-weather-history data-timezone="{{ settings.timezone }}">
         <div class="weather-history-heading">
           <div><p class="eyebrow">Ecowitt weather history</p><h2 id="weatherHistoryTitle"><button class="metric-expansion-toggle" type="button" data-toggle-weather-metrics aria-expanded="false" aria-controls="weatherMetricGrid" aria-label="Show all weather sensor metrics" hidden><span aria-hidden="true">▶</span></button><span>24-hour sensor metrics</span><span class="sensor-online-status" data-sensor-online-status role="status"><span class="status-dot" aria-hidden="true"></span><span data-sensor-online-label>Checking</span></span></h2></div>
-          <p>Valid stored readings · Min, average, and max use the complete 24-hour window</p>
         </div>
         <div class="weather-metric-grid" id="weatherMetricGrid" data-weather-metric-grid aria-live="polite">
           <p class="metric-loading">Loading 24-hour weather sensor history…</p>
