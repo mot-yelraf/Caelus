@@ -220,31 +220,41 @@ def test_dashboard_includes_scene_themes_settings_modal_and_lunar_cycle() -> Non
     assert "data-ecowitt-discover" in response.text
     assert "data-ecowitt-save" in response.text
     assert "data-ecowitt-disable" in response.text
-    assert "no Nodus sensors or switches are supported" in response.text
+    assert 'class="settings-tip"' not in response.text
     assert "data-save-settings" not in response.text
-    assert '<dialog class="forecast-dialog" id="forecastDialog"' in response.text
+    assert 'id="forecastDialog"' not in response.text
+    assert "data-open-forecast" not in response.text
     assert '<dialog class="graph-dialog" id="graphDialog"' in response.text
     assert 'rel="icon" href="/caelus-favicon.svg" type="image/svg+xml"' in response.text
     assert response.text.count('rel="icon"') == 1
-    assert "apple-touch-icon" not in response.text
+    assert 'rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png"' in response.text
+    assert 'name="apple-mobile-web-app-capable" content="yes"' in response.text
+    assert 'name="apple-mobile-web-app-title" content="Caelus"' in response.text
+    assert response.text.count('<div class="pane-heading"><div><h3>') == 5
+    for number in range(1, 6):
+        assert f'<div class="pane-heading"><span>0{number}</span>' not in response.text
     assert "data-open-graph" in response.text
     assert 'data-open-graph aria-label="Open graph"' in response.text
-    assert '<img src="/static/icons/dashboard-graph.svg" alt="" width="22" height="22" /><span>Graph</span>' in response.text
+    assert '<img src="/static/icons/dashboard-graph.svg" alt="" width="22" height="22" /></button>' in response.text
+    assert 'data-open-settings aria-label="Open settings"' in response.text
     assert 'href="#moon"' not in response.text
     assert 'href="#conditions"' not in response.text
     assert 'href="#map"' not in response.text
     assert response.text.count("data-graph-hours=") == 8
     assert response.text.count("data-graph-metric") == 26
     assert "data-render-graph" not in response.text
-    assert "6-day forecast" in response.text
-    assert f'class="brand-version">{__version__}</em>' in response.text
+    assert "6-day details" not in response.text
+    assert f'<p class="eyebrow">Caelus {__version__}</p>' in response.text
+    assert "brand-version" not in response.text
+    assert "Caelus control room" not in response.text
     assert 'class="brand-mark" src="/static/icons/caelus-weather-compass-titled.png"' in response.text
+    assert 'href="/" data-refresh-dashboard aria-label="Caelus — refresh dashboard"' in response.text
     assert '<span class="brand-mark">C</span>' not in response.text
     for theme in ("garden", "island", "river", "desert"):
         assert f'name="theme" value="{theme}"' in response.text
     assert 'id="customThemeDialog"' in response.text
     assert "data-open-custom-theme" in response.text
-    assert "Add one to five named images" in response.text
+    assert 'class="custom-theme-help"' not in response.text
     for phase in ("New moon", "First quarter", "Last quarter"):
         assert phase in response.text
     assert any(name in response.text for name in FULL_MOON_NAMES.values())
@@ -286,7 +296,9 @@ def test_dashboard_includes_scene_themes_settings_modal_and_lunar_cycle() -> Non
         or "Solar eclipse" in response.text
     )
     assert 'id="daylightHours"' not in response.text
-    assert '<footer class="site-footer"><p>Created By Peace Hill Studios</p></footer>' in response.text
+    assert "Created By Peace Hill Studios" not in response.text
+    assert 'src="/static/peace-hill-studios-512.png"' in response.text
+    assert 'class="modal-footer"' not in response.text
     assert "data-reset-windy" in response.text
     assert "data-windy-map" in response.text
     assert "data-windy-interaction" in response.text
@@ -365,10 +377,32 @@ def test_dashboard_pages_hourly_forecast_in_groups_of_eight() -> None:
     assert "Hours 1–8 of 24" in response.text
     assert "<strong>37%</strong> Rain chance" in response.text
     assert "0% rain chance" in response.text
-    assert "42% snow chance" in response.text
-    assert "<dt>Snow chance</dt><dd>42%</dd>" in response.text
+    assert '<small class="forecast-day-rain">Snow 42%</small>' in response.text
+    assert '<small class="forecast-day-humidity">RH 30–70%</small>' in response.text
+    assert '<small class="forecast-day-wind">Wind 2–9 mph</small>' in response.text
+    assert '<em>55°</em>–80°</strong>' in response.text
+    assert "Updated from" not in response.text
     assert "PoP" not in response.text
     assert "0.0 mm" not in response.text
+
+    payload = app.state.forecast_service.get(app.state.settings)
+    payload.update(high_c=26.7, low_c=12.8, stale=True)
+    app.state.forecast_service.get = lambda _settings: payload
+    app.state.settings.unit_system = "metric"
+    response = TestClient(app).get("/")
+    assert '<em>13°</em>–27°</strong>' in response.text
+    assert '<small class="forecast-day-wind">Wind 3–14 km/h</small>' in response.text
+    assert "Cached · provider unavailable" in response.text
+
+    day = payload["days"][0]
+    day.update(humidity_low=0, humidity_high=0, wind_low_mph=0, wind_high_mph=0)
+    response = TestClient(app).get("/")
+    assert '<small class="forecast-day-humidity">RH 0–0%</small>' in response.text
+    assert '<small class="forecast-day-wind">Wind 0–0 km/h</small>' in response.text
+    day.update(humidity_low=None, wind_high_mph=None)
+    response = TestClient(app).get("/")
+    assert '<small class="forecast-day-humidity">RH —</small>' in response.text
+    assert '<small class="forecast-day-wind">Wind —</small>' in response.text
 
 
 def test_24_hour_metrics_endpoint_returns_only_valid_stored_metrics() -> None:
@@ -504,9 +538,9 @@ def test_sunlight_card_layout_and_refresh_contract() -> None:
     assert "--daylight-status-color: var(--warm);" in css
     assert "border: 1px solid var(--daylight-track-color);" in css
     assert "border-bottom: 1px solid var(--daylight-horizon-color);" in css
-    assert "--daylight-track-color: #765000;" in css
+    assert "--daylight-track-color: var(--surface-accent);" in css
     assert "color: var(--daylight-sun-color);" in css
-    assert "--daylight-sun-color: #d96f00;" in css
+    assert "--daylight-sun-color: #ffb000;" in css
     assert "bottom: calc(var(--sun-rise, 0) * 5rem);" in css
     assert "transform: translate(-50%, 50%);" in css
     assert "Math.sqrt(1 - horizontalOffset ** 2)" in script
@@ -535,7 +569,7 @@ def test_sunny_beach_and_daylight_desert_theme_contract() -> None:
     assert "Ocean Island" not in template
     assert "sunny-beach.webp" in css
     assert "desert-clear.webp" in css
-    assert ".theme-desert .glass-card:not(.lunar-header)" in css
+    assert ".theme-desert, .theme-swatch-desert" in css
     assert (root / "static" / "backgrounds" / "sunny-beach.webp").is_file()
     assert (root / "static" / "backgrounds" / "desert-clear.webp").is_file()
     assert not (root / "static" / "backgrounds" / "island.webp").exists()
@@ -560,7 +594,7 @@ def test_metric_display_style_settings_contract() -> None:
     assert "<strong>Theme</strong>" in response.text
     assert "<strong>Units</strong>" in response.text
     assert "<strong>Display Style</strong>" in response.text
-    assert 'class="appearance-pane-footer"' in response.text
+    assert 'data-save-pane="appearance"' in response.text
     assert ".appearance-pane-scroll" in css
     assert '.appearance-section summary::before { content: "▶";' in css
     assert '.appearance-section[open] summary::before { content: "▼";' in css
@@ -576,7 +610,7 @@ def test_settings_label_and_metric_expansion_contract() -> None:
     script = (root / "static" / "dashboard.js").read_text(encoding="utf-8")
 
     assert "System Settings" not in response.text
-    assert "> Settings</button>" in response.text
+    assert 'aria-label="Open settings" title="Settings"><span aria-hidden="true">⚙</span></button>' in response.text
     assert 'data-toggle-weather-metrics aria-expanded="false"' in response.text
     assert 'aria-controls="weatherMetricGrid"' in response.text
     assert "card.hidden = !expanded && index >= 4" in script
@@ -618,7 +652,7 @@ def test_map_interaction_gate_and_metric_graph_contract() -> None:
     assert "function drawMetricGraph(" in script
     assert "const height = 230;" in script
     assert ".weather-metric-graph { display: block; width: 100%; height: 230px;" in css
-    assert ".graph-trigger span { display: none; }" in css
+    assert ".site-header > .graph-trigger { grid-column: 1; justify-self: end; }" in css
     assert "const rollingStart = generatedTime - (hours * 60 * 60 * 1000)" in script
     assert "const start = Math.max(rollingStart, points[0].time)" in script
     assert "const end = latestTime > start ? latestTime : start + 1" in script
@@ -809,3 +843,40 @@ def test_settings_rejects_non_http_gateway_with_csrf_token() -> None:
     )
 
     assert response.status_code == 422
+
+
+def test_saved_location_and_forecast_render_without_restart(tmp_path, monkeypatch):
+    monkeypatch.setattr(AppSettings, "settings_path", tmp_path / "settings.json")
+    app = make_app()
+    original_settings = app.state.settings
+    client = TestClient(app)
+    for pane, fields in (
+        ("location", {"location_name": "Updated station", "timezone_name": "America/Denver"}),
+        ("forecast", {"forecast_provider": "open_meteo"}),
+    ):
+        response = client.post("/settings", data={
+            "csrf_token": "test-token", "settings_pane": pane, **fields,
+        })
+        assert response.status_code == 200
+        assert response.json()["ok"]
+    assert app.state.settings is original_settings
+    dashboard = client.get("/").text
+    assert '<h1 id="station-title">Updated station</h1>' in dashboard
+    assert '<span class="provider-label">open meteo</span>' in dashboard
+    assert AppSettings.load().forecast_provider == "open_meteo"
+
+
+def test_safari_home_screen_icon_uses_full_size_app_artwork():
+    client = TestClient(make_app())
+    response = client.get("/apple-touch-icon.png")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/png"
+    with Image.open(io.BytesIO(response.content)) as icon:
+        assert icon.format == "PNG"
+        assert icon.size == (180, 180)
+    expected = Path(__file__).resolve().parents[1] / "static/icons/caelus-apple-touch-icon.png"
+    assert response.content == expected.read_bytes()
+    response = client.head("/apple-touch-icon.png")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/png"
+    assert response.content == b""

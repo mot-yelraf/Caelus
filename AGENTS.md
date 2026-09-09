@@ -197,7 +197,8 @@ project-specific conventions.
   same protection.
 - System Settings live in the native `#settingsDialog` modal. Preserve its
   split navigation, independently scrollable panes, keyboard navigation,
-  cancel-time theme restoration, and persistent footer status.
+  cancel-time theme restoration, and visible save/error status. Keep the dialog
+  footer-free, with closing handled by the top-right button.
 - Each System Settings pane saves independently through `settings_pane`; only
   validate and update fields owned by that pane. Keep partial writes atomic by
   validating a copied `AppSettings` value before updating the shared instance.

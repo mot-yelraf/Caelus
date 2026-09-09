@@ -38,9 +38,27 @@ For illustrated setup and operating instructions, see the
 - Forecast-derived irrigation, frost, and outdoor-work decisions
 - Time-based CSV / JSON export and retention settings
 - Four built-in scene themes plus device-persistent custom themes created from
-  local images and accessible color palettes
+  local images and accessible color palettes. Each theme pairs light and tinted
+  surfaces across settings and dashboard tiles, with contrasting text; theme
+  selectors preview their own palette.
 - Modal Settings with keyboard navigation and live theme previews
 - Poller-aware health reporting at `/healthz`
+
+The full-screen history graph shows horizontal grid lines for a single metric
+and omits them for multiple metrics. Every station-local day boundary has a vertical line and a date tick in `ddmmm`
+format (for example, `09Sep`), including across daylight-saving changes. The
+header has glyph-only Graph and Settings buttons to the left and right of the title.
+
+Tap or click the Caelus icon or title to reload the dashboard and pick up settings
+changed on another device. This also works in an installed Home Screen web app.
+
+Settings saves refresh the dashboard immediately and keep System Settings on the
+current pane, preserving drafts in other panes. Action and warning toasts appear
+at the top center of the dialog and disappear after five seconds.
+
+To add Caelus to an iPhone Home Screen, open the dashboard in Safari, choose
+**Share > Add to Home Screen**, then **Add**. Caelus supplies its 180×180 app
+icon and web-app title using [Apple’s Safari web-app metadata](https://developer.apple.com/library/archive/documentation/AppleApplications/Reference/SafariWebContent/ConfiguringWebApplications/ConfiguringWebApplications.html).
 
 ## Location and forecast privacy
 

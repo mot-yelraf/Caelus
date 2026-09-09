@@ -28,6 +28,10 @@ def test_create_resolve_and_delete_custom_theme(tmp_path) -> None:
     assert is_custom_theme_selection(selection)
     assert manager.resolve(selection)["image"]["name"] == "Morning"
     assert manager.style_values(selection)["--scene-image"].startswith("url('/theme-assets/")
+    colors = manager.style_values(selection)
+    assert colors["--surface-light"] == THEME_PALETTES["pale_sage"]["strong"]
+    assert colors["--surface-tint"] == THEME_PALETTES["pale_sage"]["panel"]
+    assert colors["--surface-ink"] == THEME_PALETTES["pale_sage"]["text"]
     with Image.open(manager.assets_dir / theme["id"] / f"{theme['images'][0]['id']}.webp") as processed:
         assert processed.size == (1920, 1080)
         assert processed.format == "WEBP"
