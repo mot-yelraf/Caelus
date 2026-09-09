@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="screenshots/dashboard-overview.png" alt="Caelus dashboard overview" width="1200">
+  <img src="screenshots/caelus-brand.png" alt="Caelus · Living Weather" width="400">
 </p>
 
 # Caelus User Guide
@@ -8,7 +8,7 @@ Caelus is a local weather dashboard and history service for an Ecowitt-compatibl
 
 This guide is for day-to-day users. You do not need to understand Python, FastAPI, or SQLite to operate Caelus.
 
-The screenshots use a neutral demo station. Your location, readings, gateway model, forecast, lunar view, and available metrics will differ.
+The screenshots were captured from a running Caelus station on September 9, 2026. Your location, readings, gateway model, forecast, lunar view, and available metrics will differ.
 
 ## Open Caelus
 
@@ -45,9 +45,9 @@ Caelus uses read-only Ecowitt LAN endpoints. It does not configure Ecowitt cloud
 
 ## Settings
 
-Select **Settings** to open the control room. Each pane saves independently. A save in one pane does not submit unsaved edits from another pane.
+Select the **Settings gear** to the right of the Caelus title to open Settings. The Location pane opens first, and the dialog header shows the Caelus version. Each pane saves independently. A save in one pane does not submit unsaved edits from another pane.
 
-The dialog supports mouse, touch, and keyboard navigation. Closing without saving restores an unsaved theme preview.
+The dialog supports mouse, touch, and keyboard navigation. Closing without saving restores an unsaved theme preview. Saved settings refresh the dashboard automatically while keeping the current pane open and preserving unsaved edits in other panes. Action and warning messages appear as toasts at the top center of the dialog and disappear after five seconds.
 
 ### Station
 
@@ -198,13 +198,47 @@ Use **Download CSV** or **Download JSON** to export observations inside the conf
 
 ## Caelus Graphum
 
-Select **Graph** in the dashboard header to open the full-screen history graph.
+Select the **Graph glyph** to the left of the Caelus title to open the full-screen history graph.
 
 ![Full-screen weather history graph](screenshots/history-graph.png)
+
+Horizontal grid lines appear when a single metric is graphed. With multiple metrics, those horizontal lines are omitted. Every station-local day boundary has a vertical line and a date tick in `ddmmm` format, such as `09Sep`.
 
 Choose a time window of 1, 6, 12, or 24 hours, or 3, 7, 14, or 29 days. Select up to four metrics. Caelus gives each selected measurement an independently labeled scale so values with different units can be compared over the same time period.
 
 The available list contains only metric types Caelus knows how to normalize; a selected metric can still have gaps when the gateway did not report it. Close the graph with the **X** button or Escape.
+
+## Mobile Operation
+
+**Mobile access is available only while your phone is connected to the same local area network (LAN) as the Caelus host. Cellular data or Wi-Fi on another network will not provide access. Adding Caelus to the Home Screen does not make it available remotely or offline.**
+
+Connect the phone to that LAN's Wi-Fi, then open Caelus in its browser or from the Home Screen icon. Leave Caelus running on the host. Use the host's network address, such as `http://samhain.local:8767`; `127.0.0.1` on the phone refers to the phone itself.
+
+<table class="mobile-screenshots">
+  <tr><th>Mobile dashboard</th><th>Mobile settings</th></tr>
+  <tr>
+    <td><img src="screenshots/caelus-iphone.png" alt="Caelus dashboard on iPhone" width="200"></td>
+    <td><img src="screenshots/caelus-iphone-nav.png" alt="Caelus settings and horizontal navigation on iPhone" width="200"></td>
+  </tr>
+</table>
+
+### Dashboard and Refresh
+
+- **Scroll vertically** to move through current readings, forecasts, sensor metrics, the map, and the lunar calendar. The dashboard stacks its cards to fit a narrow screen.
+- **Tap the Caelus icon or title** to reload the dashboard. Use this to pick up a location, forecast source, or other setting changed on another device, without closing or restarting the web app. Readings also refresh automatically while the dashboard is active.
+- **Tap the Graph glyph** to the left of the title to open Caelus Graphum. Choose a time range and up to four metrics; tap **X** to return to the dashboard.
+- **Tap a sensor card** to cycle its graph or gauge view. Use the triangle beside **24-hour sensor metrics** to show or hide additional cards.
+- **Tap Click to interact with map** before panning or zooming Windy. Use **Close forecast** above the map to reset an open Windy forecast panel.
+
+### Mobile Settings
+
+1. Tap the **Settings gear** to the right of the title. Settings opens on **Location**, with the Caelus version shown at the top.
+2. Swipe the **menu row horizontally** to reach Station, Forecast, Appearance, and Data & Map. Tap a menu choice to open its pane.
+3. Scroll **within the pane** to reach its fields and controls. Edit the values, then tap that pane's **Save** button. Each pane saves independently; Station uses **Find Sensors**, then **Save Gateway**.
+4. Look for the confirmation or warning toast at the top center of the dialog. Messages disappear after five seconds. A successful save refreshes the dashboard and keeps the current pane open.
+5. Tap the **X** at the top right to close Settings. Closing does not save pending edits, and an unsaved theme preview returns to the saved theme.
+
+Settings belong to the Caelus host and are shared by its connected devices. After saving on the Mac or another phone, tap the **Caelus icon or title on each already-open dashboard** to display those changes there. Use this refresh control in the Home Screen web app rather than relying on a browser pull-down gesture.
 
 ## Routine Operation
 

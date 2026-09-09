@@ -16,6 +16,7 @@ from caelus.theme_manager import ThemeManager
 
 ROOT = Path(__file__).resolve().parents[1]
 TEMP_DATA = TemporaryDirectory(prefix="caelus-playwright-")
+AppSettings.settings_path = Path(TEMP_DATA.name) / "settings.json"
 
 
 class BrowserTestLogger:
@@ -46,7 +47,7 @@ class BrowserTestForecast:
         return {
             "ok": False,
             "provider": settings.forecast_provider,
-            "provider_label": "Browser test",
+            "provider_label": settings.forecast_provider,
             "reason": "Deterministic browser verification",
             "hours": [],
             "days": [],
