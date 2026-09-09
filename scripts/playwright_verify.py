@@ -82,6 +82,13 @@ def verify_dashboard(page: Page, base_url: str) -> None:
     }""")
     assert icon_size == [180, 180]
     assert page.locator('[data-reading-field="temperature"]').inner_text() == "72.5"
+    subtitle = page.locator(".station-subtitle")
+    expect(subtitle).to_contain_text("Station reporting : Last observation")
+    station_bounds = subtitle.locator("[data-station-state]").bounding_box()
+    observation_bounds = subtitle.locator("[data-observation-status]").bounding_box()
+    assert station_bounds and observation_bounds
+    assert station_bounds["x"] + station_bounds["width"] < observation_bounds["x"]
+    assert abs(station_bounds["y"] - observation_bounds["y"]) < 2
 
     # Daily ranges must fit within the tile's previous desktop/mobile footprint.
     assert page.locator("[data-open-forecast], #forecastDialog, .forecast-meta").count() == 0
