@@ -60,6 +60,11 @@ To add Caelus to an iPhone Home Screen, open the dashboard in Safari, choose
 **Share > Add to Home Screen**, then **Add**. Caelus supplies its 180×180 app
 icon and web-app title using [Apple’s Safari web-app metadata](https://developer.apple.com/library/archive/documentation/AppleApplications/Reference/SafariWebContent/ConfiguringWebApplications/ConfiguringWebApplications.html).
 
+Caelus also supplies a web app manifest with standard 192×192 and 512×512 Android
+icons and a separate 512×512 maskable icon for adaptive launcher shapes. The
+manifest opens the dashboard in standalone mode when installed by a supporting
+browser.
+
 ## Location and forecast privacy
 
 When **Use IP location** is enabled, Caelus sends the server's public IP address

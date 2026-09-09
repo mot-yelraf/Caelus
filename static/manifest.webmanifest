@@ -1,0 +1,31 @@
+{
+  "id": "/",
+  "name": "Caelus",
+  "short_name": "Caelus",
+  "description": "Living weather from your personal weather station.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "theme_color": "#123c45",
+  "background_color": "#123c45",
+  "icons": [
+    {
+      "src": "icons/caelus-android-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/caelus-android-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/caelus-android-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

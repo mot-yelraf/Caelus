@@ -1,7 +1,9 @@
 import io
 from pathlib import Path
+from urllib.parse import urljoin
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.testclient import TestClient
 from PIL import Image
@@ -118,6 +120,37 @@ def test_favicon_serves_caelus_icon() -> None:
     assert "data:image" not in favicon_svg
     assert "Caelus weather compass" in favicon_svg
     assert 'viewBox="0 0 512 512"' in favicon_svg
+
+
+def test_android_manifest_and_icons_are_discoverable() -> None:
+    app = make_app()
+    app.mount("/static", StaticFiles(
+        directory=str(Path(__file__).resolve().parents[1] / "static")
+    ), name="static")
+    client = TestClient(app)
+    dashboard = client.get("/")
+    manifest_url = "/static/manifest.webmanifest"
+    assert f'<link rel="manifest" href="{manifest_url}" />' in dashboard.text
+    response = client.get(manifest_url)
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/manifest+json"
+    manifest = response.json()
+    assert manifest["name"] == manifest["short_name"] == "Caelus"
+    assert manifest["id"] == manifest["start_url"] == manifest["scope"] == "/"
+    assert client.get(manifest["start_url"]).status_code == 200
+    assert manifest["display"] == "standalone"
+    assert f'content="{manifest["theme_color"]}"' in dashboard.text
+    assert {(icon["sizes"], icon["purpose"]) for icon in manifest["icons"]} == {
+        ("192x192", "any"), ("512x512", "any"), ("512x512", "maskable"),
+    }
+    for icon in manifest["icons"]:
+        response = client.get(urljoin(manifest_url, icon["src"]))
+        assert response.status_code == 200
+        assert response.headers["content-type"] == icon["type"] == "image/png"
+        with Image.open(io.BytesIO(response.content)) as image:
+            assert image.size == tuple(map(int, icon["sizes"].split("x")))
+            if icon["purpose"] == "maskable":
+                assert image.convert("RGBA").getchannel("A").getextrema() == (255, 255)
 
 
 def test_observation_time_is_local_without_seconds_or_offset() -> None:
