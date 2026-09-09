@@ -54,6 +54,13 @@ FAVICON_ICO = (
     / "caelus-favicon.ico"
 ).read_bytes()
 
+APPLE_TOUCH_ICON = (
+    Path(__file__).resolve().parents[1]
+    / "static"
+    / "icons"
+    / "caelus-apple-touch-icon.png"
+).read_bytes()
+
 
 def format_observation_time(value: Any, timezone_name: str) -> str:
     """Format a stored observation timestamp in the configured local time."""
@@ -92,6 +99,14 @@ def register_routes(app: FastAPI) -> None:
             manager = ThemeManager(AppSettings.settings_path.parent)
             app.state.theme_manager = manager
         return manager
+
+    @app.api_route("/apple-touch-icon.png", methods=["GET", "HEAD"], include_in_schema=False)
+    async def apple_touch_icon(request: Request) -> Response:
+        """Serve the 180-pixel Caelus icon for Safari Home Screen installation."""
+        return Response(
+            content=b"" if request.method == "HEAD" else APPLE_TOUCH_ICON,
+            media_type="image/png",
+        )
 
     @app.api_route("/favicon.ico", methods=["GET", "HEAD"], include_in_schema=False)
     async def favicon_ico(request: Request) -> Response:

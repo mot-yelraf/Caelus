@@ -4,10 +4,40 @@
   if (!dialog || !form) return;
 
   const body = document.body;
+  document.querySelector("[data-refresh-dashboard]")?.addEventListener("click", (event) => {
+    event.preventDefault();
+    window.location.reload();
+  });
   const themeInputs = () => Array.from(form.querySelectorAll('input[name="theme"]'));
   const tabs = Array.from(dialog.querySelectorAll("[data-settings-pane]"));
   const panes = Array.from(dialog.querySelectorAll("[data-pane]"));
   const settingsStatus = form.querySelector("[data-settings-status]");
+  const toastTimers = new WeakMap();
+
+  function showToast(target, message, isError = false) {
+    if (!target) return;
+    window.clearTimeout(toastTimers.get(target));
+    target.classList.toggle("is-error", isError);
+    target.textContent = message;
+    toastTimers.set(target, window.setTimeout(() => {
+      target.textContent = "";
+    }, 5000));
+  }
+
+  function refreshSavedSettings(pane, message) {
+    // Preserve drafts in other panes while re-rendering all server-derived views.
+    const controls = Array.from(form.querySelectorAll("input, select, textarea"))
+      .filter((control) => control.name && control.name !== "csrf_token" && control.type !== "file")
+      .map((control) => ({name: control.name, value: control.value, checked: control.checked}));
+    try {
+      sessionStorage.setItem("caelus-settings-return", JSON.stringify({pane, message, controls}));
+    } catch (_error) {
+      showToast(settingsStatus, "Settings saved. Close Settings to refresh the dashboard.");
+      dialog.addEventListener("close", () => window.location.reload(), {once: true});
+      return;
+    }
+    window.location.reload();
+  }
   const metricStyleInput = form.querySelector("[data-metric-styles-value]");
   const allMetricStyles = form.querySelector("[data-all-metric-styles]");
   const metricStyleSelects = Array.from(form.querySelectorAll("[data-metric-style-key]"));
@@ -104,7 +134,7 @@
     originalTheme = themeInputs().find((input) => input.checked)?.value || "garden";
     dialog.showModal();
     body.classList.add("modal-open");
-    activatePane("station", false);
+    activatePane("location", true);
   }
 
   function closeSettings(restoreTheme) {
@@ -286,7 +316,7 @@
     revokeCustomThemePreviews();
     customThemeImages.replaceChildren();
     if (customThemeName) customThemeName.value = "";
-    if (customThemeStatus) customThemeStatus.textContent = "";
+    if (customThemeStatus) showToast(customThemeStatus, "");
     addCustomThemeImageRow();
     customThemeDialog.showModal();
     customThemeName?.focus();
@@ -339,7 +369,7 @@
     const rows = Array.from(customThemeImages?.querySelectorAll(".custom-theme-image-row") || []);
     const name = String(customThemeName?.value || "").trim();
     if (!name) {
-      if (customThemeStatus) customThemeStatus.textContent = "Enter a theme name.";
+      if (customThemeStatus) showToast(customThemeStatus, "Enter a theme name.", true);
       return;
     }
     const payload = new FormData();
@@ -350,11 +380,11 @@
       const imageName = String(row.querySelector(".custom-theme-image-name")?.value || "").trim();
       const palette = String(row.querySelector(".custom-theme-palette")?.value || "");
       if (!file || !imageName) {
-        if (customThemeStatus) customThemeStatus.textContent = "Choose and name every image.";
+        if (customThemeStatus) showToast(customThemeStatus, "Choose and name every image.", true);
         return;
       }
       if (file.size > 5 * 1024 * 1024) {
-        if (customThemeStatus) customThemeStatus.textContent = "Each image must be 5 MB or smaller.";
+        if (customThemeStatus) showToast(customThemeStatus, "Each image must be 5 MB or smaller.", true);
         return;
       }
       payload.append("images", file);
@@ -364,7 +394,7 @@
     const originalLabel = customThemeCreate.textContent;
     customThemeCreate.disabled = true;
     customThemeCreate.textContent = "Creating…";
-    if (customThemeStatus) customThemeStatus.textContent = "Processing images…";
+    if (customThemeStatus) showToast(customThemeStatus, "Processing images…");
     try {
       const response = await mutationFetch("/api/themes", {method: "POST", body: payload});
       const result = await response.json().catch(() => ({}));
@@ -373,9 +403,9 @@
       created.images = (created.images || []).map((image) => ({...image, style: result.styles?.[image.selection] || ""}));
       appendCustomThemeCollection(created);
       closeCustomThemeDialog();
-      if (settingsStatus) settingsStatus.textContent = "Custom theme created. Choose an image, then save Appearance.";
+      if (settingsStatus) showToast(settingsStatus, "Custom theme created. Choose an image, then save Appearance.");
     } catch (error) {
-      if (customThemeStatus) customThemeStatus.textContent = error.message || "Could not create theme.";
+      if (customThemeStatus) showToast(customThemeStatus, error.message || "Could not create theme.", true);
     } finally {
       customThemeCreate.disabled = false;
       customThemeCreate.textContent = originalLabel;
@@ -401,12 +431,11 @@
         }
       }
       collection?.remove();
-      if (settingsStatus) settingsStatus.textContent = "Custom theme deleted.";
+      if (settingsStatus) showToast(settingsStatus, "Custom theme deleted.");
     } catch (error) {
       button.disabled = false;
       if (settingsStatus) {
-        settingsStatus.textContent = error.message || "Could not delete theme.";
-        settingsStatus.classList.add("is-error");
+        showToast(settingsStatus, error.message || "Could not delete theme.", true);
       }
     }
   }
@@ -426,12 +455,12 @@
     if (button) deleteCustomTheme(button);
   });
   form.addEventListener("invalid", (event) => {
+    event.preventDefault();
     const pane = event.target.closest("[data-pane]");
     if (pane) activatePane(pane.dataset.pane, false);
     if (settingsStatus) {
       const fieldName = event.target.closest("label")?.querySelector("span")?.textContent || "highlighted field";
-      settingsStatus.textContent = `Check the ${fieldName.toLowerCase()} before saving.`;
-      settingsStatus.classList.add("is-error");
+      showToast(settingsStatus, `Check the ${fieldName.toLowerCase()} before saving.`, true);
     }
   }, true);
   async function savePane(paneName, saveButton) {
@@ -441,7 +470,7 @@
     const invalidControl = controls.find((control) => !control.checkValidity());
     if (invalidControl) {
       activatePane(paneName, false);
-      invalidControl.reportValidity();
+      invalidControl.focus();
       return;
     }
 
@@ -462,8 +491,7 @@
     saveButton.disabled = true;
     saveButton.textContent = "Saving…";
     if (settingsStatus) {
-      settingsStatus.textContent = `Saving ${paneName.replace("-", " & ")} settings…`;
-      settingsStatus.classList.remove("is-error");
+      showToast(settingsStatus, `Saving ${paneName.replace("-", " & ")} settings…`);
     }
     try {
       const response = await mutationFetch(form.action, {method: "POST", body: formData});
@@ -474,15 +502,14 @@
       if (paneName === "appearance") {
         originalTheme = themeInputs().find((input) => input.checked)?.value || originalTheme;
       }
-      if (settingsStatus) settingsStatus.textContent = `${originalLabel.replace("Save ", "")} saved.`;
+      if (settingsStatus) showToast(settingsStatus, `${originalLabel.replace("Save ", "")} saved.`);
       if (paneName === "station") {
         setDashboardRefreshInterval(Number(ecowittInterval?.value));
       }
-      if (paneName === "appearance") window.location.reload();
+      refreshSavedSettings(paneName, `${originalLabel.replace("Save ", "")} saved.`);
     } catch (error) {
       if (settingsStatus) {
-        settingsStatus.textContent = error.message || "Settings could not be saved.";
-        settingsStatus.classList.add("is-error");
+        showToast(settingsStatus, error.message || "Settings could not be saved.", true);
       }
     } finally {
       saveButton.disabled = false;
@@ -501,7 +528,8 @@
 
   const ecowittUrl = document.getElementById("ecowittGatewayUrl");
   const ecowittInterval = document.getElementById("ecowittPollInterval");
-  const ecowittStatus = form.querySelector("[data-ecowitt-status]");
+  const ecowittStatus = settingsStatus;
+  const ecowittSummary = form.querySelector("[data-ecowitt-summary]");
   const ecowittInventory = form.querySelector("[data-ecowitt-inventory]");
   const ecowittDiscoverButton = form.querySelector("[data-ecowitt-discover]");
   const ecowittSaveButton = form.querySelector("[data-ecowitt-save]");
@@ -539,16 +567,16 @@
   ecowittDiscoverButton?.addEventListener("click", async () => {
     ecowittDiscoverButton.disabled = true;
     ecowittSaveButton.disabled = true;
-    if (ecowittStatus) ecowittStatus.textContent = "Querying the Ecowitt gateway…";
+    if (ecowittStatus) showToast(ecowittStatus, "Querying the Ecowitt gateway…");
     try {
       ecowittDiscovery = await ecowittRequest("/api/ecowitt/discover", {gateway_url: ecowittUrl.value});
       renderEcowittInventory(ecowittDiscovery.inventory);
-      if (ecowittStatus) ecowittStatus.textContent = `${ecowittDiscovery.gateway_model}: ${ecowittDiscovery.inventory.length} registered sensor(s), ${ecowittDiscovery.live_metric_count} live metric(s).`;
+      if (ecowittStatus) showToast(ecowittStatus, `${ecowittDiscovery.gateway_model}: ${ecowittDiscovery.inventory.length} registered sensor(s), ${ecowittDiscovery.live_metric_count} live metric(s).`);
       ecowittSaveButton.disabled = false;
     } catch (error) {
       ecowittDiscovery = null;
       renderEcowittInventory([]);
-      if (ecowittStatus) ecowittStatus.textContent = error.message || "Gateway discovery failed.";
+      if (ecowittStatus) showToast(ecowittStatus, error.message || "Gateway discovery failed.", true);
     } finally {
       ecowittDiscoverButton.disabled = false;
     }
@@ -557,23 +585,24 @@
   ecowittSaveButton?.addEventListener("click", async () => {
     if (!ecowittDiscovery) return;
     ecowittSaveButton.disabled = true;
-    if (ecowittStatus) ecowittStatus.textContent = "Validating and saving the gateway…";
+    if (ecowittStatus) showToast(ecowittStatus, "Validating and saving the gateway…");
     try {
       const result = await ecowittRequest("/api/ecowitt/save", {
         gateway_url: ecowittUrl.value,
         poll_interval_seconds: Number(ecowittInterval.value),
       });
       ecowittDiscovery = result;
+      if (ecowittSummary) ecowittSummary.textContent = result.gateway_model || "Ecowitt polling enabled";
       renderEcowittInventory(result.inventory);
       if (ecowittStatus) {
-        ecowittStatus.textContent = result.initial_reading_stored
+        showToast(ecowittStatus, result.initial_reading_stored
           ? `${result.gateway_model} saved; the first reading was stored.`
-          : `${result.gateway_model} saved, but its first reading could not be retrieved.`;
+          : `${result.gateway_model} saved, but its first reading could not be retrieved.`, !result.initial_reading_stored);
       }
       setDashboardRefreshInterval(Number(result.poll_interval_seconds));
       await refreshEcowittDashboard();
     } catch (error) {
-      if (ecowittStatus) ecowittStatus.textContent = error.message || "Gateway could not be saved.";
+      if (ecowittStatus) showToast(ecowittStatus, error.message || "Gateway could not be saved.", true);
     } finally {
       ecowittSaveButton.disabled = false;
     }
@@ -583,27 +612,13 @@
     ecowittDisableButton.disabled = true;
     try {
       await ecowittRequest("/api/ecowitt/disable", {});
-      if (ecowittStatus) ecowittStatus.textContent = "Ecowitt polling disabled; historical SQLite readings were retained.";
+      if (ecowittSummary) ecowittSummary.textContent = "Ecowitt polling disabled";
+      if (ecowittStatus) showToast(ecowittStatus, "Ecowitt polling disabled; historical SQLite readings were retained.");
     } catch (error) {
-      if (ecowittStatus) ecowittStatus.textContent = error.message || "Gateway could not be disabled.";
+      if (ecowittStatus) showToast(ecowittStatus, error.message || "Gateway could not be disabled.", true);
     } finally {
       ecowittDisableButton.disabled = false;
     }
-  });
-
-  const forecastDialog = document.getElementById("forecastDialog");
-  document.querySelectorAll("[data-open-forecast]").forEach((button) => {
-    button.addEventListener("click", () => {
-      forecastDialog?.showModal();
-      body.classList.add("modal-open");
-    });
-  });
-  forecastDialog?.querySelectorAll("[data-close-forecast]").forEach((button) => {
-    button.addEventListener("click", () => forecastDialog.close());
-  });
-  forecastDialog?.addEventListener("close", () => body.classList.remove("modal-open"));
-  forecastDialog?.addEventListener("click", (event) => {
-    if (event.target === forecastDialog) forecastDialog.close();
   });
 
   document.querySelectorAll("[data-hourly-carousel]").forEach((carousel) => {
@@ -636,11 +651,11 @@
   });
 
   const detectButton = dialog.querySelector("[data-detect-location]");
-  const detectStatus = dialog.querySelector("[data-location-status]");
+  const detectStatus = settingsStatus;
   if (detectButton) {
     detectButton.addEventListener("click", async () => {
       detectButton.disabled = true;
-      if (detectStatus) detectStatus.textContent = "Finding approximate location…";
+      if (detectStatus) showToast(detectStatus, "Finding approximate location…");
       try {
         const csrfToken = form.querySelector('input[name="csrf_token"]')?.value || "";
         const response = await mutationFetch("/api/location/detect", {
@@ -655,9 +670,9 @@
         document.getElementById("locationTimezone").value = payload.timezone || "UTC";
         if (payload.location_name) document.getElementById("locationName").value = payload.location_name;
         document.getElementById("autoLocation").checked = true;
-        if (detectStatus) detectStatus.textContent = `Located via ${payload.provider}. Save Settings to refresh the dashboard.`;
+        if (detectStatus) showToast(detectStatus, `Located via ${payload.provider}. Save Location to refresh the dashboard.`);
       } catch (error) {
-        if (detectStatus) detectStatus.textContent = error.message || "Location detection failed";
+        if (detectStatus) showToast(detectStatus, error.message || "Location detection failed", true);
       } finally {
         detectButton.disabled = false;
       }
@@ -1092,6 +1107,47 @@
     return numeric.toLocaleString(undefined, {minimumFractionDigits: precision, maximumFractionDigits: precision});
   }
 
+  function fullGraphTimeLabel(time, payload, isDayBoundary = false) {
+    const date = new Date(time);
+    const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", {
+      timeZone: payload.timezone, day: "2-digit", month: "short",
+      hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+    }).formatToParts(date).map((part) => [part.type, part.value]));
+    if (isDayBoundary || (payload.hours <= 24 && parts.hour === "00"
+      && (payload.hours > 6 || parts.minute === "00"))) {
+      return `${parts.day}${parts.month}`;
+    }
+    const options = payload.hours <= 24
+      ? {timeZone: payload.timezone, hour: "numeric", minute: payload.hours <= 6 ? "2-digit" : undefined}
+      : {timeZone: payload.timezone, month: "short", day: "numeric"};
+    return new Intl.DateTimeFormat(undefined, options).format(date).replace(" ", "");
+  }
+
+  function fullGraphDayTicks(startTime, endTime, timezoneName) {
+    // Find calendar transitions in the station timezone, including DST changes.
+    const formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone: timezoneName, year: "numeric", month: "numeric", day: "numeric",
+    });
+    const day = (time) => formatter.format(new Date(time));
+    const ticks = day(startTime - 1) !== day(startTime) ? [startTime] : [];
+    for (let cursor = startTime; cursor < endTime;) {
+      const next = Math.min(endTime, cursor + 6 * 60 * 60 * 1000);
+      const currentDay = day(cursor);
+      if (day(next) !== currentDay) {
+        let low = cursor;
+        let high = next;
+        while (high - low > 1) {
+          const middle = Math.floor((low + high) / 2);
+          if (day(middle) === currentDay) low = middle;
+          else high = middle;
+        }
+        ticks.push(high);
+      }
+      cursor = next;
+    }
+    return ticks;
+  }
+
   function drawFullScreenGraph(canvas, metrics, payload) {
     if (!canvas || !metrics.length) return;
     const context = canvas.getContext("2d");
@@ -1136,18 +1192,45 @@
     context.fillStyle = "rgba(225,242,235,.66)";
     context.lineWidth = 1;
     const xTickCount = width < 1000 ? 5 : 8;
+    const dayTicks = fullGraphDayTicks(startTime, endTime, payload.timezone);
+    const ticks = dayTicks.map((time) => ({time, isDay: true}));
     for (let tick = 0; tick <= xTickCount; tick += 1) {
-      const tickTime = startTime + (endTime - startTime) * tick / xTickCount;
-      const tickX = x(tickTime);
+      const time = startTime + (endTime - startTime) * tick / xTickCount;
+      if (!dayTicks.some((dayTime) => Math.abs(x(dayTime) - x(time)) < 44)) {
+        ticks.push({time, isDay: false});
+      }
+    }
+    const denseDays = dayTicks.length > 1 && (plotRight - plotLeft) / dayTicks.length < 44;
+    ticks.sort((a, b) => a.time - b.time).forEach(({time, isDay}) => {
+      const tickX = x(time);
+      context.strokeStyle = isDay ? "rgba(185,226,211,.38)" : "rgba(185,226,211,.14)";
       context.beginPath();
       context.moveTo(tickX, plotTop);
-      context.lineTo(tickX, plotBottom);
+      context.lineTo(tickX, plotBottom + (isDay ? 5 : 0));
       context.stroke();
-      const options = payload.hours <= 24
-        ? {timeZone: payload.timezone, hour: "numeric", minute: payload.hours <= 6 ? "2-digit" : undefined}
-        : {timeZone: payload.timezone, month: "short", day: "numeric"};
-      context.textAlign = tick === 0 ? "left" : tick === xTickCount ? "right" : "center";
-      context.fillText(new Intl.DateTimeFormat(undefined, options).format(new Date(tickTime)).replace(" ", ""), tickX, plotBottom + 24);
+      const label = fullGraphTimeLabel(time, payload, isDay);
+      context.save();
+      if (isDay && denseDays) {
+        context.translate(tickX, plotBottom + 12);
+        context.rotate(-Math.PI / 3);
+        context.textAlign = "right";
+        context.fillText(label, 0, 0);
+      } else {
+        context.textAlign = tickX < plotLeft + 22 ? "left" : tickX > plotRight - 22 ? "right" : "center";
+        context.fillText(label, tickX, plotBottom + 24);
+      }
+      context.restore();
+    });
+    context.strokeStyle = "rgba(185,226,211,.14)";
+
+    if (axes.length === 1) {
+      for (let tick = 0; tick <= 4; tick += 1) {
+        const tickY = plotBottom - (plotBottom - plotTop) * tick / 4;
+        context.beginPath();
+        context.moveTo(plotLeft, tickY);
+        context.lineTo(plotRight, tickY);
+        context.stroke();
+      }
     }
 
     axes.forEach((axis) => {
@@ -2087,4 +2170,34 @@
     refreshEcowittDashboard();
     if (!document.hidden && forecastRefreshDue) refreshForecastOnTheHour();
   });
+  try {
+    const saved = JSON.parse(sessionStorage.getItem("caelus-settings-return") || "null");
+    sessionStorage.removeItem("caelus-settings-return");
+    if (saved) {
+      saved.controls.forEach((draft) => {
+        form.querySelectorAll("input, select, textarea").forEach((control) => {
+          if (control.name !== draft.name) return;
+          if (control.type === "radio") {
+            if (control.value === draft.value) control.checked = draft.checked;
+          } else {
+            control.value = draft.value;
+            if (control.type === "checkbox") control.checked = draft.checked;
+          }
+        });
+      });
+      metricStyleSelects.forEach((select) => {
+        metricDisplayStyles[select.dataset.metricStyleKey] = select.value;
+      });
+      syncMetricStyleInput();
+      updateAllMetricStyles();
+      // originalTheme remains the persisted theme for cancel-time restoration.
+      dialog.showModal();
+      body.classList.add("modal-open");
+      activatePane(saved.pane, true);
+      applyThemeInput(themeInputs().find((input) => input.checked));
+      showToast(settingsStatus, saved.message);
+    }
+  } catch (_error) {
+    // A blocked or stale session store must not prevent dashboard use.
+  }
 })();
