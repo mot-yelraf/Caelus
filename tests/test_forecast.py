@@ -107,6 +107,8 @@ def test_snow_forecast_uses_snow_chance_labels() -> None:
     )
 
     assert forecast["precip_label"] == "Snow chance"
+    assert "snow/sleet" in forecast["summary"]
+    assert "rain/showers" not in forecast["summary"]
     assert forecast["hours"][0]["precip_label"] == "Snow chance"
     assert forecast["days"][0]["precip_label"] == "Snow chance"
 
@@ -302,3 +304,79 @@ def test_non_object_cache_is_discarded_instead_of_crashing(tmp_path) -> None:
 
     assert result["ok"] is False
     assert result["reason"] == "offline"
+
+
+def test_today_ranges_headline_and_synopsis_match_hourly_data(monkeypatch):
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 9, 11, 5, tzinfo=timezone.utc).astimezone(tz)
+
+    monkeypatch.setattr(forecast_module, "datetime", FixedDateTime)
+    rows = normalize_open_meteo({"hourly": {
+        "time": [f"2026-09-11T{hour:02d}:00:00+00:00" for hour in range(5, 11)],
+        "temperature_2m": [60, 62, 65, 70, 75, 80],
+        "relative_humidity_2m": [70, 65, 50, 40, 30, 0],
+        "cloud_cover": [0, 0, 20, 40, 55, 55],
+        "weather_code": [0, 0, 0, 2, 2, 2],
+        "wind_speed_10m": [0, 2, 4, 6, 8, 10],
+        "precipitation_probability": [0, 0, 0, 0, 0, 15],
+    }}, "UTC")
+    result = build_forecast("open_meteo", rows, "UTC")
+    assert result["summary"] == "Clear early, partly cloudy late"
+    assert result["synopsis"] == "Clear, then partly cloudy around 8 AM."
+    assert (result["humidity_low"], result["humidity_high"]) == (0, 70)
+    assert (result["wind_low_mph"], result["wind_high_mph"]) == (0, 10)
+    assert result["precip_probability"] == 15
+    assert rows[-1]["icon"] == "🌤️"
+    assert result["cache_format"] == forecast_module.CACHE_FORMAT
+
+
+def test_nws_narrative_matches_period_and_preserves_original_units():
+    rows = normalize_nws({"properties": {"periods": [
+        {"startTime": f"2026-09-11T{hour:02d}:00:00+00:00", "temperature": 63,
+         "shortForecast": "Mostly clear"}
+        for hour in (5, 6, 7)
+    ]}}, "UTC")
+    forecast_module.attach_nws_narratives(rows, {"properties": {"periods": [
+        {"startTime": "2026-09-10T23:00:00-06:00", "endTime": "2026-09-11T01:00:00-06:00",
+         "name": "Overnight", "detailedForecast": "Low around 63. Wind 8 mph."},
+    ]}})
+    assert rows[0]["narrative"] == rows[1]["narrative"] == "Low around 63. Wind 8 mph."
+    assert "narrative" not in rows[2]
+    assert forecast_module._forecast_synopsis("us", rows) == (
+        "Overnight (NWS · original units): Low around 63. Wind 8 mph."
+    )
+
+
+def test_nws_optional_narrative_failure_keeps_hourly_forecast(tmp_path, caplog):
+    class Response:
+        def __init__(self, payload):
+            self.payload = payload
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return self.payload
+
+    class Session:
+        def get(self, url, **kwargs):
+            if "points/" in url:
+                return Response({"properties": {"forecastHourly": "https://example.test/hourly",
+                                                "forecast": "https://example.test/narrative"}})
+            if url.endswith("hourly"):
+                return Response({"properties": {"periods": [
+                    {"startTime": datetime.now(timezone.utc).isoformat(), "temperature": 63,
+                     "shortForecast": "Clear", "relativeHumidity": {"value": 70}}
+                ]}})
+            raise OSError("narrative offline")
+
+    result = ForecastService(tmp_path / "forecast.json", session=Session()).get(
+        AppSettings(latitude=32, longitude=-108, forecast_provider="us")
+    )
+    assert result["ok"] is True
+    assert result["stale"] is False
+    assert result["humidity_high"] == 70
+    assert result["synopsis"] == "Clear."
+    assert "NWS narrative supplement failed" in caplog.text

@@ -409,23 +409,36 @@ def test_dashboard_pages_hourly_forecast_in_groups_of_eight() -> None:
     assert "data-hourly-next" in response.text
     assert "Hours 1–8 of 24" in response.text
     assert "<strong>37%</strong> Rain chance" in response.text
-    assert "0% rain chance" in response.text
+    assert "Rain 0%" in response.text
     assert '<small class="forecast-day-rain">Snow 42%</small>' in response.text
     assert '<small class="forecast-day-humidity">RH 30–70%</small>' in response.text
     assert '<small class="forecast-day-wind">Wind 2–9 mph</small>' in response.text
-    assert '<em>55°</em>–80°</strong>' in response.text
+    assert '55–80°F</strong>' in response.text
     assert "Updated from" not in response.text
     assert "PoP" not in response.text
     assert "0.0 mm" not in response.text
 
     payload = app.state.forecast_service.get(app.state.settings)
-    payload.update(high_c=26.7, low_c=12.8, stale=True)
+    payload.update(high_c=26.7, low_c=12.8, stale=True, humidity_low=0, humidity_high=70,
+                   wind_low_mph=0, wind_high_mph=9, summary="Clear early, partly cloudy late",
+                   synopsis="Tonight (NWS · original units): Mostly clear.")
+    payload["hours"][0].update(humidity=0, wind_mph=0)
+    payload["hours"][1].update(humidity=70, wind_mph=9)
     app.state.forecast_service.get = lambda _settings: payload
     app.state.settings.unit_system = "metric"
     response = TestClient(app).get("/")
-    assert '<em>13°</em>–27°</strong>' in response.text
+    assert '12.8–26.7°C</strong>' in response.text
     assert '<small class="forecast-day-wind">Wind 3–14 km/h</small>' in response.text
     assert "Cached · provider unavailable" in response.text
+    assert "Clear early, partly cloudy late</h2>" in response.text
+    assert "Tonight (NWS · original units): Mostly clear." in response.text
+    assert "<strong>0–70%</strong>RH" in response.text
+    assert "<strong>0–14 km/h</strong>Wind" in response.text
+    assert '<small class="forecast-hour-humidity">RH 0%</small>' in response.text
+    assert '<small class="forecast-hour-humidity">RH —</small>' in response.text
+    assert '<small class="forecast-hour-wind">Wind 0 km/h</small>' in response.text
+    assert '<small class="forecast-hour-wind">Wind 14 km/h</small>' in response.text
+    assert '<small class="forecast-hour-wind">Wind —</small>' in response.text
 
     day = payload["days"][0]
     day.update(humidity_low=0, humidity_high=0, wind_low_mph=0, wind_high_mph=0)
