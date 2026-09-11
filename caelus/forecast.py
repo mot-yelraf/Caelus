@@ -24,7 +24,7 @@ MET_URL = "https://api.met.no/weatherapi/locationforecast/2.0/complete"
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
 NWS_POINTS_URL = "https://api.weather.gov/points/{latitude:.4f},{longitude:.4f}"
 CACHE_SECONDS = 60 * 60
-CACHE_FORMAT = 6
+CACHE_FORMAT = 7
 
 
 def normalize_forecast_provider(value: Any) -> str:
@@ -80,10 +80,10 @@ def _condition_icon(condition: str) -> str:
         return "🌧️"
     if "fog" in text:
         return "🌫️"
-    if "cloud" in text or "overcast" in text:
-        return "☁️"
     if "partly" in text:
         return "🌤️"
+    if "cloud" in text or "overcast" in text:
+        return "☁️"
     return "☀️"
 
 
@@ -310,6 +310,35 @@ def _wind_descriptor(average_mps: float) -> str:
     return "breezy"
 
 
+def attach_nws_narratives(rows: list[dict[str, Any]], payload: dict[str, Any]) -> None:
+    """Attach native NWS text only to hours covered by its forecast period."""
+    for period in payload.get("properties", {}).get("periods", []):
+        start = _parse_time(period.get("startTime"))
+        end = _parse_time(period.get("endTime"))
+        narrative = str(period.get("detailedForecast") or "").strip()
+        if not start or not end or not start.tzinfo or not end.tzinfo or not narrative:
+            continue
+        for row in rows:
+            instant = _parse_time(row.get("time"))
+            if instant and start <= instant < end:
+                row["narrative"] = narrative
+                row["narrative_period"] = str(period.get("name") or "Forecast period")
+
+
+def _forecast_synopsis(provider: str, rows: list[dict[str, Any]]) -> str:
+    """Describe upcoming conditions, preferring the matching NWS narrative."""
+    first = rows[0]
+    if provider == "us" and first.get("narrative"):
+        return f"{first.get('narrative_period') or 'Forecast period'} (NWS · original units): {first['narrative']}"
+    text = first["condition"]
+    for row in rows[1:]:
+        if row["condition"] != first["condition"]:
+            next_day = " next day" if row["time"][:10] != first["time"][:10] else ""
+            text += f", then {row['condition'].lower()} around {row['label']}{next_day}"
+            break
+    return text + "."
+
+
 def _period_name(hour: int) -> str:
     if 5 <= hour < 12:
         return "morning"
@@ -341,9 +370,15 @@ def _daily_summary(rows: list[dict[str, Any]], timezone_name: str) -> str:
         row
         for row in rows
         if row.get("precipitation_mm", 0) >= 0.05
-        or any(word in row.get("condition", "").lower() for word in ("rain", "shower", "snow", "thunder"))
+        or any(word in row.get("condition", "").lower() for word in ("rain", "shower", "snow", "sleet", "thunder"))
     ]
     if not wet_rows:
+        late_clouds = [float(row["cloud_percent"]) for row in rows[-third:] if row.get("cloud_percent") is not None]
+        if late_clouds:
+            late_average = sum(late_clouds) / len(late_clouds)
+            late = "Clear" if late_average < 20 else "Mostly clear" if late_average < 45 else "Partly cloudy" if late_average < 75 else "Cloudy"
+            if late != opening:
+                return f"{opening} early, {late.lower()} late"
         return f"{opening} early"
     periods = Counter(
         _period_name((_parse_time(row["time"]) or datetime.now(timezone.utc)).astimezone(ZoneInfo(timezone_name)).hour)
@@ -352,6 +387,10 @@ def _daily_summary(rows: list[dict[str, Any]], timezone_name: str) -> str:
     wet_period = periods.most_common(1)[0][0]
     total_mm = sum(float(row.get("precipitation_mm") or 0) for row in rows)
     intensity = "light rain/showers" if total_mm < 3 else "rain/showers" if total_mm < 12 else "heavy rain/showers"
+    if _precipitation_chance_label_for_rows(wet_rows) == "Snow chance":
+        intensity = "snow/sleet"
+    elif any("thunder" in row.get("condition", "").lower() for row in wet_rows):
+        intensity = "thunderstorms"
     return f"{opening} early, {intensity} {wet_period}"
 
 
@@ -411,6 +450,7 @@ def build_forecast(provider: str, rows: list[dict[str, Any]], timezone_name: str
         days.append(_daily_detail(day_rows, local_date, timezone_name))
     high_f = max(row["temperature_f"] for row in window)
     low_f = min(row["temperature_f"] for row in window)
+    today_detail = _daily_detail(window, now.date(), timezone_name)
     decision_end = now + timedelta(hours=24)
     decision_hours = []
     for row in future:
@@ -434,6 +474,12 @@ def build_forecast(provider: str, rows: list[dict[str, Any]], timezone_name: str
         "provider_label": PROVIDER_LABELS[provider],
         "updated_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
         "condition": condition,
+        "summary": today_detail["summary"],
+        "synopsis": _forecast_synopsis(provider, display_hours),
+        "humidity_low": today_detail["humidity_low"],
+        "humidity_high": today_detail["humidity_high"],
+        "wind_low_mph": today_detail["wind_low_mph"],
+        "wind_high_mph": today_detail["wind_high_mph"],
         "icon": _condition_icon(condition),
         "precip_label": _precipitation_chance_label_for_rows(window),
         "high_f": high_f,
@@ -630,4 +676,13 @@ class ForecastService:
             raise ValueError("NWS forecast is available only for US locations")
         response = self.session.get(hourly_url, headers=headers, timeout=timeout_seconds)
         response.raise_for_status()
-        return normalize_nws(response.json(), settings.timezone)
+        rows = normalize_nws(response.json(), settings.timezone)
+        narrative_url = properties.get("forecast")
+        if narrative_url:
+            try:
+                narrative_response = self.session.get(narrative_url, headers=headers, timeout=timeout_seconds)
+                narrative_response.raise_for_status()
+                attach_nws_narratives(rows, narrative_response.json())
+            except Exception as exc:
+                logger.warning("NWS narrative supplement failed: %s", exc)
+        return rows

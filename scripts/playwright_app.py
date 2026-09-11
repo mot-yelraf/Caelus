@@ -48,12 +48,15 @@ class BrowserTestForecast:
             "ok": True,
             "provider": settings.forecast_provider,
             "provider_label": settings.forecast_provider,
+            "summary": "Clear early, partly cloudy late",
+            "synopsis": "Overnight (NWS · original units): Mostly clear, with a low around 64. Northwest wind around 8 mph.",
+            "humidity_low": 30, "humidity_high": 85, "wind_low_mph": 0, "wind_high_mph": 12,
             "condition": "Clear", "icon": "☀️", "stale": False,
             "high_f": 88, "low_f": 64, "high_c": 31, "low_c": 18,
             "precip_probability": 44, "precip_label": "Rain chance",
             "hours": [
                 {"label": f"{hour % 12 or 12} {'AM' if hour < 12 else 'PM'}",
-                 "icon": "☀️", "temperature_f": 66 + hour % 12,
+                 "icon": "☀️", "temperature_f": 66 + hour % 12, "humidity": 48, "wind_mph": 8,
                  "precip_probability": 4, "precip_label": "Rain chance"}
                 for hour in range(24)
             ],

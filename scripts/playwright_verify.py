@@ -90,18 +90,22 @@ def verify_dashboard(page: Page, base_url: str) -> None:
     assert station_bounds["x"] + station_bounds["width"] < observation_bounds["x"]
     assert abs(station_bounds["y"] - observation_bounds["y"]) < 2
 
-    # Daily ranges must fit within the tile's previous desktop/mobile footprint.
+    # Forecast details must fit without clipping on desktop and mobile.
     assert page.locator("[data-open-forecast], #forecastDialog, .forecast-meta").count() == 0
+    expect(page.locator(".forecast-panel h2")).to_have_text("Clear early, partly cloudy late")
+    expect(page.locator(".forecast-synopsis")).to_contain_text("NWS · original units")
+    expect(page.locator(".forecast-hour-humidity").first).to_have_text("RH 48%")
+    expect(page.locator(".forecast-hour-wind").first).to_have_text("Wind 8 mph")
     expect(page.locator(".forecast-day")).to_have_count(6)
     expect(page.locator(".forecast-day-humidity").first).to_have_text("RH 30–85%")
     expect(page.locator(".forecast-day-wind").first).to_have_text("Wind 0–12 mph")
-    for width, maximum_height in ((1480, 550), (1024, 559), (760, 767), (390, 787)):
+    for width, maximum_height in ((1480, 650), (1024, 680), (760, 950), (390, 1050)):
         page.set_viewport_size({"width": width, "height": 1200})
         panel = page.locator(".forecast-panel")
         bounds = panel.bounding_box()
         assert bounds and bounds["height"] <= maximum_height
         assert panel.evaluate("el => el.scrollHeight <= el.clientHeight")
-        for card in page.locator(".forecast-day").all():
+        for card in page.locator(".forecast-day, .forecast-hour:visible, .forecast-ranges > span").all():
             assert card.evaluate("el => el.scrollWidth <= el.clientWidth")
         panel.screenshot(path=RESULTS / f"forecast-{width}.png")
     page.locator("[data-hourly-next]").click()

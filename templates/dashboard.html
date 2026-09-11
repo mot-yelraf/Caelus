@@ -45,14 +45,34 @@
         </article>
 
         <article class="glass-card forecast-panel">
-          <div class="card-heading"><div><p class="eyebrow">Today’s forecast</p><h2>{{ forecast.condition if forecast.ok else 'Forecast standing by' }}</h2></div><span class="provider-label">{{ forecast.provider_label or settings.forecast_provider | replace('_', ' ') }}{% if forecast.stale %}<small class="forecast-cache-note">Cached · provider unavailable</small>{% endif %}</span></div>
+          <div class="card-heading"><div><p class="eyebrow">Today’s forecast</p><h2>{{ forecast.get('summary', forecast.condition) if forecast.ok else 'Forecast standing by' }}</h2></div><span class="provider-label">{{ forecast.provider_label or settings.forecast_provider | replace('_', ' ') }}{% if forecast.stale %}<small class="forecast-cache-note">Cached · provider unavailable</small>{% endif %}</span></div>
           {% if forecast.ok %}
-            <div class="forecast-summary"><span class="forecast-main-icon" aria-hidden="true">{{ forecast.icon }}</span><div><span><strong>{{ forecast.high_c if metric_display else forecast.high_f }}°</strong> high</span><span><strong>{{ forecast.low_c if metric_display else forecast.low_f }}°</strong> low</span><span><strong>{{ forecast.precip_probability }}%</strong> {{ forecast.precip_label }}</span></div></div>
+            {% set temperature_unit = '°C' if metric_display else '°F' %}
+            <div class="forecast-summary">
+              <span class="forecast-main-icon" aria-hidden="true">{{ forecast.icon }}</span>
+              <div class="forecast-summary-content">
+                <div class="forecast-ranges">
+                  <span><strong>{{ forecast.low_c if metric_display else forecast.low_f }}{{ temperature_unit }}–{{ forecast.high_c if metric_display else forecast.high_f }}{{ temperature_unit }}</strong>Temperature</span>
+                  <span><strong>{% if forecast.get('humidity_low') is not none and forecast.get('humidity_high') is not none %}{{ forecast.humidity_low }}–{{ forecast.humidity_high }}%{% else %}—{% endif %}</strong>RH</span>
+                  <span><strong>{% if forecast.get('wind_low_mph') is not none and forecast.get('wind_high_mph') is not none %}{% if metric_display %}{{ (forecast.wind_low_mph * 1.609344) | round | int }}–{{ (forecast.wind_high_mph * 1.609344) | round | int }} km/h{% else %}{{ forecast.wind_low_mph }}–{{ forecast.wind_high_mph }} mph{% endif %}{% else %}—{% endif %}</strong>Wind</span>
+                  <span><strong>{{ forecast.precip_probability }}%</strong> {{ forecast.precip_label }}</span>
+                </div>
+                {% if forecast.get('synopsis') %}<p class="forecast-synopsis">{{ forecast.synopsis }}</p>{% endif %}
+              </div>
+            </div>
             {% set hour_count = forecast.hours | length %}
             <div class="hourly-carousel" data-hourly-carousel data-page-size="8">
               <button class="hourly-page-button hourly-page-previous" type="button" data-hourly-previous aria-label="Show previous forecast hour" hidden>&lt;</button>
               <div class="hourly-strip">
-                {% for hour in forecast.hours %}<div class="forecast-hour" data-hourly-index="{{ loop.index0 }}"{% if loop.index0 >= 8 %} hidden{% endif %}><time>{{ hour.label }}</time><span aria-hidden="true">{{ hour.icon }}</span><strong>{{ ((hour.temperature_f - 32) * 5 / 9) | round | int if metric_display else hour.temperature_f }}°</strong><small>{{ hour.precip_probability }}% {{ hour.precip_label | lower }}</small></div>{% endfor %}
+                {% for hour in forecast.hours %}
+                  <div class="forecast-hour" data-hourly-index="{{ loop.index0 }}"{% if loop.index0 >= 8 %} hidden{% endif %}>
+                    <time>{{ hour.label }}</time><span aria-hidden="true">{{ hour.icon }}</span>
+                    <strong>{{ ((hour.temperature_f - 32) * 5 / 9) | round | int if metric_display else hour.temperature_f }}{{ temperature_unit }}</strong>
+                    <small class="forecast-hour-humidity">RH {% if hour.get('humidity') is not none %}{{ hour.humidity }}%{% else %}—{% endif %}</small>
+                    <small class="forecast-hour-wind">Wind {% if hour.get('wind_mph') is not none %}{{ (hour.wind_mph * 1.609344) | round | int if metric_display else hour.wind_mph }} {{ 'km/h' if metric_display else 'mph' }}{% else %}—{% endif %}</small>
+                    <small>{{ hour.precip_label | replace(' chance', '') }} {{ hour.precip_probability }}%</small>
+                  </div>
+                {% endfor %}
               </div>
               <button class="hourly-page-button hourly-page-next" type="button" data-hourly-next aria-label="Show next forecast hour"{% if hour_count <= 8 %} hidden{% endif %}>&gt;</button>
             </div>
@@ -64,10 +84,10 @@
                   <article class="forecast-day" aria-label="{{ day.label }} forecast" title="{{ day.summary }}">
                     <time datetime="{{ day.date }}">{{ day.label }}</time>
                     <span aria-hidden="true">{{ day.icon }}</span>
-                    <strong aria-label="Temperature minimum to maximum"><em>{{ day.low_c | round | int if metric_display else day.low_f }}°</em>–{{ day.high_c | round | int if metric_display else day.high_f }}°</strong>
+                    <strong aria-label="Temperature minimum to maximum">{{ day.low_c if metric_display else day.low_f }}–{{ day.high_c if metric_display else day.high_f }}{{ temperature_unit }}</strong>
                     <small class="forecast-day-humidity">RH {% if day.humidity_low is not none and day.humidity_high is not none %}{{ day.humidity_low }}–{{ day.humidity_high }}%{% else %}—{% endif %}</small>
-                    <small class="forecast-day-rain">{{ day.precip_label | replace(' chance', '') }} {{ day.precip_probability }}%</small>
                     <small class="forecast-day-wind">Wind {% if day.wind_low_mph is not none and day.wind_high_mph is not none %}{% if metric_display %}{{ (day.wind_low_mph * 1.609344) | round | int }}–{{ (day.wind_high_mph * 1.609344) | round | int }} km/h{% else %}{{ day.wind_low_mph }}–{{ day.wind_high_mph }} mph{% endif %}{% else %}—{% endif %}</small>
+                    <small class="forecast-day-rain">{{ day.precip_label | replace(' chance', '') }} {{ day.precip_probability }}%</small>
                   </article>
                 {% endfor %}
               </div>

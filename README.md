@@ -33,6 +33,9 @@ For illustrated setup and operating instructions, see the
 - Automatic IP-based coordinate/timezone detection with Astral sunrise and
   sunset calculations
 - Selectable MET Norway, Open-Meteo, or US National Weather Service forecasts
+- Today’s forecast includes temperature, RH and wind ranges, an early/late
+  sky summary, and a synopsis (native NWS text retains its original units).
+  The 24-hour carousel shows temperature, RH, wind and rain/snow chance.
 - Six-day forecast details with daily condition summaries, dual-unit
   temperatures and wind, humidity ranges, and precipitation outlook
 - Forecast-derived irrigation, frost, and outdoor-work decisions
