@@ -1,0 +1,19 @@
+{
+  "version": "sensorius-nine-svg-1",
+  "authority": "/Users/twfarley/Projects/Sensorius_AI/ui_static/weather_forecast/glyphs",
+  "upstream_version": "Twemoji v17.0.2",
+  "license": "CC-BY-4.0",
+  "sha256": {
+    "LICENSE-GRAPHICS": "8ae9438818c26e4873b91d8c6ad620526c011e27e125677f13031eda903f007c",
+    "README.md": "84b17481ac8522dd24a2e66859c15b4ea430707ae864619c1fc12d93536413b7",
+    "clear-night.svg": "aafb5b77ba9325aa6139eb5229ed862fd93b44bfc91e34801998c1dd9fde72d8",
+    "cloudy.svg": "dcc39caa0f9e698689671444e35d5e5938816717dcf719cba9abb30dc0379e5e",
+    "fog.svg": "d82ddd296e7b6341946cd1faec0511c7cfcb45dbb88c1e888f8b5841b6e8b7ea",
+    "partly-cloudy-night.svg": "4384ad76aa74282d443a53bb211ece3b002272eef4d27fcff4b2893efa5a9437",
+    "partly-cloudy.svg": "1bf51f9c7c03a73f367d7ce175029e47c1e247c2b33e9742eb157d263b59af9d",
+    "rain.svg": "d799b3d98276a4a3f0431c9b8bf83733bc4012ba82afe1cded8bf6a3ceb9ac60",
+    "snow.svg": "8c59c26456ff803c8f965ed11f3de777a7fc793c495ffd001a8cfe19f803f996",
+    "sunny.svg": "8f08ac47cae81db8f28d8845c09d0dade8c42d152449a0e11de302e6b2f17661",
+    "thunder.svg": "cc7f2a3be3d96aeca47999a5adff5b702000af3c5da05c1ac95f1a21121f6ffb"
+  }
+}

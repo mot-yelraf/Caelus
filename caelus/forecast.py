@@ -9,6 +9,8 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import requests
+from astral import Observer
+from astral.sun import elevation as sun_elevation
 
 from caelus import __version__
 from caelus.settings import AppSettings
@@ -24,7 +26,7 @@ MET_URL = "https://api.met.no/weatherapi/locationforecast/2.0/complete"
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
 NWS_POINTS_URL = "https://api.weather.gov/points/{latitude:.4f},{longitude:.4f}"
 CACHE_SECONDS = 60 * 60
-CACHE_FORMAT = 7
+CACHE_FORMAT = 8
 
 
 def normalize_forecast_provider(value: Any) -> str:
@@ -70,21 +72,49 @@ def _parse_time(value: Any) -> datetime | None:
         return None
 
 
-def _condition_icon(condition: str) -> str:
-    text = condition.lower()
-    if "thunder" in text:
-        return "⛈️"
-    if "snow" in text or "sleet" in text:
-        return "🌨️"
-    if "rain" in text or "shower" in text or "drizzle" in text:
-        return "🌧️"
-    if "fog" in text:
-        return "🌫️"
-    if "partly" in text:
-        return "🌤️"
-    if "cloud" in text or "overcast" in text:
-        return "☁️"
-    return "☀️"
+def _condition_icon_key(text: object) -> str:
+    """Return a font-independent icon name for the weather forecast UI."""
+    value = str(text or "").lower()
+    if "thunder" in value:
+        return "thunder"
+    if "snow" in value or "sleet" in value:
+        return "snow"
+    if "rain" in value or "shower" in value or "drizzle" in value:
+        return "rain"
+    if "fog" in value:
+        return "fog"
+    if "partly" in value:
+        return "partly-cloudy"
+    if "cloud" in value or "overcast" in value:
+        return "cloudy"
+    return "sunny"
+
+
+def _hour_icon_key(row: dict[str, Any], location: dict[str, Any]) -> str:
+    """Choose bundled hourly artwork using provider daylight or solar position."""
+    key = _condition_icon_key(row.get("condition"))
+    if key not in ("sunny", "partly-cloudy"):
+        return key
+    is_day = row.get("is_day")
+    if not isinstance(is_day, bool):
+        symbol = str(row.get("symbol") or "")
+        if symbol.endswith("_night"):
+            is_day = False
+        elif symbol.endswith("_day"):
+            is_day = True
+        else:
+            try:
+                at = datetime.fromisoformat(str(row.get("local_time") or row.get("time")).replace("Z", "+00:00"))
+                if at.tzinfo is None:
+                    at = at.replace(tzinfo=ZoneInfo(str(location.get("timezone") or "UTC")))
+                observer = Observer(latitude=float(location["latitude"]), longitude=float(location["longitude"]))
+                is_day = sun_elevation(observer, at, with_refraction=False) > -0.833
+            except (KeyError, TypeError, ValueError):
+                # Legacy or incomplete offline payloads retain daytime artwork.
+                is_day = True
+    if not is_day:
+        return "clear-night" if key == "sunny" else "partly-cloudy-night"
+    return key
 
 
 def _precipitation_chance_label(condition: Any) -> str:
@@ -159,6 +189,8 @@ def _hour_record(
     condition: str,
     timezone_name: str,
     duration_hours: float = 1.0,
+    is_day: Any = None,
+    symbol: str = "",
 ) -> dict[str, Any] | None:
     timestamp = _parse_time(time_value)
     temperature = _safe_float(temperature_f)
@@ -177,8 +209,10 @@ def _hour_record(
         "humidity": round(_safe_float(humidity)) if _safe_float(humidity) is not None else None,
         "cloud_percent": round(_safe_float(cloud_percent)) if _safe_float(cloud_percent) is not None else None,
         "condition": condition,
-        "icon": _condition_icon(condition),
+        "icon_key": _condition_icon_key(condition),
         "precip_label": _precipitation_chance_label(condition),
+        "is_day": bool(is_day) if is_day in (0, 1) else None,
+        "symbol": symbol,
         "duration_hours": max(0.01, round(float(duration_hours), 2)),
     }
 
@@ -198,6 +232,7 @@ def normalize_open_meteo(payload: dict[str, Any], timezone_name: str) -> list[di
         row = _hour_record(
             time_value=time_value,
             temperature_f=at("temperature_2m", index),
+            is_day=at("is_day", index),
             precipitation_probability=at("precipitation_probability", index),
             precipitation_mm=at("precipitation", index),
             wind_mph=at("wind_speed_10m", index),
@@ -240,6 +275,7 @@ def normalize_met(payload: dict[str, Any], timezone_name: str) -> list[dict[str,
         wind_mps = _safe_float(instant.get("wind_speed")) or 0
         row = _hour_record(
             time_value=item.get("time"),
+            symbol=str(summary.get("symbol_code") or ""),
             temperature_f=_c_to_f(temp_c) if temp_c is not None else None,
             precipitation_probability=probability,
             precipitation_mm=precip,
@@ -284,6 +320,7 @@ def normalize_nws(payload: dict[str, Any], timezone_name: str) -> list[dict[str,
         )
         row = _hour_record(
             time_value=period.get("startTime"),
+            is_day=period.get("isDaytime"),
             temperature_f=temperature,
             precipitation_probability=probability,
             wind_mph=wind,
@@ -407,7 +444,7 @@ def _daily_detail(rows: list[dict[str, Any]], local_date: Any, timezone_name: st
         "label": f"{local_date.strftime('%a %b')} {local_date.day}",
         "condition": condition,
         "summary": _daily_summary(rows, timezone_name),
-        "icon": _condition_icon(condition),
+        "icon_key": _condition_icon_key(condition),
         "precip_label": _precipitation_chance_label_for_rows(rows),
         "high_f": round(high_f),
         "low_f": round(low_f),
@@ -425,10 +462,16 @@ def _daily_detail(rows: list[dict[str, Any]], local_date: Any, timezone_name: st
     }
 
 
-def build_forecast(provider: str, rows: list[dict[str, Any]], timezone_name: str) -> dict[str, Any]:
+def build_forecast(
+    provider: str, rows: list[dict[str, Any]], timezone_name: str,
+    *, latitude: float | None = None, longitude: float | None = None,
+) -> dict[str, Any]:
     """Build the dashboard forecast and decision inputs from normalized hours."""
     now = datetime.now(ZoneInfo(timezone_name))
     future = [row for row in rows if (_parse_time(row["time"]) or now) >= now - timedelta(minutes=90)]
+    future = sorted(future, key=lambda row: row["time"])
+    location = {"latitude": latitude, "longitude": longitude, "timezone": timezone_name}
+    future = [{**row, "icon_key": _hour_icon_key(row, location)} for row in future]
     today = [row for row in future if (_parse_time(row["time"]) or now).date() == now.date()]
     window = today or future[:24]
     if not window:
@@ -480,7 +523,7 @@ def build_forecast(provider: str, rows: list[dict[str, Any]], timezone_name: str
         "humidity_high": today_detail["humidity_high"],
         "wind_low_mph": today_detail["wind_low_mph"],
         "wind_high_mph": today_detail["wind_high_mph"],
-        "icon": _condition_icon(condition),
+        "icon_key": _condition_icon_key(condition),
         "precip_label": _precipitation_chance_label_for_rows(window),
         "high_f": high_f,
         "low_f": low_f,
@@ -600,6 +643,13 @@ class ForecastService:
             updated = _parse_time(payload.get("updated_at"))
             same = payload.get("provider") == settings.forecast_provider and abs(float(payload["latitude"]) - settings.latitude) < 0.05 and abs(float(payload["longitude"]) - settings.longitude) < 0.05
             if updated and same:
+                # Upgrade artwork even when a legacy cache is the only offline data.
+                location = {"latitude": settings.latitude, "longitude": settings.longitude, "timezone": settings.timezone}
+                payload["icon_key"] = _condition_icon_key(payload.get("condition"))
+                for row in payload["hours"]:
+                    row["icon_key"] = _hour_icon_key(row, location)
+                for day in payload.get("days", []):
+                    day["icon_key"] = _condition_icon_key(day.get("condition"))
                 payload["cache_age_seconds"] = max(0, (datetime.now(timezone.utc) - updated.astimezone(timezone.utc)).total_seconds())
                 payload["cache_needs_refresh"] = cache_needs_refresh
                 return payload
@@ -627,7 +677,10 @@ class ForecastService:
             return cached
         try:
             rows = self._fetch(provider, settings, timeout_seconds)
-            result = build_forecast(provider, rows, settings.timezone)
+            result = build_forecast(
+                provider, rows, settings.timezone,
+                latitude=settings.latitude, longitude=settings.longitude,
+            )
             if not result.get("ok"):
                 raise ValueError(str(result.get("reason") or "empty forecast"))
             result.update(latitude=settings.latitude, longitude=settings.longitude, stale=False)
@@ -653,7 +706,7 @@ class ForecastService:
                 params={
                     "latitude": settings.latitude,
                     "longitude": settings.longitude,
-                    "hourly": "temperature_2m,relative_humidity_2m,precipitation_probability,precipitation,weather_code,cloud_cover,wind_speed_10m",
+                    "hourly": "temperature_2m,relative_humidity_2m,precipitation_probability,precipitation,weather_code,cloud_cover,wind_speed_10m,is_day",
                     "temperature_unit": "fahrenheit",
                     "wind_speed_unit": "mph",
                     "timezone": settings.timezone or "auto",

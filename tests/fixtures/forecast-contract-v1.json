@@ -1,0 +1,366 @@
+{
+  "version": 1,
+  "authority": "/Users/twfarley/Projects/Sensorius_AI",
+  "rules": {
+    "condition_precedence": [
+      "thunder",
+      "snow or sleet",
+      "rain or shower or drizzle",
+      "fog",
+      "partly",
+      "cloud or overcast",
+      "sunny"
+    ],
+    "hourly_daylight": [
+      "boolean is_day",
+      "MET _night or _day suffix",
+      "station solar elevation without refraction > -0.833 degrees at forecast timestamp",
+      "daytime for incomplete legacy data"
+    ],
+    "daily_condition": "Most frequent normalized condition; ties select first chronological occurrence; always daytime artwork.",
+    "windows": "Sort by local forecast time; retain timestamps >= now minus 90 minutes; display first 24 samples; today uses local calendar date or first 24 samples if empty; next six available local dates exclude today.",
+    "aggregation": "Temperature, humidity and wind extrema; maximum precipitation probability; sum precipitation amounts; unweighted sample counts for representative condition."
+  },
+  "wmo": [
+    {
+      "code": 0,
+      "condition": "Clear"
+    },
+    {
+      "code": 1,
+      "condition": "Partly cloudy"
+    },
+    {
+      "code": 2,
+      "condition": "Partly cloudy"
+    },
+    {
+      "code": 3,
+      "condition": "Cloudy"
+    },
+    {
+      "code": 45,
+      "condition": "Fog"
+    },
+    {
+      "code": 48,
+      "condition": "Fog"
+    },
+    {
+      "code": 51,
+      "condition": "Rain"
+    },
+    {
+      "code": 52,
+      "condition": "Rain"
+    },
+    {
+      "code": 53,
+      "condition": "Rain"
+    },
+    {
+      "code": 54,
+      "condition": "Rain"
+    },
+    {
+      "code": 55,
+      "condition": "Rain"
+    },
+    {
+      "code": 56,
+      "condition": "Rain"
+    },
+    {
+      "code": 57,
+      "condition": "Rain"
+    },
+    {
+      "code": 58,
+      "condition": "Rain"
+    },
+    {
+      "code": 59,
+      "condition": "Rain"
+    },
+    {
+      "code": 60,
+      "condition": "Rain"
+    },
+    {
+      "code": 61,
+      "condition": "Rain"
+    },
+    {
+      "code": 62,
+      "condition": "Rain"
+    },
+    {
+      "code": 63,
+      "condition": "Rain"
+    },
+    {
+      "code": 64,
+      "condition": "Rain"
+    },
+    {
+      "code": 65,
+      "condition": "Rain"
+    },
+    {
+      "code": 66,
+      "condition": "Rain"
+    },
+    {
+      "code": 67,
+      "condition": "Rain"
+    },
+    {
+      "code": 71,
+      "condition": "Snow"
+    },
+    {
+      "code": 72,
+      "condition": "Snow"
+    },
+    {
+      "code": 73,
+      "condition": "Snow"
+    },
+    {
+      "code": 74,
+      "condition": "Snow"
+    },
+    {
+      "code": 75,
+      "condition": "Snow"
+    },
+    {
+      "code": 76,
+      "condition": "Snow"
+    },
+    {
+      "code": 77,
+      "condition": "Snow"
+    },
+    {
+      "code": 80,
+      "condition": "Rain showers"
+    },
+    {
+      "code": 81,
+      "condition": "Rain showers"
+    },
+    {
+      "code": 82,
+      "condition": "Rain showers"
+    },
+    {
+      "code": 85,
+      "condition": "Snow showers"
+    },
+    {
+      "code": 86,
+      "condition": "Snow showers"
+    },
+    {
+      "code": 95,
+      "condition": "Thunderstorms"
+    },
+    {
+      "code": 96,
+      "condition": "Thunderstorms"
+    },
+    {
+      "code": 99,
+      "condition": "Thunderstorms"
+    },
+    {
+      "code": 4,
+      "condition": "Mixed skies"
+    },
+    {
+      "code": 49,
+      "condition": "Mixed skies"
+    },
+    {
+      "code": 70,
+      "condition": "Mixed skies"
+    },
+    {
+      "code": 84,
+      "condition": "Mixed skies"
+    },
+    {
+      "code": 94,
+      "condition": "Mixed skies"
+    }
+  ],
+  "met": [
+    {
+      "symbol": "clearsky_day",
+      "condition": "Clear"
+    },
+    {
+      "symbol": "fair_night",
+      "condition": "Clear"
+    },
+    {
+      "symbol": "partlycloudy_night",
+      "condition": "Partly cloudy"
+    },
+    {
+      "symbol": "cloudy",
+      "condition": "Cloudy"
+    },
+    {
+      "symbol": "fog",
+      "condition": "Fog"
+    },
+    {
+      "symbol": "lightrainshowers_day",
+      "condition": "Rain showers"
+    },
+    {
+      "symbol": "sleetshowers_day",
+      "condition": "Snow showers"
+    },
+    {
+      "symbol": "heavysnow",
+      "condition": "Snow showers"
+    },
+    {
+      "symbol": "rainshowersandthunder_night",
+      "condition": "Thunderstorms"
+    }
+  ],
+  "hourly": [
+    {
+      "condition": "Clear",
+      "symbol": "clearsky_night",
+      "is_day": null,
+      "expected": "clear-night"
+    },
+    {
+      "condition": "Partly cloudy",
+      "symbol": "partlycloudy_night",
+      "is_day": null,
+      "expected": "partly-cloudy-night"
+    },
+    {
+      "condition": "Clear",
+      "symbol": "clearsky_day",
+      "is_day": null,
+      "expected": "sunny"
+    },
+    {
+      "condition": "Partly cloudy",
+      "symbol": "partlycloudy_day",
+      "is_day": null,
+      "expected": "partly-cloudy"
+    },
+    {
+      "condition": "Clear",
+      "symbol": "",
+      "is_day": false,
+      "expected": "clear-night"
+    },
+    {
+      "condition": "Partly cloudy",
+      "symbol": "",
+      "is_day": false,
+      "expected": "partly-cloudy-night"
+    },
+    {
+      "condition": "Clear",
+      "symbol": "clearsky_night",
+      "is_day": true,
+      "expected": "sunny"
+    },
+    {
+      "condition": "Rain",
+      "symbol": "",
+      "is_day": false,
+      "expected": "rain"
+    },
+    {
+      "condition": "Snow",
+      "symbol": "",
+      "is_day": false,
+      "expected": "snow"
+    },
+    {
+      "condition": "Thunderstorms",
+      "symbol": "",
+      "is_day": false,
+      "expected": "thunder"
+    },
+    {
+      "condition": "Fog",
+      "symbol": "",
+      "is_day": false,
+      "expected": "fog"
+    },
+    {
+      "condition": "Cloudy",
+      "symbol": "",
+      "is_day": false,
+      "expected": "cloudy"
+    },
+    {
+      "condition": "Sleet and rain",
+      "symbol": "",
+      "is_day": false,
+      "expected": "snow"
+    },
+    {
+      "condition": "Drizzle",
+      "symbol": "",
+      "is_day": false,
+      "expected": "rain"
+    },
+    {
+      "condition": "Overcast",
+      "symbol": "",
+      "is_day": true,
+      "expected": "cloudy"
+    },
+    {
+      "condition": "Mixed skies",
+      "symbol": "",
+      "is_day": true,
+      "expected": "sunny"
+    }
+  ],
+  "solar": [
+    {
+      "time": "2026-09-15T00:00:00+00:00",
+      "latitude": 0,
+      "longitude": 0,
+      "expected": "clear-night"
+    },
+    {
+      "time": "2026-09-15T12:00:00+00:00",
+      "latitude": 0,
+      "longitude": 0,
+      "expected": "sunny"
+    },
+    {
+      "time": "2026-06-21T00:00:00+00:00",
+      "latitude": 89,
+      "longitude": 0,
+      "expected": "sunny"
+    },
+    {
+      "time": "2026-12-21T12:00:00+00:00",
+      "latitude": 89,
+      "longitude": 0,
+      "expected": "clear-night"
+    },
+    {
+      "time": "2026-09-15T06:00:00-06:00",
+      "latitude": 0,
+      "longitude": 0,
+      "expected": "sunny"
+    }
+  ]
+}
