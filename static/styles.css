@@ -329,7 +329,8 @@ a { color: inherit; }
 .current-reading-list strong { margin-top: 0.25rem; font-size: 0.86rem; }
 .provider-label { color: var(--accent-2); font-size: 0.62rem; letter-spacing: 0.08em; text-transform: uppercase; }
 .forecast-summary { display: grid; grid-template-columns: 3rem minmax(0, 1fr); align-items: center; gap: 0.75rem; min-height: 8rem; padding: 0.75rem 0; border-bottom: 1px solid var(--line); }
-.forecast-main-icon { font-size: 2.6rem; text-align: center; }
+.forecast-glyph { display: block; object-fit: contain; flex-shrink: 0; }
+.forecast-main-icon { width: 2.6rem; height: 2.6rem; margin: auto; }
 .forecast-ranges { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.5rem; }
 .forecast-synopsis { margin: 0.8rem 0 0; font-size: 0.7rem; line-height: 1.5; overflow-wrap: anywhere; }
 .forecast-ranges > span { color: var(--muted); font-size: 0.62rem; text-align: center; }
@@ -345,7 +346,7 @@ a { color: inherit; }
 .forecast-hour:first-child { border-left: 0; }
 .forecast-hour time, .forecast-hour strong, .forecast-hour small, .forecast-hour > span { display: block; }
 .forecast-hour time { color: var(--muted); font-size: 0.54rem; }
-.forecast-hour > span { margin: 0.45rem 0; font-size: 1.65rem; }
+.forecast-hour > .forecast-glyph { margin: 0.45rem auto; width: 1.75rem; height: 1.75rem; }
 .forecast-hour strong { font-size: 0.8rem; }
 .forecast-hour small { margin-top: 0.22rem; color: #6dc8ff; font-size: 0.53rem; }
 .future-heading { display: flex; align-items: baseline; justify-content: space-between; margin-top: 0.9rem; padding-top: 0.8rem; border-top: 1px solid var(--line); }
@@ -354,7 +355,7 @@ a { color: inherit; }
 .forecast-day { min-width: 0; padding: 0.65rem 0.25rem; text-align: center; border: 1px solid var(--line); background: rgba(2,28,35,.18); }
 .forecast-day time, .forecast-day > span, .forecast-day strong, .forecast-day small { display: block; }
 .forecast-day time { color: var(--muted); font-size: 0.54rem; font-weight: 700; }
-.forecast-day > span { margin: 0.35rem 0; font-size: 1.45rem; }
+.forecast-day > .forecast-glyph { margin: 0.35rem auto; width: 1.625rem; height: 1.625rem; }
 .forecast-day strong { font-size: 0.76rem; }
 .forecast-day strong em { color: #6dc8ff; font-style: normal; font-weight: 600; }
 .forecast-day small { margin-top: 0.18rem; color: var(--accent-2); font-size: 0.54rem; line-height: 1.3; }
@@ -766,7 +767,7 @@ dialog, .glass-card, .metric-loading { border-radius: 1rem; }
   .hourly-strip { grid-template-columns: repeat(4, 1fr); row-gap: 0.8rem; }
   .forecast-summary { min-height: 6.5rem; grid-template-columns: 2rem minmax(0, 1fr); }
   .forecast-ranges { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 0.7rem; }
-  .forecast-main-icon { font-size: 2rem; }
+  .forecast-main-icon { width: 2rem; height: 2rem; }
   .daily-strip { grid-template-columns: repeat(3, 1fr); }
   .reading-hero { grid-template-columns: 6.5rem minmax(0, 1fr); }
   .map-row { grid-template-columns: 1fr; }

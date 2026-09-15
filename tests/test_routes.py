@@ -358,7 +358,7 @@ def test_dashboard_pages_hourly_forecast_in_groups_of_eight() -> None:
                     "provider": "open_meteo",
                     "provider_label": "Open-Meteo",
                     "condition": "Clear",
-                    "icon": "☀️",
+                    "icon_key": "sunny",
                     "high_f": 80,
                     "low_f": 55,
                     "precip_probability": 37,
@@ -366,7 +366,7 @@ def test_dashboard_pages_hourly_forecast_in_groups_of_eight() -> None:
                     "hours": [
                         {
                             "label": f"{index:02d}:00",
-                            "icon": "☀️",
+                            "icon_key": "sunny", "condition": "Clear",
                             "temperature_f": 60 + index,
                             "precip_probability": 0,
                             "precip_label": "Rain chance",
@@ -377,7 +377,7 @@ def test_dashboard_pages_hourly_forecast_in_groups_of_eight() -> None:
                         {
                             "date": "2026-08-13",
                             "label": "Thu Aug 13",
-                            "icon": "🌧️",
+                            "icon_key": "rain", "condition": "Rain",
                             "summary": "Cloudy early, snow afternoon",
                             "high_f": 80,
                             "low_f": 55,

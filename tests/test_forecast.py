@@ -328,7 +328,7 @@ def test_today_ranges_headline_and_synopsis_match_hourly_data(monkeypatch):
     assert (result["humidity_low"], result["humidity_high"]) == (0, 70)
     assert (result["wind_low_mph"], result["wind_high_mph"]) == (0, 10)
     assert result["precip_probability"] == 15
-    assert rows[-1]["icon"] == "🌤️"
+    assert rows[-1]["icon_key"] == "partly-cloudy"
     assert result["cache_format"] == forecast_module.CACHE_FORMAT
 
 

@@ -99,6 +99,13 @@ def verify_dashboard(page: Page, base_url: str) -> None:
     expect(page.locator(".forecast-day")).to_have_count(6)
     expect(page.locator(".forecast-day-humidity").first).to_have_text("RH 30–85%")
     expect(page.locator(".forecast-day-wind").first).to_have_text("Wind 0–12 mph")
+    glyphs = page.locator(".forecast-panel img.forecast-glyph")
+    expect(glyphs).to_have_count(31)
+    assert glyphs.evaluate_all("""async images => {
+        await Promise.all(images.map(image => image.decode()));
+        return images.every(image => image.naturalWidth > 0 && image.alt.trim()
+            && new URL(image.src).pathname.startsWith('/static/weather-glyphs/'));
+    }""")
     for width, maximum_height in ((1480, 650), (1024, 680), (760, 950), (390, 1050)):
         page.set_viewport_size({"width": width, "height": 1200})
         panel = page.locator(".forecast-panel")

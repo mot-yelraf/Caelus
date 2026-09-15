@@ -249,3 +249,7 @@ Run the validation suite with:
 ```bash
 pytest -q
 ```
+
+### Forecast alignment
+
+Forecast artwork and condition rules follow Sensorius. See the [asset and mapping contract](docs/forecast-alignment.md) for attribution, hash verification, day/night selection, and forecast windows.
