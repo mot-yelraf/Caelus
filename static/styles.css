@@ -334,6 +334,10 @@ a { color: inherit; }
 .forecast-ranges { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.5rem; }
 .forecast-synopsis { margin: 0.8rem 0 0; font-size: 0.7rem; line-height: 1.5; overflow-wrap: anywhere; }
 .forecast-ranges > span { color: var(--muted); font-size: 0.62rem; text-align: center; }
+.forecast-history { margin-top: 0.45rem; }
+.forecast-history-label { display: block; min-height: 2.5em; color: var(--muted); font-size: 0.58rem; text-align: center; text-decoration: none; }
+.forecast-history-label:hover { text-decoration: underline; }
+.forecast-history .forecast-ranges > span { color: var(--ink); font-size: 0.7rem; }
 .forecast-summary strong { display: block; color: var(--ink); font: 700 0.8rem var(--font-body, sans-serif); }
 .hourly-carousel { display: grid; grid-template-columns: 1.15rem minmax(0, 1fr) 1.15rem; align-items: stretch; gap: 0.25rem; margin-top: 1rem; }
 .hourly-page-previous { grid-column: 1; }

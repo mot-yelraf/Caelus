@@ -67,6 +67,13 @@ def verify_dashboard(page: Page, base_url: str) -> None:
         else None,
     )
     page.route("https://embed.windy.com/**", lambda route: route.abort())
+    history_payload = {
+        "status": "ready", "baseline": "1991–2026", "date": "2026-09-18",
+        "start_date": "1991-01-01", "end_date": "2026-09-13",
+        "averages": {"temperature_c": 18.9, "humidity_pct": 51,
+                     "wind_kmh": 8.8, "rain_mm": 2.1, "samples": 35},
+    }
+    page.route("**/api/weather-climate", lambda route: route.fulfill(json=history_payload))
 
     response = page.goto(base_url, wait_until="domcontentloaded")
     assert response is not None and response.ok, "Dashboard did not return HTTP success"
@@ -94,6 +101,9 @@ def verify_dashboard(page: Page, base_url: str) -> None:
     assert page.locator("[data-open-forecast], #forecastDialog, .forecast-meta").count() == 0
     expect(page.locator(".forecast-panel h2")).to_have_text("Clear early, partly cloudy late")
     expect(page.locator(".forecast-synopsis")).to_contain_text("NWS · original units")
+    expect(page.locator(".forecast-history-label")).to_have_text("Historical daily average 1991–2026 for 18-Sep-2026")
+    expect(page.locator('[data-history-value="temperature_c"]')).to_have_text("66.0°F")
+    expect(page.locator('[data-history-value="rain_mm"]')).to_have_text("0.08 in")
     expect(page.locator(".forecast-hour-humidity").first).to_have_text("RH 48%")
     expect(page.locator(".forecast-hour-wind").first).to_have_text("Wind 8 mph")
     expect(page.locator(".forecast-day")).to_have_count(6)
@@ -118,6 +128,36 @@ def verify_dashboard(page: Page, base_url: str) -> None:
     page.locator("[data-hourly-next]").click()
     expect(page.locator("[data-hourly-status]")).to_have_text("Hours 2–9 of 24")
     page.locator("[data-hourly-previous]").click()
+
+    # Exercise unit conversion and loading/missing states without a remote archive.
+    unit_save = page.context.request.post(f"{base_url}/settings", form={
+        "csrf_token": "playwright-test-token", "settings_pane": "appearance",
+        "unit_system": "metric",
+    })
+    assert unit_save.ok
+    page.reload(wait_until="domcontentloaded")
+    expect(page.locator('[data-history-value="temperature_c"]')).to_have_text("18.9°C")
+    expect(page.locator('[data-history-value="wind_kmh"]')).to_have_text("8.8 km/h")
+    expect(page.locator('[data-history-value="rain_mm"]')).to_have_text("2.1 mm")
+    history_payload["averages"]["rain_mm"] = 0
+    history_payload["averages"]["humidity_pct"] = None
+    history_payload["stale"] = True
+    page.reload(wait_until="domcontentloaded")
+    expect(page.locator('[data-history-value="rain_mm"]')).to_have_text("0.0 mm")
+    expect(page.locator('[data-history-value="humidity_pct"]')).to_have_text("—")
+    expect(page.locator('.forecast-history-label')).to_contain_text("cached")
+    history_payload["status"] = "warming"
+    page.reload(wait_until="domcontentloaded")
+    expect(page.locator('.forecast-history-label')).to_contain_text("loading")
+    history_payload["status"] = "unavailable"
+    expect(page.locator('.forecast-history-label')).to_contain_text("unavailable", timeout=10000)
+    expect(page.locator('[data-history-value="temperature_c"]')).to_have_text("—")
+    history_payload["status"] = "ready"
+    page.context.request.post(f"{base_url}/settings", form={
+        "csrf_token": "playwright-test-token", "settings_pane": "appearance",
+        "unit_system": "imperial",
+    })
+    page.reload(wait_until="domcontentloaded")
 
     # Simulate settings saved by another device while this dashboard stays open.
     remote_save = page.context.request.post(f"{base_url}/settings", form={
