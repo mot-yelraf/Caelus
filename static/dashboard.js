@@ -2201,3 +2201,64 @@
     // A blocked or stale session store must not prevent dashboard use.
   }
 })();
+
+(function () {
+  let historyTimer;
+  let historyInFlight = false;
+  let historyStopped = false;
+  async function refreshHistoricalAverages() {
+    if (historyInFlight || historyStopped) return;
+    clearTimeout(historyTimer);
+    let delay = 300000;
+    historyInFlight = true;
+    try {
+      if (!document.hidden && document.querySelector('[data-weather-history]')) {
+        const response = await fetch('/api/weather-climate', { cache: 'no-store', signal: AbortSignal.timeout(10000) });
+        if (!response.ok) throw new Error('Historical daily averages unavailable');
+        const payload = await response.json();
+        renderHistoricalAverages(payload);
+        if (payload.status === 'warming') delay = 3000;
+      }
+    } catch (_) {
+      renderHistoricalAverages({ status: 'unavailable' });
+    } finally {
+      historyInFlight = false;
+      if (!historyStopped) historyTimer = setTimeout(refreshHistoricalAverages, delay);
+    }
+  }
+
+  function renderHistoricalAverages(payload) {
+    const row = document.querySelector('[data-weather-history]');
+    if (!row) return;
+    const ready = payload.status === 'ready';
+    const imperial = row.dataset.unitSystem === 'imperial';
+    const averages = ready ? payload.averages || {} : {};
+    const format = (value, factor, offset, digits, unit) => Number.isFinite(value)
+      ? (value * factor + offset).toFixed(digits) + unit : '—';
+    const values = {
+      temperature_c: format(averages.temperature_c, imperial ? 1.8 : 1, imperial ? 32 : 0, 1, imperial ? '°F' : '°C'),
+      humidity_pct: format(averages.humidity_pct, 1, 0, 0, '%'),
+      wind_kmh: format(averages.wind_kmh, imperial ? 1 / 1.609344 : 1, 0, 1, imperial ? ' mph' : ' km/h'),
+      rain_mm: format(averages.rain_mm, imperial ? 1 / 25.4 : 1, 0, imperial ? 2 : 1, imperial ? ' in' : ' mm'),
+    };
+    row.querySelectorAll('[data-history-value]').forEach(node => { node.textContent = values[node.dataset.historyValue]; });
+    row.dataset.status = payload.status;
+    const dateParts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(payload.date || '');
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const displayDate = dateParts && monthNames[Number(dateParts[2]) - 1]
+      ? `${dateParts[3]}-${monthNames[Number(dateParts[2]) - 1]}-${dateParts[1]}` : '';
+    row.querySelector('.forecast-history-label').textContent = ready && payload.baseline && displayDate
+      ? `Historical daily average ${payload.baseline} for ${displayDate}` : `Historical daily average since 1991 · ${payload.status === 'warming' ? 'loading' : 'unavailable'}`;
+    if (ready && payload.stale) row.querySelector('.forecast-history-label').textContent += ' · cached';
+    row.title = ready
+      ? `Daily average for the same calendar date as ${payload.date} across available years, using history from ${payload.start_date || "1991-01-01"} through ${payload.end_date || "the latest available date"} at the station location (${averages.samples || "available"} samples). Open-Meteo / ERA5. Rain is a daily amount, not a probability; dry days are included.`
+      : (payload.status === 'warming' ? 'Historical daily averages are loading' : 'Historical daily averages are unavailable');
+  }
+  refreshHistoricalAverages();
+  window.addEventListener('pagehide', () => { historyStopped = true; clearTimeout(historyTimer); });
+  window.addEventListener('pageshow', event => { if (event.persisted) { historyStopped = false; refreshHistoricalAverages(); } });
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) refreshHistoricalAverages();
+  });
+
+})();

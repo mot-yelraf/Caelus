@@ -926,3 +926,17 @@ def test_safari_home_screen_icon_uses_full_size_app_artwork():
     assert response.status_code == 200
     assert response.headers["content-type"] == "image/png"
     assert response.content == b""
+
+
+def test_weather_climate_endpoint_returns_snapshot_without_http_cache():
+    app = make_app()
+    class Climate:
+        def snapshot(self, settings):
+            assert settings is app.state.settings
+            return {'status': 'warming'}
+    app.state.weather_climate_service = Climate()
+    response = TestClient(app).get('/api/weather-climate')
+    assert response.json() == {'status': 'warming'}
+    assert response.headers['cache-control'] == 'no-store'
+    del app.state.weather_climate_service
+    assert TestClient(app).get('/api/weather-climate').json() == {'status': 'unavailable'}

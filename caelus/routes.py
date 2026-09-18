@@ -540,6 +540,13 @@ def register_routes(app: FastAPI) -> None:
             ),
         }
 
+    @app.get("/api/weather-climate")
+    async def get_weather_climate() -> Response:
+        """Return historical averages without waiting for archive retrieval."""
+        service = getattr(app.state, "weather_climate_service", None)
+        payload = service.snapshot(app.state.settings) if service else {"status": "unavailable"}
+        return JSONResponse(payload, headers={"Cache-Control": "no-store"})
+
     @app.get("/api/forecast")
     async def get_forecast(force: bool = False) -> Dict[str, Any]:
         forecast_service = getattr(app.state, "forecast_service", None)

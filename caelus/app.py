@@ -10,6 +10,7 @@ from caelus.theme_manager import ThemeManager
 from caelus.data_logger import DataLogger
 from caelus.gateway import EcowittGateway
 from caelus.forecast import ForecastService
+from caelus.weather_climate import WeatherClimateService
 from caelus.location import resolve_ip_location
 from caelus.poller import GatewayPoller
 from caelus.routes import register_routes
@@ -24,9 +25,11 @@ def create_app() -> FastAPI:
             await asyncio.to_thread(resolve_ip_location, app.state.settings)
         await asyncio.to_thread(app.state.forecast_service.get, app.state.settings)
         await app.state.poller.start()
+        app.state.weather_climate_service.snapshot(app.state.settings)
         try:
             yield
         finally:
+            await app.state.weather_climate_service.close()
             await app.state.poller.stop()
 
     app = FastAPI(title="Caelus", lifespan=lifespan)
@@ -39,6 +42,7 @@ def create_app() -> FastAPI:
     app.state.gateway = EcowittGateway(app.state.settings)
     app.state.poller = GatewayPoller(app)
     app.state.forecast_service = ForecastService(BASE_DIR.parent / "data" / "forecast.json")
+    app.state.weather_climate_service = WeatherClimateService(BASE_DIR.parent / "data" / "weather_climate.json")
     app.state.csrf_token = secrets.token_urlsafe(32)
     app.mount("/static", StaticFiles(directory=str(BASE_DIR.parent / "static")), name="static")
     app.mount(

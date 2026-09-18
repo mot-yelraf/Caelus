@@ -70,6 +70,24 @@ browser.
 
 ## Location and forecast privacy
 
+Today’s forecast also shows same-calendar-date averages for temperature, relative
+humidity, wind speed, and daily rainfall from 1991 through the latest available
+archive date. These use [Open-Meteo / ERA5 reanalysis](https://open-meteo.com/en/docs/historical-weather-api),
+not station observations. Rainfall is an average amount including dry days, not
+a rain probability. Dates follow the station timezone and values follow the
+selected metric/imperial units. The label shows the archive year range; its
+tooltip gives the exact coverage and sample count (leap days use only leap years).
+
+Historical retrieval sends the saved coordinates and timezone to Open-Meteo,
+regardless of the selected forecast provider. It runs in the background and
+stores a compact 366-day summary at
+`/Users/twfarley/Projects/Caelus/data/weather_climate.json` for this checkout.
+The service checks hourly, refreshes as new archive dates become available
+(allowing ERA5’s five-day publication delay), and retries failures after five
+minutes. Same-location cached averages remain visible during outages; changing
+coordinates or timezone discards the old displayed values. Loading, unavailable,
+and cached states appear in the historical row.
+
 When **Use IP location** is enabled, Caelus sends the server's public IP address
 to `ipapi.co` (with `ipwho.is` as a fallback) to obtain an approximate city,
 timezone, latitude, and longitude. Astral then uses the saved coordinates
