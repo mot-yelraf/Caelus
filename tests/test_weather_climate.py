@@ -17,13 +17,20 @@ END = date(2026, 9, 13)
 def history(monkeypatch):
     monkeypatch.setattr(climate, "latest_history_date", lambda: END)
     days = [climate.START + timedelta(days=i) for i in range((END - climate.START).days + 1)]
-    return {"daily_units": climate.WeatherClimateService.expected_units, "daily": {
+    payload = {"daily_units": climate.WeatherClimateService.expected_units, "daily": {
         "time": [day.isoformat() for day in days],
         "temperature_2m_mean": [day.year - 1990 for day in days],
         "relative_humidity_2m_mean": [50] * len(days),
         "wind_speed_10m_mean": [0] * len(days),
         "rain_sum": [4 if day.year % 2 == 0 else 0 for day in days],
     }}
+
+    for variable, field in climate.EXTREMES.items():
+        means = payload['daily'][variable.rsplit('_', 1)[0] + '_mean']
+        delta = -5 if field.endswith('_min') else 5
+        payload['daily'][variable] = [max(0, value + delta) if field.startswith(('wind', 'humidity'))
+                                      else value + delta for value in means]
+    return payload
 
 
 class Session:
@@ -58,6 +65,23 @@ def test_calendar_averages_and_leap_samples(history):
     assert result['09-13']['rain_mm'] == 2
     assert result['02-29']['samples'] == 9
     assert result['09-13']['wind_kmh'] == 0
+    assert result['09-13']['temperature_c_min'] == -4
+    assert result['09-13']['temperature_c_max'] == 41
+    assert result['09-14']['temperature_c_max'] == 40
+    assert result['09-13']['humidity_pct_min'] == 45
+    assert result['09-13']['humidity_pct_max'] == 55
+    assert result['09-13']['wind_kmh_min'] == 0
+    assert result['09-13']['wind_kmh_max'] == 5
+    assert result['09-13']['rain_mm_min'] == 0
+    assert result['09-13']['rain_mm_max'] == 4
+    assert result['09-13']['temperature_c_min_year'] == 1991
+    assert result['09-13']['temperature_c_max_year'] == 2026
+    assert result['09-14']['temperature_c_max_year'] == 2025
+    assert result['09-13']['rain_mm_min_year'] == 1991
+    assert result['09-13']['rain_mm_max_year'] == 1992
+    assert result['09-13']['wind_kmh_min_year'] == 1991
+    assert result['02-29']['temperature_c_min_year'] == 1992
+    assert result['02-29']['temperature_c_max_year'] == 2024
 
 
 @pytest.mark.parametrize('field,value', [('rain_sum', None), ('rain_sum', -1),
@@ -114,7 +138,7 @@ def test_publication_tail_units_and_corrupt_cache(history, tmp_path):
     session = Session(history)
     service = climate.WeatherClimateService(tmp_path / 'climate.json', session)
     location = {'latitude': 40, 'longitude': -105, 'timezone': 'America/Denver'}
-    for field in climate.VARIABLES:
+    for field in climate.ALL_VARIABLES:
         history['daily'][field][-2:] = [None, None]
     result = service._fetch(location, END)
     assert result['end_date'] == '2026-09-11'
@@ -202,3 +226,28 @@ def test_location_change_during_cache_write_refreshes_without_hour_delay(history
         assert service.snapshot(station)['location']['timezone'] == 'UTC'
         await service.close()
     asyncio.run(run())
+
+
+@pytest.mark.parametrize("corruption", ["old_format", "missing_extreme", "invalid_extreme"])
+def test_cache_requires_historical_extrema(history, tmp_path, corruption):
+    service = climate.WeatherClimateService(tmp_path / 'climate.json', Session(history))
+    location = {'latitude': 40, 'longitude': -105, 'timezone': 'America/Denver'}
+    result = service._fetch(location, END)
+    if corruption == "old_format":
+        result['cache_format'] = 1
+    elif corruption == "missing_extreme":
+        del result['calendar_averages']['09-18']['temperature_c_min']
+    else:
+        result['calendar_averages']['09-18']['humidity_pct_max'] = 101
+    service._write_cache(result)
+    assert service._read_cache(location) is None
+
+
+@pytest.mark.parametrize("year", [None, True, 1990, 2027, 2026, "2000"])
+def test_cache_rejects_missing_or_out_of_coverage_extreme_year(history, tmp_path, year):
+    service = climate.WeatherClimateService(tmp_path / 'climate.json', Session(history))
+    location = {'latitude': 40, 'longitude': -105, 'timezone': 'America/Denver'}
+    result = service._fetch(location, END)
+    result['calendar_averages']['09-18']['temperature_c_min_year'] = year
+    service._write_cache(result)
+    assert service._read_cache(location) is None

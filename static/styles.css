@@ -337,7 +337,7 @@ a { color: inherit; }
 .forecast-history { margin-top: 0.45rem; }
 .forecast-history-label { display: block; min-height: 2.5em; color: var(--muted); font-size: 0.58rem; text-align: center; text-decoration: none; }
 .forecast-history-label:hover { text-decoration: underline; }
-.forecast-history .forecast-ranges > span { color: var(--ink); font-size: 0.7rem; }
+.forecast-history .forecast-ranges > span { white-space: pre-line; color: var(--ink); font-size: 0.58rem; }
 .forecast-summary strong { display: block; color: var(--ink); font: 700 0.8rem var(--font-body, sans-serif); }
 .hourly-carousel { display: grid; grid-template-columns: 1.15rem minmax(0, 1fr) 1.15rem; align-items: stretch; gap: 0.25rem; margin-top: 1rem; }
 .hourly-page-previous { grid-column: 1; }
