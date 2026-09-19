@@ -1,4 +1,4 @@
-"""Cache ERA5 same-calendar-date weather averages independently of forecasts."""
+"""Cache ERA5 same-calendar-date weather statistics independently of forecasts."""
 
 import asyncio
 from collections import Counter
@@ -18,7 +18,7 @@ from caelus.settings import AppSettings
 logger = logging.getLogger(__name__)
 ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 START = date(1991, 1, 1)
-CACHE_FORMAT = 1
+CACHE_FORMAT = 3
 
 
 def latest_history_date() -> date:
@@ -32,10 +32,17 @@ VARIABLES = {
     "wind_speed_10m_mean": "wind_kmh",
     "rain_sum": "rain_mm",
 }
+EXTREMES = {
+    f"{variable.removesuffix('_mean')}_{stat}": f"{field}_{stat}"
+    for variable, field in VARIABLES.items() if variable.endswith('_mean')
+    for stat in ("min", "max")
+}
+ALL_VARIABLES = {**VARIABLES, **EXTREMES}
 DAY_KEYS = {(date(2000, 1, 1) + timedelta(days=i)).strftime("%m-%d") for i in range(366)}
 
 
 def _valid_value(key: str, value) -> bool:
+    key = key.removesuffix("_min").removesuffix("_max")
     return (not isinstance(value, bool) and isinstance(value, (int, float))
             and math.isfinite(value)
             and (key == "temperature_c" or value >= 0)
@@ -43,12 +50,12 @@ def _valid_value(key: str, value) -> bool:
 
 
 def summarize_weather_history(payload: dict, end: date) -> dict:
-    """Average daily temperature, RH, wind and rain by calendar date over the requested range."""
+    """Summarize historical extrema and daily means by station-local calendar date."""
     daily = payload.get("daily") or {}
     count = (end - START).days + 1
-    if any(len(daily.get(key, [])) != count for key in ("time", *VARIABLES)):
+    if any(len(daily.get(key, [])) != count for key in ("time", *ALL_VARIABLES)):
         raise ValueError("Weather history does not cover the complete baseline")
-    totals, samples = {}, {}
+    totals, samples, extrema = {}, {}, {}
     for index in range(count):
         day = START + timedelta(days=index)
         if daily["time"][index] != day.isoformat():
@@ -60,17 +67,32 @@ def summarize_weather_history(payload: dict, end: date) -> dict:
             if not _valid_value(field, value):
                 raise ValueError(f"Weather history contains invalid {variable}")
             sums[field] += value
+        bounds = extrema.setdefault(key, {})
+        for variable, field in {**EXTREMES, "rain_sum": "rain_mm"}.items():
+            value = daily[variable][index]
+            if not _valid_value(field, value):
+                raise ValueError(f"Weather history contains invalid {variable}")
+            for stat in ("min", "max") if field == "rain_mm" else (field.rsplit("_", 1)[1],):
+                name = f"{field}_{stat}" if field == "rain_mm" else field
+                reducer = min if stat == "min" else max
+                # Keep the earliest year when an extreme occurs more than once.
+                if name not in bounds or reducer(bounds[name], value) != bounds[name]:
+                    bounds[name] = value
+                    bounds[f"{name}_year"] = day.year
         samples[key] = samples.get(key, 0) + 1
     return {key: {**{field: round(value / samples[key], 3) for field, value in sums.items()},
-                  "samples": samples[key]} for key, sums in totals.items()}
+                  **extrema[key], "samples": samples[key]} for key, sums in totals.items()}
 
 
 class WeatherClimateService:
     """Load a compact persistent climatology without delaying dashboard requests."""
 
-    daily_variables = ",".join(VARIABLES)
+    daily_variables = ",".join(ALL_VARIABLES)
     expected_units = {"temperature_2m_mean": "°C", "relative_humidity_2m_mean": "%",
                       "wind_speed_10m_mean": "km/h", "rain_sum": "mm"}
+
+    for variable in EXTREMES:
+        expected_units[variable] = expected_units[variable.rsplit("_", 1)[0] + "_mean"]
 
     def __init__(self, cache_path: Path, session=requests):
         self.cache_path = Path(cache_path)
@@ -81,7 +103,7 @@ class WeatherClimateService:
         self.next_check = 0.0
 
     def snapshot(self, settings: AppSettings, *, now: datetime | None = None) -> dict:
-        """Return today's station-local averages, scheduling background refreshes."""
+        """Return today's station-local historical statistics, scheduling background refreshes."""
         location = {"latitude": round(settings.latitude, 4),
                     "longitude": round(settings.longitude, 4), "timezone": settings.timezone}
         if location != self.location:
@@ -120,7 +142,12 @@ class WeatherClimateService:
                               for i in range((end - START).days + 1))
             if set(averages) != DAY_KEYS or any(
                 row.get("samples") != samples[key]
-                or any(not _valid_value(field, row.get(field)) for field in VARIABLES.values())
+                or any(not _valid_value(field, row.get(field)) for field in (*ALL_VARIABLES.values(), "rain_mm_min", "rain_mm_max"))
+                or any(
+                    type(row.get(f"{field}_{stat}_year")) is not int
+                    or not START <= date.fromisoformat(f"{row[f'{field}_{stat}_year']}-{key}") <= end
+                    for field in VARIABLES.values() for stat in ("min", "max")
+                )
                 for key, row in averages.items()
             ):
                 return None
@@ -142,12 +169,12 @@ class WeatherClimateService:
         if any(data.get("daily_units", {}).get(key) != unit for key, unit in self.expected_units.items()):
             raise ValueError("Historical weather has unexpected units")
         daily = data.get("daily") or {}
-        keys = ("time", *VARIABLES)
+        keys = ("time", *ALL_VARIABLES)
         count = (end - START).days + 1
         if any(len(daily.get(key, [])) != count for key in keys):
             raise ValueError("Historical weather does not cover the requested dates")
         available = count
-        while available and any(daily[key][available - 1] is None for key in VARIABLES):
+        while available and any(daily[key][available - 1] is None for key in ALL_VARIABLES):
             available -= 1
         if count - available > 7:
             raise ValueError("Historical weather is missing more than a week of recent data")
@@ -191,6 +218,6 @@ class WeatherClimateService:
                 if self.payload.get("status") == "ready":
                     self.payload = {**self.payload, "stale": True}
                 else:
-                    self.payload = {"status": "unavailable", "reason": "Historical daily averages unavailable"}
+                    self.payload = {"status": "unavailable", "reason": "Historical statistics unavailable"}
                 self.next_check = time.monotonic() + 300
             logger.warning("Historical weather unavailable: %s", exc)

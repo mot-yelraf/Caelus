@@ -70,11 +70,13 @@ browser.
 
 ## Location and forecast privacy
 
-Today’s forecast also shows same-calendar-date averages for temperature, relative
+Today’s forecast also shows same-calendar-date minimums, maximums, and averages for temperature, relative
 humidity, wind speed, and daily rainfall from 1991 through the latest available
 archive date. These use [Open-Meteo / ERA5 reanalysis](https://open-meteo.com/en/docs/historical-weather-api),
-not station observations. Rainfall is an average amount including dry days, not
-a rain probability. Dates follow the station timezone and values follow the
+not station observations. Minimums and maximums are historical extrema from daily
+lows/highs, with their year of occurrence (earliest year for ties); averages are
+means of daily averages. Rainfall uses minimum, maximum,
+and average daily totals including dry days, not rain probabilities. Dates follow the station timezone and values follow the
 selected metric/imperial units. The label shows the archive year range; its
 tooltip gives the exact coverage and sample count (leap days use only leap years).
 
@@ -84,7 +86,7 @@ stores a compact 366-day summary at
 `/Users/twfarley/Projects/Caelus/data/weather_climate.json` for this checkout.
 The service checks hourly, refreshes as new archive dates become available
 (allowing ERA5’s five-day publication delay), and retries failures after five
-minutes. Same-location cached averages remain visible during outages; changing
+minutes. Same-location cached statistics remain visible during outages; changing
 coordinates or timezone discards the old displayed values. Loading, unavailable,
 and cached states appear in the historical row.
 

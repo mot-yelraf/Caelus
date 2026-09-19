@@ -2214,7 +2214,7 @@
     try {
       if (!document.hidden && document.querySelector('[data-weather-history]')) {
         const response = await fetch('/api/weather-climate', { cache: 'no-store', signal: AbortSignal.timeout(10000) });
-        if (!response.ok) throw new Error('Historical daily averages unavailable');
+        if (!response.ok) throw new Error('Historical statistics unavailable');
         const payload = await response.json();
         renderHistoricalAverages(payload);
         if (payload.status === 'warming') delay = 3000;
@@ -2235,24 +2235,32 @@
     const averages = ready ? payload.averages || {} : {};
     const format = (value, factor, offset, digits, unit) => Number.isFinite(value)
       ? (value * factor + offset).toFixed(digits) + unit : '—';
+    const statistics = (field, ...units) => ready
+      ? ['min', 'max', 'avg'].map(stat => {
+        const key = stat === 'avg' ? field : `${field}_${stat}`;
+        const year = averages[`${key}_year`];
+        const suffix = stat !== 'avg' && Number.isFinite(averages[key]) && Number.isInteger(year) ? ` (${year})` : '';
+        return `${stat[0].toUpperCase() + stat.slice(1)} ${format(averages[key], ...units)}${suffix}`;
+      }).join('\n')
+      : '—';
     const values = {
-      temperature_c: format(averages.temperature_c, imperial ? 1.8 : 1, imperial ? 32 : 0, 1, imperial ? '°F' : '°C'),
-      humidity_pct: format(averages.humidity_pct, 1, 0, 0, '%'),
-      wind_kmh: format(averages.wind_kmh, imperial ? 1 / 1.609344 : 1, 0, 1, imperial ? ' mph' : ' km/h'),
-      rain_mm: format(averages.rain_mm, imperial ? 1 / 25.4 : 1, 0, imperial ? 2 : 1, imperial ? ' in' : ' mm'),
+      temperature_c: statistics('temperature_c', imperial ? 1.8 : 1, imperial ? 32 : 0, 1, imperial ? '°F' : '°C'),
+      humidity_pct: statistics('humidity_pct', 1, 0, 0, '%'),
+      wind_kmh: statistics('wind_kmh', imperial ? 1 / 1.609344 : 1, 0, 1, imperial ? ' mph' : ' km/h'),
+      rain_mm: statistics('rain_mm', imperial ? 1 / 25.4 : 1, 0, imperial ? 2 : 1, imperial ? ' in' : ' mm'),
     };
     row.querySelectorAll('[data-history-value]').forEach(node => { node.textContent = values[node.dataset.historyValue]; });
     row.dataset.status = payload.status;
     const dateParts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(payload.date || '');
     const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const displayDate = dateParts && monthNames[Number(dateParts[2]) - 1]
-      ? `${dateParts[3]}-${monthNames[Number(dateParts[2]) - 1]}-${dateParts[1]}` : '';
+      ? `${dateParts[3]}-${monthNames[Number(dateParts[2]) - 1]}` : '';
     row.querySelector('.forecast-history-label').textContent = ready && payload.baseline && displayDate
-      ? `Historical daily average ${payload.baseline} for ${displayDate}` : `Historical daily average since 1991 · ${payload.status === 'warming' ? 'loading' : 'unavailable'}`;
+      ? `Historical Min, Max, Avg ${payload.baseline} for ${displayDate}` : `Historical Min, Max, Avg since 1991 · ${payload.status === 'warming' ? 'loading' : 'unavailable'}`;
     if (ready && payload.stale) row.querySelector('.forecast-history-label').textContent += ' · cached';
     row.title = ready
-      ? `Daily average for the same calendar date as ${payload.date} across available years, using history from ${payload.start_date || "1991-01-01"} through ${payload.end_date || "the latest available date"} at the station location (${averages.samples || "available"} samples). Open-Meteo / ERA5. Rain is a daily amount, not a probability; dry days are included.`
-      : (payload.status === 'warming' ? 'Historical daily averages are loading' : 'Historical daily averages are unavailable');
+      ? `Historical minimum, maximum, and average for the same calendar date as ${payload.date} across available years, using history from ${payload.start_date || "1991-01-01"} through ${payload.end_date || "the latest available date"} at the station location (${averages.samples || "available"} samples). Open-Meteo / ERA5. Min/max are extrema across historical daily lows/highs; Years identify when each extreme occurred (earliest year for ties). Avg is the mean of daily averages. Rain uses daily totals including dry days, not probabilities.`
+      : (payload.status === 'warming' ? 'Historical statistics are loading' : 'Historical statistics are unavailable');
   }
   refreshHistoricalAverages();
   window.addEventListener('pagehide', () => { historyStopped = true; clearTimeout(historyTimer); });
