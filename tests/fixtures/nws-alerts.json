@@ -1,0 +1,24 @@
+{
+  "type": "FeatureCollection",
+  "features": [{
+    "id": "urn:oid:test-severe-thunderstorm",
+    "type": "Feature",
+    "properties": {
+      "id": "urn:oid:test-severe-thunderstorm",
+      "status": "Actual",
+      "messageType": "Alert",
+      "category": ["Met"],
+      "severity": "Severe",
+      "event": "Severe Thunderstorm Warning",
+      "headline": "Severe Thunderstorm Warning until 3:00 PM MDT",
+      "description": "HAZARD...60 mph wind gusts and quarter size hail.\nIMPACT...Damage to vehicles is expected.",
+      "instruction": "Move to an interior room on the lowest floor of a building.",
+      "areaDesc": "Test County",
+      "senderName": "NWS Test Office",
+      "effective": "2026-09-28T14:00:00-06:00",
+      "onset": "2026-09-28T14:15:00-06:00",
+      "expires": "2026-09-28T15:00:00-06:00",
+      "ends": null
+    }
+  }]
+}

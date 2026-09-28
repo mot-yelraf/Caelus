@@ -25,8 +25,44 @@ PROVIDER_LABELS = {
 MET_URL = "https://api.met.no/weatherapi/locationforecast/2.0/complete"
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
 NWS_POINTS_URL = "https://api.weather.gov/points/{latitude:.4f},{longitude:.4f}"
+NWS_ALERTS_URL = "https://api.weather.gov/alerts/active"
+ALERT_CACHE_SECONDS = 60
 CACHE_SECONDS = 60 * 60
-CACHE_FORMAT = 8
+CACHE_FORMAT = 9
+
+
+def normalize_nws_alerts(payload: dict[str, Any], now: datetime) -> list[dict[str, str]]:
+    """Select actual, effective Severe/Extreme weather alerts, highest severity first."""
+    features = payload.get("features")
+    if not isinstance(features, list):
+        raise ValueError("NWS alerts response is missing features")
+    alerts = []
+    for feature in features:
+        properties = feature.get("properties") if isinstance(feature, dict) else None
+        if not isinstance(properties, dict):
+            continue
+        if (properties.get("status") != "Actual"
+                or properties.get("messageType") not in {"Alert", "Update"}
+                or properties.get("severity") not in {"Severe", "Extreme"}
+                or "Met" not in (properties.get("category") or [])):
+            continue
+        effective = _parse_time(properties.get("effective"))
+        expires = _parse_time(properties.get("expires"))
+        ends = _parse_time(properties.get("ends"))
+        if not effective or not effective.tzinfo or not expires or not expires.tzinfo:
+            continue
+        # A watch is effective when issued, even if the hazard onset is later.
+        until = min(expires, ends) if ends and ends.tzinfo else expires
+        if not effective <= now < until:
+            continue
+        alerts.append({
+            "id": str(properties.get("id") or feature.get("id") or ""),
+            **{key: str(properties.get(key) or "") for key in (
+                "event", "headline", "description", "instruction", "areaDesc", "severity", "senderName",
+            )},
+            "effective": effective.isoformat(), "expires": until.isoformat(),
+        })
+    return sorted(alerts, key=lambda alert: (alert["severity"] != "Extreme", alert["event"], alert["id"]))
 
 
 def normalize_forecast_provider(value: Any) -> str:
@@ -624,6 +660,17 @@ class ForecastService:
         self.cache_path = cache_path
         self.session = session
         self._lock = threading.Lock()
+        self._alerts_path = cache_path.with_name(cache_path.stem + "-alerts.json")
+        self._alerts: dict[str, Any] = {}
+        self._alerts_attempt: tuple[Any, ...] | None = None
+        self._alerts_attempt_at: datetime | None = None
+        self._alerts_stale = False
+        try:
+            saved = json.loads(self._alerts_path.read_text(encoding="utf-8"))
+            if isinstance(saved, dict):
+                self._alerts = saved
+        except (OSError, ValueError):
+            pass
 
     def _headers(self) -> dict[str, str]:
         return {"User-Agent": f"Caelus/{__version__} local-weather-dashboard", "Accept": "application/json"}
@@ -664,8 +711,57 @@ class ForecastService:
         temporary.replace(self.cache_path)
 
     def get(self, settings: AppSettings, *, force: bool = False, timeout_seconds: float = 8.0) -> dict[str, Any]:
+        """Return the forecast and independently refreshed, location-specific alerts."""
         with self._lock:
-            return self._get_locked(settings, force=force, timeout_seconds=timeout_seconds)
+            result = self._get_locked(settings, force=force, timeout_seconds=timeout_seconds)
+            result.update(self._get_alerts(settings, timeout_seconds=timeout_seconds))
+            return result
+
+    def _get_alerts(self, settings: AppSettings, *, timeout_seconds: float) -> dict[str, Any]:
+        empty = {"alerts": [], "alerts_stale": False}
+        if normalize_forecast_provider(settings.forecast_provider) != "us" or (settings.latitude == 0 and settings.longitude == 0):
+            return empty
+        now = datetime.now(timezone.utc)
+        key = (settings.latitude, settings.longitude)
+        same = self._alerts.get("location") == list(key)
+        checked = _parse_time(self._alerts.get("checked_at")) if same else None
+        fresh = checked and checked.tzinfo and 0 <= (now - checked).total_seconds() < ALERT_CACHE_SECONDS
+        retry_due = (self._alerts_attempt != key or self._alerts_attempt_at is None
+                     or (now - self._alerts_attempt_at).total_seconds() >= ALERT_CACHE_SECONDS)
+        if not fresh and retry_due:
+            self._alerts_attempt, self._alerts_attempt_at = key, now
+            try:
+                # NWS's point lookup is the coverage authority, including Alaska/Hawaii.
+                if not same:
+                    points = self.session.get(
+                        NWS_POINTS_URL.format(latitude=settings.latitude, longitude=settings.longitude),
+                        headers=self._headers(), timeout=timeout_seconds,
+                    )
+                    points.raise_for_status()
+                    if not points.json().get("properties", {}).get("forecastHourly"):
+                        raise ValueError("NWS alerts require a US location")
+                response = self.session.get(
+                    NWS_ALERTS_URL, params={"point": f"{settings.latitude:.4f},{settings.longitude:.4f}"},
+                    headers=self._headers(), timeout=timeout_seconds,
+                )
+                response.raise_for_status()
+                payload = response.json()
+                normalize_nws_alerts(payload, now)  # Reject malformed responses before replacing last-good data.
+                self._alerts = {"location": list(key), "checked_at": now.isoformat(), "payload": payload}
+                same = True
+                self._alerts_stale = False
+                self._alerts_path.parent.mkdir(parents=True, exist_ok=True)
+                temporary = self._alerts_path.with_suffix(".tmp")
+                temporary.write_text(json.dumps(self._alerts), encoding="utf-8")
+                temporary.replace(self._alerts_path)
+            except Exception as exc:
+                logger.warning("NWS alerts failed: %s", exc)
+                self._alerts_stale = True
+        try:
+            alerts = normalize_nws_alerts(self._alerts.get("payload", {}), now) if same else []
+        except (ValueError, TypeError, AttributeError):
+            alerts = []
+        return {"alerts": alerts, "alerts_stale": self._alerts_stale}
 
     def _get_locked(self, settings: AppSettings, *, force: bool, timeout_seconds: float) -> dict[str, Any]:
         provider = normalize_forecast_provider(settings.forecast_provider)
