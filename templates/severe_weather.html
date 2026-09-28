@@ -1,0 +1,15 @@
+<div class="card-heading"><div><p class="eyebrow">Severe weather notification</p><h2>Active NWS alerts</h2></div><span class="alert-source">US · NWS</span></div>
+<p class="forecast-cache-note" data-alert-status{% if not forecast.get('alerts_stale') %} hidden{% endif %}>Alert updates unavailable · showing unexpired cached alerts</p>
+<div data-alert-list tabindex="0" role="region" aria-label="Active alert details, scroll for more">
+  {% for alert in severe_alerts %}
+  <article class="severe-weather-alert">
+    <h3>{{ alert.event }}</h3>
+    <p>{{ alert.headline }}</p>
+    <p class="alert-meta">{{ alert.severity }} · {{ alert.senderName }}</p>
+    <p>{{ alert.areaDesc }}</p>
+    <p class="alert-meta">Effective <time datetime="{{ alert.effective }}">{{ alert.effective }}</time> · Until <time datetime="{{ alert.expires }}">{{ alert.expires }}</time></p>
+    <p class="alert-description">{{ alert.description }}</p>
+    {% if alert.instruction %}<p class="alert-instruction">{{ alert.instruction }}</p>{% endif %}
+  </article>
+  {% endfor %}
+</div>

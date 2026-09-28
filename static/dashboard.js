@@ -2076,6 +2076,74 @@
   }
   setDashboardRefreshInterval(Number(body.dataset.pollIntervalSeconds));
 
+  const forecastPanel = document.querySelector('[data-forecast-provider]');
+  if (forecastPanel?.dataset.forecastProvider === 'us') {
+    const notification = forecastPanel.querySelector('[data-severe-weather]');
+    const daily = forecastPanel.querySelector('[data-today-forecast]');
+    let alertData = JSON.parse(document.getElementById('nwsAlertData').textContent);
+    let alertSignature = null;
+    let alertsInFlight = false;
+    function renderSevereWeather() {
+      const now = Date.now();
+      const alerts = (alertData.alerts || []).filter(alert =>
+        Date.parse(alert.effective) <= now && now < Date.parse(alert.expires));
+      notification.hidden = !alerts.length;
+      daily.hidden = !!alerts.length;
+      const signature = JSON.stringify([alerts, alertData.alerts_stale]);
+      if (signature === alertSignature) return;
+      alertSignature = signature;
+      const list = notification.querySelector('[data-alert-list]');
+      list.replaceChildren();
+      notification.querySelector('[data-alert-status]').hidden = !alertData.alerts_stale;
+      const formatTime = value => new Date(value).toLocaleString(undefined, {
+        timeZone: forecastPanel.dataset.timezone || 'UTC', timeZoneName: 'short',
+      });
+      alerts.forEach(alert => {
+        const article = document.createElement('article');
+        article.className = 'severe-weather-alert';
+        const add = (tag, content, className = '') => {
+          if (!content) return;
+          const element = document.createElement(tag);
+          element.textContent = content;
+          element.className = className;
+          article.append(element);
+        };
+        add('h3', alert.event);
+        add('p', alert.headline);
+        add('p', `${alert.severity} · ${alert.senderName}`, 'alert-meta');
+        add('p', alert.areaDesc);
+        add('p', `Effective ${formatTime(alert.effective)} · Until ${formatTime(alert.expires)}`, 'alert-meta');
+        add('p', alert.description, 'alert-description');
+        add('p', alert.instruction, 'alert-instruction');
+        list.append(article);
+      });
+    }
+    async function refreshSevereWeather() {
+      renderSevereWeather();
+      if (document.hidden || alertsInFlight) return;
+      alertsInFlight = true;
+      try {
+        const response = await fetch('/api/forecast', {cache: 'no-store'});
+        if (!response.ok) throw new Error('Alert refresh unavailable');
+        const payload = await response.json();
+        if (!Array.isArray(payload.alerts)) throw new Error('Alert data unavailable');
+        alertData = payload.provider === 'us' ? payload : {alerts: []};
+      } catch (_error) {
+        alertData.alerts_stale = true;
+      } finally {
+        alertsInFlight = false;
+        renderSevereWeather();
+      }
+    }
+    renderSevereWeather();
+    window.setInterval(refreshSevereWeather, 60 * 1000);
+    // Expiry is enforced locally even when the connection is down.
+    window.setInterval(renderSevereWeather, 1000);
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) refreshSevereWeather();
+    });
+  }
+
   let forecastRefreshDue = false;
   function resumeDeferredForecastRefresh() {
     if (forecastRefreshDue && !document.hidden && !dashboardEditingIsActive()) {

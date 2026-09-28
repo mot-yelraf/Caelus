@@ -44,10 +44,16 @@
           </div>
         </article>
 
-        <article class="glass-card forecast-panel">
+        <article class="glass-card forecast-panel" data-forecast-provider="{{ settings.forecast_provider }}" data-timezone="{{ settings.timezone }}">
+          {% set severe_alerts = forecast.get('alerts', []) if settings.forecast_provider == 'us' else [] %}
+          {% set temperature_unit = '°C' if metric_display else '°F' %}
+          <script type="application/json" id="nwsAlertData">{{ {'alerts': severe_alerts, 'alerts_stale': forecast.get('alerts_stale', false)} | tojson }}</script>
+          <section data-severe-weather aria-live="polite" aria-label="Severe weather notification"{% if not severe_alerts %} hidden{% endif %}>
+            {% include 'severe_weather.html' %}
+          </section>
+          <div data-today-forecast{% if severe_alerts %} hidden{% endif %}>
           <div class="card-heading"><div><p class="eyebrow">Today’s forecast</p><h2>{{ forecast.get('summary', forecast.condition) if forecast.ok else 'Forecast standing by' }}</h2></div><span class="provider-label">{{ forecast.provider_label or settings.forecast_provider | replace('_', ' ') }}{% if forecast.stale %}<small class="forecast-cache-note">Cached · provider unavailable</small>{% endif %}</span></div>
           {% if forecast.ok %}
-            {% set temperature_unit = '°C' if metric_display else '°F' %}
             <div class="forecast-summary">
               <img class="forecast-main-icon forecast-glyph" src="/static/weather-glyphs/{{ forecast.icon_key }}.svg?v={{ version }}" alt="{{ forecast.condition }}" width="42" height="42" />
               <div class="forecast-summary-content">
@@ -64,6 +70,11 @@
                 {% if forecast.get('synopsis') %}<p class="forecast-synopsis">{{ forecast.synopsis }}</p>{% endif %}
               </div>
             </div>
+          {% else %}
+            <div class="forecast-empty"><span>◌</span><p>{{ forecast.reason or 'Set a location to load today’s forecast.' }}</p></div>
+          {% endif %}
+          </div>
+          {% if forecast.ok %}
             {% set hour_count = forecast.hours | length %}
             <div class="hourly-carousel" data-hourly-carousel data-page-size="8">
               <button class="hourly-page-button hourly-page-previous" type="button" data-hourly-previous aria-label="Show previous forecast hour" hidden>&lt;</button>
@@ -96,8 +107,6 @@
                 {% endfor %}
               </div>
             {% endif %}
-          {% else %}
-            <div class="forecast-empty"><span>◌</span><p>{{ forecast.reason or 'Set a location to load today’s forecast.' }}</p></div>
           {% endif %}
         </article>
 

@@ -33,6 +33,13 @@ For illustrated setup and operating instructions, see the
 - Automatic IP-based coordinate/timezone detection with Astral sunrise and
   sunset calculations
 - Selectable MET Norway, Open-Meteo, or US National Weather Service forecasts
+- With US NWS selected at a US location, active NWS weather alerts rated Severe
+  or Extreme replace today’s summary with the official headline, affected area,
+  validity times, description, and instructions. Alerts are checked every minute
+  using the station coordinates; hourly and six-day forecasts remain available.
+  Today’s summary returns when alerts expire or NWS removes them. During outages,
+  unexpired cached alerts remain visible with an unavailable-update notice.
+  Alert data uses the [NWS active alerts API](https://www.weather.gov/documentation/services-web-api).
 - Today’s forecast includes temperature, RH and wind ranges, an early/late
   sky summary, and a synopsis (native NWS text retains its original units).
   The 24-hour carousel shows temperature, RH, wind and rain/snow chance.

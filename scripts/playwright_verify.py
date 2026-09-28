@@ -1,6 +1,8 @@
 """Run the host-side Chromium verification used by the pre-commit gate."""
 
 import os
+import json
+from datetime import datetime, timedelta, timezone
 import socket
 import subprocess
 import sys
@@ -106,7 +108,7 @@ def verify_dashboard(page: Page, base_url: str) -> None:
 
     # Forecast details must fit without clipping on desktop and mobile.
     assert page.locator("[data-open-forecast], #forecastDialog, .forecast-meta").count() == 0
-    expect(page.locator(".forecast-panel h2")).to_have_text("Clear early, partly cloudy late")
+    expect(page.locator("[data-today-forecast] h2")).to_have_text("Clear early, partly cloudy late")
     expect(page.locator(".forecast-synopsis")).to_contain_text("NWS · original units")
     expect(page.locator(".forecast-history-label")).to_have_text("Historical Min, Max, Avg 1991–2026 for 18-Sep")
     expect(page.locator('[data-history-value="temperature_c"]')).to_have_text("Min 50.0°F (1995) Max 86.0°F (2012) Avg 66.0°F")
@@ -274,6 +276,59 @@ def verify_dashboard(page: Page, base_url: str) -> None:
         raise AssertionError("Browser errors detected:\n" + "\n".join(details))
 
 
+
+def verify_severe_weather(page: Page) -> None:
+    """Check live alert replacement, cancellation, and offline expiry in Chromium."""
+    now = datetime.now(timezone.utc).replace(minute=10, second=0, microsecond=0)
+    page.clock.install(time=now)
+    page.locator('[data-open-settings]').first.click()
+    page.locator('[data-settings-pane="forecast"]').click()
+    page.locator('[name="forecast_provider"][value="us"]').check()
+    page.locator('[data-save-pane="forecast"]').click()
+    expect(page.locator('.provider-label')).to_have_text('us')
+    page.locator('[data-close-settings]').first.click()
+    page.reload(wait_until='domcontentloaded')
+    properties = json.loads((ROOT / 'tests/fixtures/nws-alerts.json').read_text())['features'][0]['properties']
+    alert = {**properties, 'effective': (now - timedelta(minutes=1)).isoformat(),
+             'description': (properties['description'] + '\n\n') * 12,
+             'expires': (now + timedelta(minutes=5)).isoformat()}
+    payload = {'provider': 'us', 'alerts': [alert], 'alerts_stale': False}
+    page.route('**/api/forecast', lambda route: route.fulfill(json=payload))
+    daily = page.locator('[data-today-forecast]')
+    notification = page.locator('[data-severe-weather]')
+    expect(daily).to_be_visible()
+    page.clock.fast_forward(61_000)
+    expect(notification).to_be_visible()
+    expect(daily).to_be_hidden()
+    expect(notification.locator('[data-alert-status]')).to_be_hidden()
+    expect(notification).to_contain_text(alert['instruction'])
+    expect(page.locator('.hourly-carousel')).to_be_visible()
+    expect(page.locator('.daily-strip')).to_be_visible()
+    for width in (1440, 390):
+        page.set_viewport_size({'width': width, 'height': 1200})
+        assert notification.evaluate('node => node.scrollWidth <= node.clientWidth')
+        details = notification.locator('[data-alert-list]')
+        assert details.evaluate('node => node.scrollHeight > node.clientHeight')
+        assert details.evaluate('node => node.clientHeight <= 241')
+        details.focus()
+        details.press('End')
+        page.wait_for_function("document.querySelector('[data-alert-list]').scrollTop > 0")
+        details.evaluate('node => node.scrollTop = 0')
+        notification.screenshot(path=RESULTS / f'severe-weather-{width}.png')
+    payload['alerts'] = []
+    page.clock.fast_forward(61_000)
+    expect(daily).to_be_visible()
+    expect(notification).to_be_hidden()
+    payload.update(alerts=[alert], alerts_stale=True)
+    page.clock.fast_forward(61_000)
+    expect(notification).to_be_visible()
+    expect(notification.locator('[data-alert-status]')).to_be_visible()
+    # Even a stale server response cannot extend the alert beyond its expiry.
+    page.clock.fast_forward(121_000)
+    expect(daily).to_be_visible()
+    expect(notification).to_be_hidden()
+
+
 def run_browser_check(base_url: str) -> None:
     """Launch Chromium and retain diagnostics for failed checks."""
     with sync_playwright() as playwright:
@@ -283,6 +338,7 @@ def run_browser_check(base_url: str) -> None:
         page = context.new_page()
         try:
             verify_dashboard(page, base_url)
+            verify_severe_weather(page)
         except Exception:
             page.screenshot(path=RESULTS / "failure.png", full_page=True)
             context.tracing.stop(path=RESULTS / "trace.zip")
