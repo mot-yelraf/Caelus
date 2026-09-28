@@ -99,6 +99,9 @@ def test_alert_refresh_is_independent_and_cancellation_clears_cache(tmp_path, cl
     settings = AppSettings(forecast_provider='us', latitude=40, longitude=-105)
     assert service.get(settings)['alerts']
     assert session.calls[-1][1]['params'] == {'point': '40.0000,-105.0000'}
+    saved = json.loads(service._alerts_path.read_text())
+    assert 'location' not in saved
+    assert len(saved['location_digest']) == 64
     assert service.get(settings, force=True)['alerts']
     assert len(session.calls) == 2
     clock[0] += timedelta(seconds=60)

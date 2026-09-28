@@ -1,3 +1,4 @@
+import hashlib
 import json
 import logging
 import math
@@ -723,7 +724,9 @@ class ForecastService:
             return empty
         now = datetime.now(timezone.utc)
         key = (settings.latitude, settings.longitude)
-        same = self._alerts.get("location") == list(key)
+        # Match the station without persisting its exact coordinates in this cache.
+        location_digest = hashlib.sha256(repr(key).encode("utf-8")).hexdigest()
+        same = self._alerts.get("location_digest") == location_digest
         checked = _parse_time(self._alerts.get("checked_at")) if same else None
         fresh = checked and checked.tzinfo and 0 <= (now - checked).total_seconds() < ALERT_CACHE_SECONDS
         retry_due = (self._alerts_attempt != key or self._alerts_attempt_at is None
@@ -747,7 +750,7 @@ class ForecastService:
                 response.raise_for_status()
                 payload = response.json()
                 normalize_nws_alerts(payload, now)  # Reject malformed responses before replacing last-good data.
-                self._alerts = {"location": list(key), "checked_at": now.isoformat(), "payload": payload}
+                self._alerts = {"location_digest": location_digest, "checked_at": now.isoformat(), "payload": payload}
                 same = True
                 self._alerts_stale = False
                 self._alerts_path.parent.mkdir(parents=True, exist_ok=True)
