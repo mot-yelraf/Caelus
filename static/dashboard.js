@@ -533,7 +533,6 @@
   const ecowittInventory = form.querySelector("[data-ecowitt-inventory]");
   const ecowittDiscoverButton = form.querySelector("[data-ecowitt-discover]");
   const ecowittSaveButton = form.querySelector("[data-ecowitt-save]");
-  const ecowittDisableButton = form.querySelector("[data-ecowitt-disable]");
   const csrfToken = form.querySelector('input[name="csrf_token"]')?.value || "";
   let ecowittDiscovery = null;
 
@@ -605,19 +604,6 @@
       if (ecowittStatus) showToast(ecowittStatus, error.message || "Gateway could not be saved.", true);
     } finally {
       ecowittSaveButton.disabled = false;
-    }
-  });
-
-  ecowittDisableButton?.addEventListener("click", async () => {
-    ecowittDisableButton.disabled = true;
-    try {
-      await ecowittRequest("/api/ecowitt/disable", {});
-      if (ecowittSummary) ecowittSummary.textContent = "Ecowitt polling disabled";
-      if (ecowittStatus) showToast(ecowittStatus, "Ecowitt polling disabled; historical SQLite readings were retained.");
-    } catch (error) {
-      if (ecowittStatus) showToast(ecowittStatus, error.message || "Gateway could not be disabled.", true);
-    } finally {
-      ecowittDisableButton.disabled = false;
     }
   });
 
@@ -2195,8 +2181,6 @@
       document.getElementById("mapSunsetTime").textContent = moon.sunset_display || formatSolarTime(moon.sunset);
       document.getElementById("solarNoonTime").textContent = moon.solar_noon_display || formatSolarTime(moon.solar_noon);
       document.getElementById("daylightDuration").textContent = moon.daylight_duration;
-      document.getElementById("northPoleDaylight").textContent = moon.north_pole_daylight ?? "—";
-      document.getElementById("southPoleDaylight").textContent = moon.south_pole_daylight ?? "—";
       document.getElementById("nextSeasonLabel").textContent = moon.next_season_label ?? "—";
       const nextSeasonDate = document.getElementById("nextSeasonDate");
       nextSeasonDate.textContent = moon.next_season_date ?? "—";

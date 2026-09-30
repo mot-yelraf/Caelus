@@ -252,7 +252,8 @@ def test_dashboard_includes_scene_themes_settings_modal_and_lunar_cycle() -> Non
     assert response.text.count("data-save-pane=") == 4
     assert "data-ecowitt-discover" in response.text
     assert "data-ecowitt-save" in response.text
-    assert "data-ecowitt-disable" in response.text
+    assert "data-ecowitt-disable" not in response.text
+    assert response.text.index("data-ecowitt-inventory") < response.text.index("data-ecowitt-discover")
     assert 'class="settings-tip"' not in response.text
     assert "data-save-settings" not in response.text
     assert 'id="forecastDialog"' not in response.text
@@ -297,8 +298,12 @@ def test_dashboard_includes_scene_themes_settings_modal_and_lunar_cycle() -> Non
     sensor_position = response.text.index('class="weather-history"')
     map_position = response.text.index('class="map-row"')
     moon_position = response.text.index('class="glass-card lunar-header"')
-    assert conditions_position < sensor_position < map_position < moon_position
-    assert 'class="glass-card map-card full-width-map"' in response.text
+    assert conditions_position < map_position < moon_position < sensor_position
+    assert 'class="glass-card map-card"' in response.text
+    assert "Take your observations with you." not in response.text
+    data_pane = response.text.split('data-pane="data-map"', 1)[1]
+    assert 'href="/export?format=csv"' in data_pane
+    assert 'href="/export?format=json"' in data_pane
     assert "Environmental decisions" not in response.text
     assert 'id="currentMoonDisk"' in response.text
     assert response.text.count("data-phase-moon") == 8
@@ -317,8 +322,8 @@ def test_dashboard_includes_scene_themes_settings_modal_and_lunar_cycle() -> Non
     moon_timeline_position = response.text.index('class="lunar-event-row lunar-event-row-moon"')
     sun_timeline_position = response.text.index('class="lunar-event-row lunar-event-row-sun"')
     assert moon_timeline_position < sun_timeline_position
-    assert 'id="northPoleDaylight"' in response.text
-    assert 'id="southPoleDaylight"' in response.text
+    assert 'id="northPoleDaylight"' not in response.text
+    assert 'id="southPoleDaylight"' not in response.text
     assert 'id="nextSeasonHeading"' in response.text
     assert 'id="nextEclipseHeading"' in response.text
     assert 'id="nextEclipseList"' in response.text
@@ -591,7 +596,8 @@ def test_sunlight_card_layout_and_refresh_contract() -> None:
     assert "transform: translate(-50%, 50%);" in css
     assert "Math.sqrt(1 - horizontalOffset ** 2)" in script
     assert "function formatSolarTime(value)" in script
-    assert 'moon.north_pole_daylight ?? "—"' in script
+    assert "northPoleDaylight" not in script
+    assert "southPoleDaylight" not in script
     assert 'moon.next_season_label ?? "—"' in script
     assert "moon.next_eclipses" in script
     assert "moon.eclipse_calculation_available" in script
