@@ -76,9 +76,9 @@ project-specific conventions.
   their individual lunar-surface rotations remain location-specific.
 - Keep sunrise, solar noon, sunset, daylight duration, and the daylight track
   derived from the same timezone-aware Astral result so their dates agree.
-- On wide screens, keep `.map-row` on the same three-column proportions as
-  `.conditions-row`: sunlight aligns with Current Readings, while Windy spans
-  the Forecast and Environmental Decisions columns.
+- On wide screens, keep `.map-row` in two equal columns spanning the same
+  width as the sensor metric grid: Windy on the left and Lunar Calendar on
+  the right. Stack the tiles on small screens.
 - Use absolute on-device file paths in user-facing docs and troubleshooting
   guidance.
 

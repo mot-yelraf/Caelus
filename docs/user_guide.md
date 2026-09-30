@@ -8,7 +8,7 @@ Caelus is a local weather dashboard and history service for an Ecowitt-compatibl
 
 This guide is for day-to-day users. You do not need to understand Python, FastAPI, or SQLite to operate Caelus.
 
-The screenshots were captured from a running Caelus station on September 9, 2026. Your location, readings, gateway model, forecast, lunar view, and available metrics will differ.
+The dashboard and Location, Station, and Data & Map screenshots were updated from a running Caelus station on September 30, 2026. Other screenshots, including the Mobile Operation graphics, were captured on September 9, 2026. The Location and Station screenshots use example coordinates and a documentation-only gateway address; enter your own values during setup. Your location, readings, gateway model, forecast, lunar view, and available metrics will differ.
 
 ## Open Caelus
 
@@ -41,7 +41,7 @@ Then configure Caelus:
 
 ![Station settings](screenshots/settings-station.png)
 
-Caelus uses read-only Ecowitt LAN endpoints. It does not configure Ecowitt cloud upload, custom-server push, MQTT, Nodus sensors, or switches. **Disable** stops future gateway polling without deleting stored history.
+Caelus uses read-only Ecowitt LAN endpoints. It does not configure Ecowitt cloud upload, custom-server push, MQTT, Nodus sensors, or switches.
 
 ## Settings
 
@@ -57,7 +57,8 @@ The dialog supports mouse, touch, and keyboard navigation. Closing without savin
 - **Data retrieval interval** accepts 60 to 3600 seconds.
 - **Find Sensors** queries the gateway and displays its model and paired inventory.
 - **Save Gateway** saves a successful discovery and enables polling.
-- **Disable** stops polling while preserving the database and saved history.
+
+**Find Sensors** and **Save Gateway** are below the discovered sensor list, aligned to the right. **Save Gateway** becomes available after a successful discovery.
 
 Both scheduled and manual polls use the same normalization and persistence workflow. A failed fetch does not erase the last stored observation.
 
@@ -71,6 +72,8 @@ Both scheduled and manual polls use the same normalization and persistence workf
 - **Timezone** uses an IANA name such as `America/Denver`.
 - **Use IP location** allows automatic detection.
 - **Detect & fill from IP** performs detection immediately and fills the location fields.
+
+**Detect & fill from IP** and **Save Location** share the action row below the location fields. Detection fills the fields; select **Save Location** to apply them.
 
 For manual setup, clear **Use IP location**, enter coordinates and a matching timezone, then select **Save Location**.
 
@@ -131,16 +134,22 @@ Select **Delete** beside a collection to remove that collection and its generate
 ![Data and map settings](screenshots/settings-data-map.png)
 
 - **Retention** accepts 30 to 366 elapsed days. Successful gateway polls prune readings older than this window.
-- **Default export** selects CSV or JSON as the stored preference.
+- **Download Data** contains **Download CSV** and **Download JSON** buttons. Select a format to download observations in the saved retention window. CSV is intended for spreadsheets; JSON provides a machine-readable object structure. There is no default-format selector.
 - **Windy embed URL** must remain the supported secure endpoint: `https://embed.windy.com/embed2.html`. Caelus adds the saved station coordinates and marker when it builds the displayed URL.
 
-Select **Save Data & Map** to apply the pane.
+Select **Save Map** to apply changes to retention and the Windy embed URL. Download buttons start an export immediately; they do not save pending settings changes. Save a changed retention value before downloading if you want that new window applied.
 
 ## Dashboard Overview
 
-### Current Readings
+On a wide screen, the first row contains **Current readings**, **Today’s forecast**, and **Sunlight today**. The next row places **Regional radar** on the left and **Lunar Calendar** on the right in equal-width tiles. Together they span the same width as the four-column **24-hour sensor metrics** rows below. Narrow screens stack the tiles vertically.
 
-![Full Caelus dashboard with the sensor row collapsed](screenshots/dashboard-overview.png)
+Exports are available under **Settings > Data & Map > Download Data**; there is no separate Weather Archive tile.
+
+![Dashboard overview: current conditions, Windy on the left and Lunar Calendar on the right, then the first sensor metric row](screenshots/dashboard-overview.png)
+
+The overview shows the first sensor row; additional sensor rows continue below. [View the full dashboard](screenshots/dashboard-full.png), which ends after Sensor Metrics without a Weather Archive tile.
+
+### Current Readings
 
 The **Current readings** card shows the latest outdoor temperature and a compact summary of outdoor humidity, relative pressure, wind, gust, rain today, UV, and solar radiation. A dash means the gateway did not supply a usable value for that field.
 
@@ -148,7 +157,7 @@ Values are displayed in the unit system selected under **Settings > Appearance >
 
 ### Today’s Forecast
 
-The forecast card shows today’s condition, high and low temperature, precipitation chance, up to 24 hourly samples, and six future daily summaries. Use the arrow at the right of the hourly row to page through later hours.
+The compact forecast card shows today’s condition, temperature, humidity and wind ranges, precipitation chance, historical comparisons, a forecast synopsis when available, up to 24 hourly samples, and six future daily summaries. Use the arrow at the right of the hourly row to page through later hours.
 
 Each daily card shows the date, weather glyph, minimum–maximum temperature, minimum–maximum relative humidity (RH), precipitation chance, and minimum–maximum wind speed. Temperature and wind use your selected units. A dash means the provider did not supply that range. On mobile, the six cards wrap into two rows.
 
@@ -156,9 +165,25 @@ The provider label identifies the active forecast source. When a provider is tem
 
 ### Sunlight and Seasonal Information
 
-The **Sunlight today** card uses the saved coordinates and timezone. Sunrise, solar noon, sunset, daylight duration, and the daylight track come from the same local-date calculation. It also shows daylight at the North and South Poles, the next seasonal event, and locally visible eclipse information when the astronomy data package is available.
+The **Sunlight today** card uses the saved coordinates and timezone. Sunrise, solar noon, sunset, daylight duration, and the daylight track come from the same local-date calculation. It also shows the next seasonal event and locally visible eclipse information when the astronomy data package is available.
 
 If eclipse calculations are unavailable, rerun the Caelus installer so the packaged astronomy data is installed in the Caelus runtime.
+
+### Regional Radar
+
+The Windy map is centered on the saved station coordinates and starts with its interaction guard enabled so normal page scrolling is not captured accidentally.
+
+1. Select **Click to interact with map** before panning, zooming, or opening a Windy forecast.
+2. Move the pointer away from the map or press Escape to restore the scroll guard.
+3. Select **Close forecast** above the map to close an open Windy forecast panel and return to the station-centered radar view.
+
+Windy is a separate cross-origin service. Caelus cannot directly operate the controls inside its forecast panel.
+
+### Lunar Calendar
+
+The **Lunar Calendar** tile sits to the right of the Windy map on wide screens. The live Moon appears above two groups showing the four previous and four upcoming phases. The live disk is calculated for the saved observer location: illumination, lunar age, altitude, bright-limb direction, and lunar-surface rotation reflect the local sky instead of a fixed phase icon. Choose **Local** for that observer-local view or **Ref** for a conventional upright phase diagram. The Sun and Moon rows share a sunrise-to-next-sunrise scale, placing sunset, moonrise, and moonset in chronological context.
+
+![Regional radar on the left and Lunar Calendar on the right](screenshots/dashboard-map-moon.png)
 
 ### 24-Hour Sensor Metrics
 
@@ -174,25 +199,7 @@ A card can display:
 
 Select a metric card to cycle its current view. To make the starting style persistent, use **Settings > Appearance > Display Style**.
 
-![Metric cards and regional radar](screenshots/dashboard-history-map.png)
-
-### Regional Radar
-
-The Windy map is centered on the saved station coordinates and starts with its interaction guard enabled so normal page scrolling is not captured accidentally.
-
-1. Select **Click to interact with map** before panning, zooming, or opening a Windy forecast.
-2. Move the pointer away from the map or press Escape to restore the scroll guard.
-3. Select **Close forecast** above the map to close an open Windy forecast panel and return to the station-centered radar view.
-
-Windy is a separate cross-origin service. Caelus cannot directly operate the controls inside its forecast panel.
-
-### Moon Phase and Weather Archive
-
-The **Lunar Calendar** header shows four phases before and four phases after the live Moon. The center disk is calculated for the saved observer location: illumination, lunar age, altitude, bright-limb direction, and lunar-surface rotation reflect the local sky instead of a fixed phase icon. Choose **Local** for that observer-local view or **Ref** for a conventional upright phase diagram. The Sun and Moon rows share a sunrise-to-next-sunrise scale, placing sunset, moonrise, and moonset in chronological context.
-
-![Observer-local Moon and archive controls](screenshots/dashboard-lunar-archive.png)
-
-Use **Download CSV** or **Download JSON** to export observations inside the configured retention window. CSV is intended for spreadsheets; JSON preserves a machine-readable object structure. Browser downloads use the button selected, even if the default export setting differs.
+![Four-column sensor metric row](screenshots/dashboard-metrics.png)
 
 ## Caelus Graphum
 
@@ -222,7 +229,7 @@ Connect the phone to that LAN's Wi-Fi, then open Caelus in its browser or from t
 
 ### Dashboard and Refresh
 
-- **Scroll vertically** to move through current readings, forecasts, sensor metrics, the map, and the lunar calendar. The dashboard stacks its cards to fit a narrow screen.
+- **Scroll vertically** to move through current readings, forecasts, sunlight, the map, the lunar calendar, and sensor metrics. The dashboard stacks its cards to fit a narrow screen.
 - **Tap the Caelus icon or title** to reload the dashboard. Use this to pick up a location, forecast source, or other setting changed on another device, without closing or restarting the web app. Readings also refresh automatically while the dashboard is active.
 - **Tap the Graph glyph** to the left of the title to open Caelus Graphum. Choose a time range and up to four metrics; tap **X** to return to the dashboard.
 - **Tap a sensor card** to cycle its graph or gauge view. Use the triangle beside **24-hour sensor metrics** to show or hide additional cards.

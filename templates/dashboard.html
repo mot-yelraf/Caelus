@@ -114,10 +114,66 @@
           <div class="card-heading compact"><div><p class="eyebrow">Sunlight today</p><h2 id="daylightDuration">{{ moon.get('daylight_duration', '—') }}</h2></div><span class="sun-state" id="sunState">{{ 'Sun above horizon' if moon.get('sun_is_up', false) else 'Sun below horizon' }}</span></div>
           <div class="daylight-orbit" aria-hidden="true"><span class="daylight-sun" id="daylightSun" data-daylight-progress="{{ moon.get('daylight_progress', 0) }}">☀</span></div>
           <dl class="daylight-times"><div><dt>Sunrise</dt><dd id="mapSunriseTime">{{ moon.get('sunrise_display', moon.sunrise) }}</dd></div><div><dt>Solar noon</dt><dd id="solarNoonTime">{{ moon.get('solar_noon_display', moon.get('solar_noon', '—')) }}</dd></div><div><dt>Sunset</dt><dd id="mapSunsetTime">{{ moon.get('sunset_display', moon.sunset) }}</dd></div></dl>
-          <p class="polar-daylight-note"><span><strong id="northPoleDaylight">{{ moon.get('north_pole_daylight', '—') }}</strong> North Pole</span><span><strong id="southPoleDaylight">{{ moon.get('south_pole_daylight', '—') }}</strong> South Pole</span></p>
           <section class="daylight-detail-section" aria-labelledby="nextSeasonHeading"><h3 id="nextSeasonHeading">Next seasonal event</h3><p class="next-season-note"><strong id="nextSeasonLabel">{{ moon.get('next_season_label', '—') }}</strong><time id="nextSeasonDate" datetime="{{ moon.get('next_season_at', '') }}">{{ moon.get('next_season_date', '—') }}</time></p></section>
           <section class="daylight-detail-section eclipse-section" aria-labelledby="nextEclipseHeading"><h3 id="nextEclipseHeading">Next eclipse for your location</h3><ul class="eclipse-list" id="nextEclipseList">{% for eclipse in moon.get('next_eclipses', []) %}<li><strong>{{ eclipse.kind }}</strong><time datetime="{{ eclipse.at }}">{{ eclipse.date }}</time></li>{% else %}<li class="eclipse-empty">{{ 'No visible eclipses for the next 12 months' if moon.get('eclipse_calculation_available') else 'Eclipse calculations unavailable · rerun the Caelus installer' }}</li>{% endfor %}</ul></section>
         </article>
+      </section>
+
+      <section class="map-row" id="map">
+        <article class="glass-card map-card">
+          <div class="card-heading compact map-heading">
+            <div><p class="eyebrow">Weather in motion</p><h2>Regional radar</h2></div>
+            <div class="map-tools"><button type="button" data-reset-windy title="Close Windy's forecast panel and return to the station map">× Close forecast</button><span>Windy</span></div>
+          </div>
+          <div class="windy-map-interaction" data-windy-interaction>
+            <iframe data-windy-map src="{{ windy_iframe_url }}" title="Regional Windy radar map" loading="lazy" sandbox="allow-scripts allow-same-origin" referrerpolicy="no-referrer" tabindex="-1"></iframe>
+            <button class="windy-map-guard" type="button" data-windy-guard aria-label="Activate the Windy weather map"><span>Click to interact with map</span></button>
+          </div>
+        </article>
+        <section class="glass-card lunar-header" id="moon" data-lunar-header>
+          {% set moon_altitude = moon.get('moon_altitude') %}
+          {% set phase_illuminations = (0, 15, 50, 85, 100, 85, 50, 15) %}
+          {% set previous_phases = moon.get('previous_phases', moon.cycle[:4]) %}
+          {% set upcoming_phases = moon.get('upcoming_phases', moon.cycle[4:]) %}
+          <div class="lunar-heading">
+            <h2>Lunar Calendar</h2>
+            <div class="lunar-view-toggle" role="group" aria-label="Lunar Calendar view mode" title="Local sky view or reference Moon diagram">
+              <button type="button" class="is-active" data-lunar-view="local" aria-pressed="true">Local</button>
+              <button type="button" data-lunar-view="reference" aria-pressed="false">Ref</button>
+            </div>
+          </div>
+          <p class="lunar-view-status" id="lunarViewStatus">Observer-local phase timeline</p>
+          <div class="lunar-arc" aria-hidden="true"></div>
+          <div class="lunar-side lunar-side-left" data-lunar-period="previous" aria-label="Previous four moon phases">
+            <p class="lunar-side-title">Previous phases</p>
+            {% for phase in previous_phases %}<div class="lunar-step"><canvas class="lunar-step-disk" width="96" height="96" data-phase-moon data-phase-index="{{ phase.index }}" data-illumination="{{ phase.get('illumination', phase_illuminations[phase.index]) }}" data-local-bright-limb-angle="{{ phase.get('bright_limb_angle', 0) }}" data-local-disk-rotation="{{ phase.get('disk_rotation', 0) }}" data-representative-date="{{ phase.get('representative_date', '') }}" role="img" aria-label="Observer-local view of the {{ phase.name }}"></canvas><small data-phase-name>{{ phase.name }}</small><time data-phase-date datetime="{{ phase.get('representative_date', '') }}">{{ phase.get('date_label', '') }}</time></div>{% endfor %}
+          </div>
+          <div class="lunar-current">
+            <p class="eyebrow">Moon now · live</p>
+            <canvas class="lunar-current-disk" id="currentMoonDisk" width="192" height="192" data-phase-index="{{ moon.get('phase_index', 0) }}" data-illumination="{{ moon.illumination }}" data-bright-limb-angle="{{ moon.get('bright_limb_angle', 0) }}" data-disk-rotation="{{ moon.get('disk_rotation', 0) }}" data-local-bright-limb-angle="{{ moon.get('bright_limb_angle', 0) }}" data-local-disk-rotation="{{ moon.get('disk_rotation', 0) }}" role="img" aria-label="Observer-local view of the {{ moon.name }}, {{ moon.illumination }} percent illuminated"></canvas>
+            <h2 id="currentMoonName">{{ moon.name }}</h2>
+            <p><strong id="currentMoonIllumination">{{ moon.illumination }}%</strong> illuminated · lunar day <span id="currentMoonAge">{{ moon.age_days }}</span><br /><span class="observer-view-label" id="moonLocalView">Observer-local orientation{% if moon_altitude is not none %} · {{ moon_altitude }}° altitude{% if moon_altitude < 0 %} (below horizon){% endif %}{% endif %}</span></p>
+          </div>
+          <div class="lunar-side lunar-side-right" data-lunar-period="upcoming" aria-label="Upcoming four moon phases">
+            <p class="lunar-side-title">Upcoming phases</p>
+            {% for phase in upcoming_phases %}<div class="lunar-step"><canvas class="lunar-step-disk" width="96" height="96" data-phase-moon data-phase-index="{{ phase.index }}" data-illumination="{{ phase.get('illumination', phase_illuminations[phase.index]) }}" data-local-bright-limb-angle="{{ phase.get('bright_limb_angle', 0) }}" data-local-disk-rotation="{{ phase.get('disk_rotation', 0) }}" data-representative-date="{{ phase.get('representative_date', '') }}" role="img" aria-label="Observer-local view of the {{ phase.name }}"></canvas><small data-phase-name>{{ phase.name }}</small><time data-phase-date datetime="{{ phase.get('representative_date', '') }}">{{ phase.get('date_label', '') }}</time></div>{% endfor %}
+          </div>
+          <div class="lunar-timeline-footer">
+            <div class="lunar-event-timeline" id="lunarEventTimeline" role="img" aria-label="Sun and Moon events from sunrise to the next sunrise" data-start-at="{{ moon.get('timeline_start_at', '') }}" data-sunset-at="{{ moon.get('timeline_sunset_at', '') }}" data-end-at="{{ moon.get('timeline_end_at', '') }}" data-moonrise-at="{{ moon.get('timeline_moonrise_at', '') }}" data-moonset-at="{{ moon.get('timeline_moonset_at', '') }}">
+              <div class="lunar-event-row lunar-event-row-moon"><span class="lunar-event-row-title">Moon</span><div class="lunar-event-track">
+                <span class="lunar-event-marker" id="lunarMoonriseMarker"><span>Moonrise</span><strong id="moonriseTime">{{ moon.get('timeline_moonrise', '—') }}</strong></span>
+                <span class="lunar-event-marker" id="lunarMoonsetMarker"><span>Moonset</span><strong id="moonsetTime">{{ moon.get('timeline_moonset', '—') }}</strong></span>
+              </div></div>
+              <div class="lunar-event-row lunar-event-row-sun"><span class="lunar-event-row-title">Sun</span><div class="lunar-event-track">
+                <span class="lunar-event-marker is-start" id="lunarSunriseMarker" style="--timeline-left:0%"><span>Sunrise</span><strong id="sunriseTime">{{ moon.get('sunrise', '—') }}</strong></span>
+                <span class="lunar-event-marker" id="lunarSunsetMarker"><span>Sunset</span><strong id="sunsetTime">{{ moon.get('sunset', '—') }}</strong></span>
+                <span class="lunar-event-marker is-end" id="lunarNextSunriseMarker" style="--timeline-left:100%"><span>Next sunrise</span><strong id="nextSunriseTime">{{ moon.get('next_sunrise', '—') }}</strong></span>
+              </div></div>
+            </div>
+            <small id="lunarUpdated">Updated {{ moon.updated_at[11:16] }} UTC</small>
+          </div>
+        </section>
+
       </section>
 
       <section class="weather-history" id="weather-history" aria-labelledby="weatherHistoryTitle" data-weather-history data-timezone="{{ settings.timezone }}">
@@ -129,64 +185,6 @@
         </div>
       </section>
 
-      <section class="map-row" id="map">
-        <article class="glass-card map-card full-width-map">
-          <div class="card-heading compact map-heading">
-            <div><p class="eyebrow">Weather in motion</p><h2>Regional radar</h2></div>
-            <div class="map-tools"><button type="button" data-reset-windy title="Close Windy's forecast panel and return to the station map">× Close forecast</button><span>Windy</span></div>
-          </div>
-          <div class="windy-map-interaction" data-windy-interaction>
-            <iframe data-windy-map src="{{ windy_iframe_url }}" title="Regional Windy radar map" loading="lazy" sandbox="allow-scripts allow-same-origin" referrerpolicy="no-referrer" tabindex="-1"></iframe>
-            <button class="windy-map-guard" type="button" data-windy-guard aria-label="Activate the Windy weather map"><span>Click to interact with map</span></button>
-          </div>
-        </article>
-      </section>
-
-      <section class="glass-card lunar-header" id="moon" data-lunar-header>
-        {% set moon_altitude = moon.get('moon_altitude') %}
-        {% set phase_illuminations = (0, 15, 50, 85, 100, 85, 50, 15) %}
-        {% set previous_phases = moon.get('previous_phases', moon.cycle[:4]) %}
-        {% set upcoming_phases = moon.get('upcoming_phases', moon.cycle[4:]) %}
-        <div class="lunar-heading">
-          <h2>Lunar Calendar</h2>
-          <div class="lunar-view-toggle" role="group" aria-label="Lunar Calendar view mode" title="Local sky view or reference Moon diagram">
-            <button type="button" class="is-active" data-lunar-view="local" aria-pressed="true">Local</button>
-            <button type="button" data-lunar-view="reference" aria-pressed="false">Ref</button>
-          </div>
-        </div>
-        <p class="lunar-view-status" id="lunarViewStatus">Observer-local phase timeline</p>
-        <div class="lunar-arc" aria-hidden="true"></div>
-        <div class="lunar-side lunar-side-left" data-lunar-period="previous" aria-label="Previous four moon phases">
-          <p class="lunar-side-title">Previous phases</p>
-          {% for phase in previous_phases %}<div class="lunar-step"><canvas class="lunar-step-disk" width="96" height="96" data-phase-moon data-phase-index="{{ phase.index }}" data-illumination="{{ phase.get('illumination', phase_illuminations[phase.index]) }}" data-local-bright-limb-angle="{{ phase.get('bright_limb_angle', 0) }}" data-local-disk-rotation="{{ phase.get('disk_rotation', 0) }}" data-representative-date="{{ phase.get('representative_date', '') }}" role="img" aria-label="Observer-local view of the {{ phase.name }}"></canvas><small data-phase-name>{{ phase.name }}</small><time data-phase-date datetime="{{ phase.get('representative_date', '') }}">{{ phase.get('date_label', '') }}</time></div>{% endfor %}
-        </div>
-        <div class="lunar-current">
-          <p class="eyebrow">Moon now · live</p>
-          <canvas class="lunar-current-disk" id="currentMoonDisk" width="192" height="192" data-phase-index="{{ moon.get('phase_index', 0) }}" data-illumination="{{ moon.illumination }}" data-bright-limb-angle="{{ moon.get('bright_limb_angle', 0) }}" data-disk-rotation="{{ moon.get('disk_rotation', 0) }}" data-local-bright-limb-angle="{{ moon.get('bright_limb_angle', 0) }}" data-local-disk-rotation="{{ moon.get('disk_rotation', 0) }}" role="img" aria-label="Observer-local view of the {{ moon.name }}, {{ moon.illumination }} percent illuminated"></canvas>
-          <h2 id="currentMoonName">{{ moon.name }}</h2>
-          <p><strong id="currentMoonIllumination">{{ moon.illumination }}%</strong> illuminated · lunar day <span id="currentMoonAge">{{ moon.age_days }}</span><br /><span class="observer-view-label" id="moonLocalView">Observer-local orientation{% if moon_altitude is not none %} · {{ moon_altitude }}° altitude{% if moon_altitude < 0 %} (below horizon){% endif %}{% endif %}</span></p>
-        </div>
-        <div class="lunar-side lunar-side-right" data-lunar-period="upcoming" aria-label="Upcoming four moon phases">
-          <p class="lunar-side-title">Upcoming phases</p>
-          {% for phase in upcoming_phases %}<div class="lunar-step"><canvas class="lunar-step-disk" width="96" height="96" data-phase-moon data-phase-index="{{ phase.index }}" data-illumination="{{ phase.get('illumination', phase_illuminations[phase.index]) }}" data-local-bright-limb-angle="{{ phase.get('bright_limb_angle', 0) }}" data-local-disk-rotation="{{ phase.get('disk_rotation', 0) }}" data-representative-date="{{ phase.get('representative_date', '') }}" role="img" aria-label="Observer-local view of the {{ phase.name }}"></canvas><small data-phase-name>{{ phase.name }}</small><time data-phase-date datetime="{{ phase.get('representative_date', '') }}">{{ phase.get('date_label', '') }}</time></div>{% endfor %}
-        </div>
-        <div class="lunar-timeline-footer">
-          <div class="lunar-event-timeline" id="lunarEventTimeline" role="img" aria-label="Sun and Moon events from sunrise to the next sunrise" data-start-at="{{ moon.get('timeline_start_at', '') }}" data-sunset-at="{{ moon.get('timeline_sunset_at', '') }}" data-end-at="{{ moon.get('timeline_end_at', '') }}" data-moonrise-at="{{ moon.get('timeline_moonrise_at', '') }}" data-moonset-at="{{ moon.get('timeline_moonset_at', '') }}">
-            <div class="lunar-event-row lunar-event-row-moon"><span class="lunar-event-row-title">Moon</span><div class="lunar-event-track">
-              <span class="lunar-event-marker" id="lunarMoonriseMarker"><span>Moonrise</span><strong id="moonriseTime">{{ moon.get('timeline_moonrise', '—') }}</strong></span>
-              <span class="lunar-event-marker" id="lunarMoonsetMarker"><span>Moonset</span><strong id="moonsetTime">{{ moon.get('timeline_moonset', '—') }}</strong></span>
-            </div></div>
-            <div class="lunar-event-row lunar-event-row-sun"><span class="lunar-event-row-title">Sun</span><div class="lunar-event-track">
-              <span class="lunar-event-marker is-start" id="lunarSunriseMarker" style="--timeline-left:0%"><span>Sunrise</span><strong id="sunriseTime">{{ moon.get('sunrise', '—') }}</strong></span>
-              <span class="lunar-event-marker" id="lunarSunsetMarker"><span>Sunset</span><strong id="sunsetTime">{{ moon.get('sunset', '—') }}</strong></span>
-              <span class="lunar-event-marker is-end" id="lunarNextSunriseMarker" style="--timeline-left:100%"><span>Next sunrise</span><strong id="nextSunriseTime">{{ moon.get('next_sunrise', '—') }}</strong></span>
-            </div></div>
-          </div>
-          <small id="lunarUpdated">Updated {{ moon.updated_at[11:16] }} UTC</small>
-        </div>
-      </section>
-
-      <section class="glass-card data-card"><div><p class="eyebrow">Weather archive</p><h2>Take your observations with you.</h2><p>Exports follow your {{ settings.retention_days }}-day retention window.</p></div><div class="data-actions"><a href="/export?format=csv">Download CSV</a><a href="/export?format=json">Download JSON</a></div></section>
     </main>
 
 
@@ -211,8 +209,8 @@
         <div class="modal-layout">
           <div class="settings-sidebar"><nav class="settings-menu" aria-label="Settings sections" role="tablist" aria-orientation="vertical"><button type="button" class="settings-tab is-active" data-settings-pane="location">Location</button><button type="button" class="settings-tab" data-settings-pane="station">Station</button><button type="button" class="settings-tab" data-settings-pane="forecast">Forecast</button><button type="button" class="settings-tab" data-settings-pane="appearance">Appearance</button><button type="button" class="settings-tab" data-settings-pane="data-map">Data &amp; Map</button></nav><img class="studio-mark" src="/static/peace-hill-studios-512.png" alt="Peace Hill Studios" width="512" height="512" /></div>
           <div class="settings-content">
-            <section class="settings-pane" data-pane="station" hidden><div class="pane-heading"><div><h3>Ecowitt weather station</h3></div></div><div class="field-grid"><label class="field wide"><span>Gateway base URL</span><input id="ecowittGatewayUrl" type="url" name="gateway_url" value="{{ settings.gateway_url }}" placeholder="http://192.168.1.100" required /></label><label class="field"><span>Data retrieval interval</span><div class="input-unit"><input id="ecowittPollInterval" type="number" name="poll_interval_seconds" min="60" max="3600" value="{{ settings.poll_interval_seconds }}" required /><em>seconds</em></div></label></div><div class="ecowitt-actions"><button type="button" class="button-secondary" data-ecowitt-discover>Find Sensors</button><button type="button" class="button-primary" data-ecowitt-save disabled>Save Gateway</button><button type="button" class="button-secondary" data-ecowitt-disable>Disable</button></div><p class="ecowitt-status" data-ecowitt-summary>{{ settings.gateway_model or ('Ecowitt polling enabled' if settings.gateway_enabled else 'Ecowitt polling disabled') }}</p><div class="ecowitt-inventory" data-ecowitt-inventory>{% for sensor in settings.gateway_inventory %}<div><strong>{{ sensor.name }}</strong><span>{{ sensor.family or 'Ecowitt' }} · ID {{ sensor.id }} · signal {{ sensor.signal }}</span></div>{% endfor %}</div></section>
-            <section class="settings-pane is-active" data-pane="location"><div class="pane-heading"><div><h3>Place &amp; coordinates</h3></div></div><div class="field-grid"><label class="field wide"><span>Location name</span><input id="locationName" type="text" name="location_name" value="{{ settings.location_name }}" placeholder="Garden Ridge" /></label><label class="field"><span>Latitude</span><input id="locationLatitude" type="number" step="0.0001" min="-90" max="90" name="latitude" value="{{ settings.latitude }}" /></label><label class="field"><span>Longitude</span><input id="locationLongitude" type="number" step="0.0001" min="-180" max="180" name="longitude" value="{{ settings.longitude }}" /></label><label class="field wide"><span>Timezone</span><input id="locationTimezone" type="text" name="timezone_name" value="{{ settings.timezone }}" required /></label><label class="toggle-field wide"><input id="autoLocation" type="checkbox" name="use_ip_location" {% if settings.use_ip_location %}checked{% endif %} /><span class="toggle-track"></span><span><strong>Use IP location</strong><small>Sends the server's public IP to ipapi.co or ipwho.is for an approximate location.</small></span></label></div><button class="detect-location-button" type="button" data-detect-location>⌖ Detect &amp; fill from IP</button><div class="pane-actions"><button type="button" data-save-pane="location">Save Location</button></div></section>
+            <section class="settings-pane" data-pane="station" hidden><div class="pane-heading"><div><h3>Ecowitt weather station</h3></div></div><div class="field-grid"><label class="field wide"><span>Gateway base URL</span><input id="ecowittGatewayUrl" type="url" name="gateway_url" value="{{ settings.gateway_url }}" placeholder="http://192.168.1.100" required /></label><label class="field"><span>Data retrieval interval</span><div class="input-unit"><input id="ecowittPollInterval" type="number" name="poll_interval_seconds" min="60" max="3600" value="{{ settings.poll_interval_seconds }}" required /><em>seconds</em></div></label></div><p class="ecowitt-status" data-ecowitt-summary>{{ settings.gateway_model or ('Ecowitt polling enabled' if settings.gateway_enabled else 'Ecowitt polling disabled') }}</p><div class="ecowitt-inventory" data-ecowitt-inventory>{% for sensor in settings.gateway_inventory %}<div><strong>{{ sensor.name }}</strong><span>{{ sensor.family or 'Ecowitt' }} · ID {{ sensor.id }} · signal {{ sensor.signal }}</span></div>{% endfor %}</div><div class="ecowitt-actions"><button type="button" class="button-secondary" data-ecowitt-discover>Find Sensors</button><button type="button" class="button-primary" data-ecowitt-save disabled>Save Gateway</button></div></section>
+            <section class="settings-pane is-active" data-pane="location"><div class="pane-heading"><div><h3>Place &amp; coordinates</h3></div></div><div class="field-grid"><label class="field wide"><span>Location name</span><input id="locationName" type="text" name="location_name" value="{{ settings.location_name }}" placeholder="Garden Ridge" /></label><label class="field"><span>Latitude</span><input id="locationLatitude" type="number" step="0.0001" min="-90" max="90" name="latitude" value="{{ settings.latitude }}" /></label><label class="field"><span>Longitude</span><input id="locationLongitude" type="number" step="0.0001" min="-180" max="180" name="longitude" value="{{ settings.longitude }}" /></label><label class="field wide"><span>Timezone</span><input id="locationTimezone" type="text" name="timezone_name" value="{{ settings.timezone }}" required /></label><label class="toggle-field wide"><input id="autoLocation" type="checkbox" name="use_ip_location" {% if settings.use_ip_location %}checked{% endif %} /><span class="toggle-track"></span><span><strong>Use IP location</strong><small>Sends the server's public IP to ipapi.co or ipwho.is for an approximate location.</small></span></label></div><div class="location-actions"><button class="detect-location-button" type="button" data-detect-location>⌖ Detect &amp; fill from IP</button><button class="button-primary" type="button" data-save-pane="location">Save Location</button></div></section>
             <section class="settings-pane" data-pane="forecast" hidden><div class="pane-heading"><div><h3>Forecast source</h3></div></div><div class="provider-picker">{% for value, label, detail in [('met_no','MET Norway','Global nine-day location forecast.'),('open_meteo','Open-Meteo','Global best-match weather models.'),('us','US · NWS','National Weather Service; US locations only.')] %}<label class="provider-option"><input type="radio" name="forecast_provider" value="{{ value }}" {% if settings.forecast_provider == value %}checked{% endif %}/><span><strong>{{ label }}</strong><small>{{ detail }}</small></span></label>{% endfor %}</div><div class="pane-actions"><button type="button" data-save-pane="forecast">Save Forecast</button></div></section>
             <section class="settings-pane appearance-pane" data-pane="appearance" hidden>
               <div class="appearance-pane-scroll">
@@ -242,7 +240,7 @@
                 <div class="pane-actions"><button type="button" data-save-pane="appearance">Save Appearance</button></div>
               </div>
             </section>
-            <section class="settings-pane" data-pane="data-map" hidden><div class="pane-heading"><div><h3>History &amp; map</h3></div></div><div class="field-grid"><label class="field"><span>Retention</span><div class="input-unit"><input type="number" name="retention_days" min="30" max="366" value="{{ settings.retention_days }}" required /><em>days</em></div></label><label class="field"><span>Default export</span><select name="export_format"><option value="csv" {% if settings.export_format == 'csv' %}selected{% endif %}>CSV spreadsheet</option><option value="json" {% if settings.export_format == 'json' %}selected{% endif %}>JSON data</option></select></label><label class="field wide"><span>Windy embed URL</span><input type="url" name="windy_iframe_url" value="{{ settings.windy_iframe_url }}" required /></label></div><div class="pane-actions"><button type="button" data-save-pane="data-map">Save Data &amp; Map</button></div></section>
+            <section class="settings-pane" data-pane="data-map" hidden><div class="pane-heading"><div><h3>History &amp; map</h3></div></div><div class="field-grid"><label class="field"><span>Retention</span><div class="input-unit"><input type="number" name="retention_days" min="30" max="366" value="{{ settings.retention_days }}" required /><em>days</em></div></label><div class="field"><span>Download Data</span><div class="data-actions"><a class="button-secondary" href="/export?format=csv">Download CSV</a><a class="button-secondary" href="/export?format=json">Download JSON</a></div></div><label class="field wide"><span>Windy embed URL</span><input type="url" name="windy_iframe_url" value="{{ settings.windy_iframe_url }}" required /></label></div><div class="pane-actions"><button type="button" data-save-pane="data-map">Save Map</button></div></section>
           </div>
         </div>
       </form>

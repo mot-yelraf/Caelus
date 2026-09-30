@@ -134,6 +134,24 @@ def verify_dashboard(page: Page, base_url: str) -> None:
         for card in page.locator(".forecast-day, .forecast-hour:visible, .forecast-ranges > span").all():
             assert card.evaluate("el => el.scrollWidth <= el.clientWidth")
         panel.screenshot(path=RESULTS / f"forecast-{width}.png")
+    # Map and Moon share the metric grid width, then stack on small screens.
+    for width in (1480, 1024, 390):
+        page.set_viewport_size({"width": width, "height": 1200})
+        row = page.locator(".map-row")
+        radar = row.locator(".map-card").bounding_box()
+        moon = row.locator(".lunar-header").bounding_box()
+        metrics = page.locator(".weather-metric-grid").bounding_box()
+        row_bounds = row.bounding_box()
+        assert radar and moon and metrics and row_bounds
+        assert abs(row_bounds["width"] - metrics["width"]) < 1
+        if width > 760:
+            assert abs(radar["y"] - moon["y"]) < 1
+            assert abs(radar["width"] - moon["width"]) < 1
+            assert radar["x"] + radar["width"] < moon["x"]
+        else:
+            assert radar["y"] + radar["height"] <= moon["y"]
+        assert row.locator(".lunar-header").evaluate("el => el.scrollWidth <= el.clientWidth")
+        row.screenshot(path=RESULTS / f"map-moon-{width}.png")
     page.locator("[data-hourly-next]").click()
     expect(page.locator("[data-hourly-status]")).to_have_text("Hours 2–9 of 24")
     page.locator("[data-hourly-previous]").click()
