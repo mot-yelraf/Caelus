@@ -946,3 +946,25 @@ def test_weather_climate_endpoint_returns_snapshot_without_http_cache():
     assert response.headers['cache-control'] == 'no-store'
     del app.state.weather_climate_service
     assert TestClient(app).get('/api/weather-climate').json() == {'status': 'unavailable'}
+
+
+def test_current_readings_footer_uses_runtime_station_health():
+    from caelus.gateway import EcowittGateway
+    from datetime import datetime, timezone
+    app = make_app()
+    app.state.settings.gateway_enabled = True
+    app.state.gateway = EcowittGateway(app.state.settings)
+    app.state.gateway.last_status.update(
+        state="online", last_success=datetime.now(timezone.utc).isoformat(),
+        inventory=[{"family": "wh69", "signal": 3, "battery": "1"}],
+    )
+    client = TestClient(app)
+    response = client.get("/")
+    assert 'data-battery-status="LOW"' in response.text
+    assert 'data-station-state-label>Station reporting' in response.text
+    assert client.get("/api/ecowitt/status").json()["station"] == {"reporting": True, "battery_status": "LOW"}
+    app.state.gateway.last_status["state"] = "offline"
+    response = client.get("/")
+    assert 'data-battery-status="UNKNOWN"' in response.text
+    assert 'data-station-state-label>Station offline' in response.text
+    assert 'data-reading-field="temperature">0.0' in response.text

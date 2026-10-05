@@ -169,6 +169,7 @@ def register_routes(app: FastAPI) -> None:
                 "version": __version__,
                 "settings": settings,
                 "latest": latest,
+                "station": (await ecowitt_status()).get("station", {}),
                 "latest_observation_time": format_observation_time(
                     latest.get("timestamp"), settings.timezone
                 ),

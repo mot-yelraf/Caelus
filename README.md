@@ -122,6 +122,14 @@ Caelus calls only the gateway's read-only local HTTP endpoints. It does not
 configure Ecowitt cloud upload, custom-server push, MQTT, Nodus sensors, or
 switches. Disabling the gateway stops polling without deleting historical data.
 
+For a GW1100/GW1200 with a WS69 array, the Current readings footer shows
+**Station reporting** when the current sensor inventory has a signal, and
+**Station offline** when unavailable, disabled, or stale. Battery Status is
+**OK** (normal), **LOW** (low-battery flag), or **UNKNOWN** when missing,
+unrecognized, or unavailable. Inventory is refreshed on each poll; a failed
+inventory request does not discard weather readings. These health indicators
+are runtime status and are not stored in the historical readings database.
+
 ## Standalone installation
 
 The installers ask where Caelus should be installed, defaulting to the existing
