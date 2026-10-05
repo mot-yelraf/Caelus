@@ -1,4 +1,5 @@
 import pytest
+import requests
 
 from caelus.gateway import (
     EcowittGateway,
@@ -193,3 +194,57 @@ def test_save_reuses_recent_server_validated_discovery() -> None:
     assert saved == discovered
     assert saved is not discovered
     assert CountingSession.calls == calls_after_discovery
+
+
+@pytest.mark.parametrize('raw, expected', [(0, 'OK'), ('0', 'OK'), (1, 'LOW'), ('1', 'LOW'), (None, 'UNKNOWN'), ('', 'UNKNOWN'), ('5', 'UNKNOWN'), ('bad', 'UNKNOWN')])
+def test_ws69_binary_battery_status_preserves_zero(raw, expected):
+    from caelus.gateway import ws69_status
+    inventory = normalize_sensor_inventory([[{'img': 'wh69', 'type': '0', 'id': 'E8', 'signal': '3', 'batt': raw}]])
+    assert ws69_status(inventory, online=True) == {'reporting': True, 'battery_status': expected}
+    assert ws69_status(inventory, online=False) == {'reporting': False, 'battery_status': 'UNKNOWN'}
+
+
+def test_ws69_ignores_other_sensors_and_lost_signal():
+    from caelus.gateway import ws69_status
+    assert ws69_status([{'family': 'wh51', 'type': '14', 'signal': 3, 'battery': '0'}], online=True) == {'reporting': False, 'battery_status': 'UNKNOWN'}
+    assert ws69_status([{'family': 'wh69', 'signal': 0, 'battery': '0'}], online=True) == {'reporting': False, 'battery_status': 'UNKNOWN'}
+
+
+def test_poll_refreshes_battery_without_using_saved_inventory():
+    class Session(FakeSession):
+        responses = {**FakeSession.responses, ('get_sensors_info', 1): [
+            {'img': 'wh69', 'type': '0', 'id': 'E8', 'signal': '3', 'batt': 0}
+        ]}
+    settings = AppSettings(gateway_enabled=True, gateway_url='http://gw1200.local')
+    gateway = EcowittGateway(settings, session=Session)
+    assert gateway.fetch()
+    assert gateway.status()['station'] == {'reporting': True, 'battery_status': 'OK'}
+    Session.responses[('get_sensors_info', 1)][0]['batt'] = '1'
+    assert gateway.fetch()
+    assert gateway.status()['station']['battery_status'] == 'LOW'
+    gateway.last_status['last_success'] = '2000-01-01T00:00:00+00:00'
+    assert gateway.status()['station'] == {'reporting': False, 'battery_status': 'UNKNOWN'}
+    settings.gateway_enabled = False
+    assert gateway.status()['station']['reporting'] is False
+
+
+def test_inventory_failure_keeps_weather_but_clears_battery():
+    class Session(FakeSession):
+        @classmethod
+        def get(cls, url, params=None, **kwargs):
+            if url.endswith('get_sensors_info'):
+                raise requests.exceptions.ConnectionError('unavailable')
+            return super().get(url, params=params, **kwargs)
+    gateway = EcowittGateway(AppSettings(gateway_enabled=True, gateway_url='http://gw1100.local'), session=Session)
+    gateway.last_status['inventory'] = [{'family': 'wh69', 'signal': 3, 'battery': '0'}]
+    assert gateway.fetch()['common_list']
+    assert gateway.status()['station'] == {'reporting': False, 'battery_status': 'UNKNOWN'}
+    assert gateway.status()['inventory_error']
+
+
+def test_empty_livedata_does_not_mark_station_online():
+    class Session(FakeSession):
+        responses = {**FakeSession.responses, 'get_livedata_info': {'common_list': []}}
+    gateway = EcowittGateway(AppSettings(gateway_enabled=True, gateway_url='http://gw1100.local'), session=Session)
+    assert gateway.fetch() == {}
+    assert gateway.status()['state'] == 'offline'

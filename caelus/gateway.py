@@ -260,13 +260,31 @@ def normalize_sensor_inventory(page_payloads: list[Any]) -> list[dict[str, Any]]
                     "type": sensor_type,
                     "family": str(item.get("img", "") or "").strip(),
                     "name": str(item.get("name", "") or "").strip() or "Ecowitt sensor",
-                    "battery": str(item.get("batt", "") or "").strip(),
+                    "battery": str(item.get("batt") if item.get("batt") is not None else "").strip(),
                     "signal": signal,
                     "registered": True,
                     "firmware": str(item.get("version", "") or "").strip(),
                 }
             )
     return inventory
+
+
+def ws69_status(inventory: list[dict[str, Any]], *, online: bool) -> dict[str, Any]:
+    """Derive WS69 reporting and binary battery health from current inventory."""
+    sensors = [
+        sensor for sensor in inventory
+        if str(sensor.get("family", "")).lower() in {"wh69", "ws69", "wh65", "ws65"}
+        or str(sensor.get("type", "")) == "0"
+    ]
+    reporting = online and any(sensor.get("signal", 0) > 0 for sensor in sensors)
+    batteries = [str(sensor.get("battery", "")).strip().upper() for sensor in sensors]
+    battery = "UNKNOWN"
+    if reporting:
+        if any(value in {"1", "LOW"} for value in batteries):
+            battery = "LOW"
+        elif batteries and all(value in {"0", "OK"} for value in batteries):
+            battery = "OK"
+    return {"reporting": reporting, "battery_status": battery}
 
 
 def normalized_gateway_id(mac: Any) -> str:
@@ -415,9 +433,23 @@ class EcowittGateway:
             "gateway_url": self.settings.gateway_url,
             "gateway_id": self.settings.gateway_id,
             "gateway_model": self.settings.gateway_model,
-            "inventory": self.settings.gateway_inventory,
+            "inventory": self.last_status.get("inventory", self.settings.gateway_inventory),
+            "station": ws69_status(
+                self.last_status.get("inventory", []), online=self._station_online()
+            ),
             "poll_interval_seconds": self.settings.poll_interval_seconds,
         }
+
+    def _station_online(self) -> bool:
+        """Reject disabled, failed, and stale gateway observations."""
+        if not self.settings.gateway_enabled or self.last_status.get("state") != "online":
+            return False
+        try:
+            observed = datetime.fromisoformat(self.last_status["last_success"])
+            age = (datetime.now(timezone.utc) - observed).total_seconds()
+        except (KeyError, TypeError, ValueError):
+            return False
+        return 0 <= age <= max(60, self.settings.poll_interval_seconds * 2)
 
     def fetch(self) -> Dict[str, Any]:
         """Fetch one modern JSON or legacy query-string gateway payload."""
@@ -430,11 +462,32 @@ class EcowittGateway:
                 response = self.session.get(self.settings.gateway_url, timeout=10)
                 response.raise_for_status()
                 reading = self._parse_legacy_response(response.text)
+                self.last_status["inventory"] = [{
+                    "family": "wh69", "signal": 1,
+                    "battery": reading.get("wh65batt", ""),
+                }] if reading else []
             else:
                 base_url = normalize_gateway_base_url(self.settings.gateway_url)
                 reading = self._request(base_url, "get_livedata_info")
                 if not isinstance(reading, dict):
                     raise EcowittGatewayError("Gateway live-data response schema is not supported.")
+                # Inventory failure must not discard an otherwise valid weather poll.
+                try:
+                    pages = [
+                        self._request(base_url, "get_sensors_info", page=page)
+                        for page in (1, 2)
+                    ]
+                    if not all(isinstance(page, list) for page in pages):
+                        raise EcowittGatewayError("Gateway sensor inventory schema is not supported.")
+                    self.last_status["inventory"] = normalize_sensor_inventory(pages)
+                    self.last_status["inventory_error"] = ""
+                except EcowittGatewayError as exc:
+                    self.last_status["inventory"] = []
+                    self.last_status["inventory_error"] = str(exc)
+            if not reading or not any(value is not None for value in map_gateway_reading(
+                reading, rain_source=self.settings.gateway_rain_source
+            ).values()):
+                raise EcowittGatewayError("Gateway returned no weather readings.")
             self.last_status.update(
                 state="online",
                 label="Receiving Ecowitt weather data",

@@ -99,7 +99,7 @@ def verify_dashboard(page: Page, base_url: str) -> None:
     assert icon_size == [180, 180]
     assert page.locator('[data-reading-field="temperature"]').inner_text() == "72.5"
     subtitle = page.locator(".station-subtitle")
-    expect(subtitle).to_contain_text("Station reporting : Last observation")
+    expect(subtitle).to_contain_text("Station offline : Last observation")
     station_bounds = subtitle.locator("[data-station-state]").bounding_box()
     observation_bounds = subtitle.locator("[data-observation-status]").bounding_box()
     assert station_bounds and observation_bounds
@@ -357,6 +357,7 @@ def run_browser_check(base_url: str) -> None:
         try:
             verify_dashboard(page, base_url)
             verify_severe_weather(page)
+            verify_station_footer(context.new_page(), base_url)
         except Exception:
             page.screenshot(path=RESULTS / "failure.png", full_page=True)
             context.tracing.stop(path=RESULTS / "trace.zip")
@@ -365,6 +366,43 @@ def run_browser_check(base_url: str) -> None:
             context.tracing.stop()
         finally:
             browser.close()
+
+
+def verify_station_footer(page: Page, base_url: str) -> None:
+    """Exercise battery and reporting refreshes at desktop and phone widths."""
+    status = {"enabled": True, "state": "online", "station": {"reporting": True, "battery_status": "OK"}}
+    page.route("https://embed.windy.com/**", lambda route: route.abort())
+    page.route("**/api/ecowitt/status", lambda route: route.fulfill(json=status))
+    page.clock.install()
+    page.goto(base_url, wait_until="domcontentloaded")
+    footer = page.locator(".readings-footer")
+    expect(footer.locator("[data-battery-status]")).to_have_attribute("aria-label", "Battery Status OK")
+    expect(footer.locator("[data-battery-status]")).to_have_text("Battery Status")
+    expect(footer.locator(".battery-icon")).to_have_css("color", "rgb(39, 156, 72)")
+    for width in (1440, 390, 320):
+        page.set_viewport_size({"width": width, "height": 1200})
+        expect(footer).to_be_visible()
+        bounds = footer.bounding_box()
+        assert bounds and bounds["x"] >= 0 and bounds["x"] + bounds["width"] <= width
+        footer.screenshot(path=RESULTS / f"station-footer-{width}.png")
+    for reporting, battery in ((True, "LOW"), (False, "UNKNOWN"), (True, "OK")):
+        status["station"] = {"reporting": reporting, "battery_status": battery}
+        page.clock.fast_forward(301_000)
+        expect(footer.locator("[data-battery-status]")).to_have_attribute("aria-label", f"Battery Status {battery}")
+        expect(footer.locator("[data-battery-status]")).to_have_text("Battery Status")
+        colors = {"OK": "rgb(39, 156, 72)", "LOW": "rgb(211, 47, 47)", "UNKNOWN": "rgb(128, 128, 128)"}
+        expect(footer.locator(".battery-icon")).to_have_css("color", colors[battery])
+        indicator = footer.locator("[data-station-state]")
+        if reporting:
+            expect(indicator).to_have_css("color", colors["OK"])
+            expect(indicator.locator(".status-dot")).to_have_css("background-color", colors["OK"])
+        else:
+            muted = indicator.evaluate("el => getComputedStyle(el).getPropertyValue('--muted').trim()")
+            expected = indicator.evaluate("(el, color) => { const node = document.createElement('span'); node.style.color = color; el.append(node); const value = getComputedStyle(node).color; node.remove(); return value; }", muted)
+            expect(indicator).to_have_css("color", expected)
+            expect(indicator.locator(".status-dot")).to_have_css("background-color", expected)
+        expect(footer.locator("[data-station-state-label]")).to_have_text("Station reporting" if reporting else "Station offline")
+        expect(page.locator(".station-intro [data-station-state-label]")).to_have_text("Station reporting" if reporting else "Station offline")
 
 
 def main() -> None:

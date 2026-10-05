@@ -809,3 +809,19 @@ dialog, .glass-card, .metric-loading { border-radius: 1rem; }
 .alert-description, .alert-instruction { white-space: pre-wrap; }
 .alert-instruction { font-weight: 700; }
 [data-today-forecast][hidden], [data-severe-weather][hidden], [data-alert-status][hidden] { display: none; }
+
+/* Current station health, aligned with the readings card's metric grid. */
+.readings-panel { display: flex; flex-direction: column; }
+.readings-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1rem; margin-top: auto; padding: 1rem 0.45rem 0; color: var(--muted); font-size: 0.72rem; }
+.battery-status { display: inline-flex; align-items: center; gap: 0.5rem; }
+.battery-icon { width: 1.8rem; height: 1.1rem; color: #808080; }
+.battery-outline { fill: none; stroke: currentColor; stroke-width: 2; }
+.battery-fill { fill: currentColor; }
+[data-battery-status="OK"] .battery-icon { color: #279c48; }
+[data-battery-status="LOW"] .battery-icon { color: #d32f2f; }
+[data-battery-status="LOW"] .battery-fill { width: 4px; }
+[data-battery-status="UNKNOWN"] .battery-fill { display: none; }
+[data-battery-status="UNKNOWN"] .battery-icon { color: #808080; }
+.station-state.is-live { color: #279c48; }
+.station-state .status-dot { background: currentColor; box-shadow: 0 0 0 5px color-mix(in srgb, currentColor 12%, transparent); }
+.station-state.is-live .status-dot { background: #279c48; box-shadow: 0 0 0 5px rgba(39, 156, 72, 0.12); }

@@ -1981,6 +1981,21 @@
   loadWeatherHistory();
 
   function renderSensorOnlineStatus(status) {
+    const reporting = status?.station?.reporting === true;
+    document.querySelectorAll("[data-station-state]").forEach((element) => {
+      element.classList.toggle("is-live", reporting);
+      element.classList.toggle("is-waiting", !reporting);
+    });
+    document.querySelectorAll("[data-station-state-label]").forEach((element) => {
+      element.textContent = reporting ? "Station reporting" : "Station offline";
+    });
+    const battery = ["OK", "LOW"].includes(status?.station?.battery_status) ? status.station.battery_status : "UNKNOWN";
+    const batteryElement = document.querySelector("[data-battery-status]");
+    if (batteryElement) {
+      batteryElement.dataset.batteryStatus = battery;
+      batteryElement.setAttribute("aria-label", `Battery Status ${battery}`);
+      batteryElement.title = `Battery Status ${battery}`;
+    }
     const indicator = document.querySelector("[data-sensor-online-status]");
     const label = indicator?.querySelector("[data-sensor-online-label]");
     if (!indicator || !label) return;
@@ -2020,11 +2035,7 @@
         observationStatus.textContent = "Waiting for the first gateway observation";
       }
     }
-    const stationState = document.querySelector("[data-station-state]");
-    stationState?.classList.toggle("is-live", available);
-    stationState?.classList.toggle("is-waiting", !available);
-    const stationStateLabel = document.querySelector("[data-station-state-label]");
-    if (stationStateLabel) stationStateLabel.textContent = available ? "Station reporting" : "Gateway standing by";
+
   }
 
   async function refreshEcowittDashboard() {
