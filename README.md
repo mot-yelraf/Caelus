@@ -144,6 +144,10 @@ display is smaller. The installation includes Skyfield and its packaged DE421
 ephemeris, so eclipse calculations do not download astronomy data while Caelus
 is running.
 
+The macOS launcher source is `scripts/macos_launcher.c`. Maintainers can rebuild
+the bundled universal executable with `bash scripts/build_macos_launcher.sh` on
+a Mac with Command Line Tools; installing Caelus does not require those tools.
+
 The desktop launcher starts the local server when necessary and stops that
 server when its window closes. If a healthy Caelus server is already running,
 the desktop window attaches to it and leaves it running when the window closes.
@@ -159,11 +163,16 @@ chmod +x /Users/alice/Downloads/Caelus/install.sh
 /Users/alice/Downloads/Caelus/install.sh
 ```
 
-Start the installed application with:
-
-```bash
-/Users/alice/Caelus/run_caelus_gui.sh
-```
+The installer creates `/Users/alice/Applications/Caelus.app`, following the
+Gaiascapes launcher pattern. Double-click it in Finder, or drag it to the Dock.
+The app points to the selected runtime; reinstalling updates that path. You can
+also run `/Users/alice/Caelus/run_caelus_gui.sh` directly. The Finder app uses a
+bundled native launcher for Intel and Apple Silicon, signed locally during
+installation, so macOS can associate local-network permission with Caelus.
+Allow Caelus in **System Settings → Privacy & Security → Local Network** when
+prompted; the first gateway request may fail while the prompt is open, and the
+next scheduled poll retries it. Startup failures show
+an alert, with details in `/Users/alice/Caelus/data/desktop-launch.log`.
 
 The application appears as Caelus in the macOS Dock and app switcher. The
 default runtime database is `/Users/alice/Caelus/data/caelus.db`. To run only
@@ -188,8 +197,10 @@ chmod +x /home/pi/Caelus-source/install.sh
 
 The default runtime database is `/home/pi/Caelus/data/caelus.db`. The same
 commands work on x86-64 or ARM Linux with the appropriate absolute home path.
-The first GUI launch creates the per-user application menu entry and hicolor
-icon under `/home/pi/.local/share`. Use `/home/pi/Caelus/run_caelus.sh` for a
+The installer creates the Caelus application-menu entry at
+`/home/pi/.local/share/applications/weather.caelus.Caelus.desktop` and its hicolor
+icon under `/home/pi/.local/share/icons` (or the configured `XDG_DATA_HOME`).
+Select Caelus from the application menu to open its desktop window. Use `/home/pi/Caelus/run_caelus.sh` for a
 headless server. A graphical GTK session using X11 or Wayland is required for
 the desktop launcher.
 
@@ -202,6 +213,10 @@ Then open PowerShell and run the native installer, for example:
 powershell -ExecutionPolicy Bypass -File C:\Users\Alice\Downloads\Caelus\install.ps1
 C:\Users\Alice\Caelus\run_caelus_gui.cmd
 ```
+
+The installer creates icon shortcuts named Caelus on the user's Desktop and in
+the Start menu's Caelus folder. Both point to the selected runtime and are updated
+when the installer is run again.
 
 The desktop window uses the installed Microsoft Edge WebView2 runtime and shows
 the native Caelus icon in its window and taskbar. The default runtime database

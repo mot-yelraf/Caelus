@@ -112,6 +112,25 @@ if ($LASTEXITCODE -ne 0) {
     throw "pywebview could not be imported after installation."
 }
 
+# Native per-user shortcuts use the same GUI entrypoint as the command launcher.
+$ShortcutDirectories = @(
+    [Environment]::GetFolderPath("DesktopDirectory"),
+    (Join-Path ([Environment]::GetFolderPath("Programs")) "Caelus")
+)
+$Shell = New-Object -ComObject WScript.Shell
+foreach ($ShortcutDirectory in $ShortcutDirectories) {
+    New-Item -ItemType Directory -Path $ShortcutDirectory -Force | Out-Null
+    $ShortcutPath = Join-Path $ShortcutDirectory "Caelus.lnk"
+    $Shortcut = $Shell.CreateShortcut($ShortcutPath)
+    $Shortcut.TargetPath = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
+    $Shortcut.Arguments = '-NoProfile -ExecutionPolicy Bypass -File "' + (Join-Path $InstallDir "run_caelus_gui.ps1") + '"'
+    $Shortcut.WorkingDirectory = $InstallDir
+    $Shortcut.IconLocation = (Join-Path $InstallDir "static\icons\caelus-desktop-icon.ico") + ",0"
+    $Shortcut.Description = "Open the Caelus living weather dashboard"
+    $Shortcut.Save()
+    Write-Host "Click-to-launch icon: $ShortcutPath"
+}
+
 New-Item -ItemType Directory -Path $InstallStateDir -Force | Out-Null
 $InstallStateTemp = "$InstallStateFile.tmp.$PID"
 Set-Content -LiteralPath $InstallStateTemp -Value ([System.IO.Path]::GetFullPath($InstallDir)) -Encoding UTF8

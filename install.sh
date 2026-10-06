@@ -168,6 +168,13 @@ chmod +x "$INSTALL_DIR/run_caelus.sh"
 chmod +x "$INSTALL_DIR/run_caelus_gui.sh"
 chmod +x "$INSTALL_DIR/install.sh"
 
+case "$(uname -s)" in
+  Darwin|Linux)
+    (cd "$INSTALL_DIR" && "$INSTALL_DIR/.venv/bin/python" -m caelus.launch_icons "$INSTALL_DIR") \
+      || fail "Could not create the application launch icon."
+    ;;
+esac
+
 mkdir -p "$INSTALL_STATE_DIR"
 install_state_temp="${INSTALL_STATE_FILE}.tmp.$$"
 printf '%s\n' "$INSTALL_DIR" > "$install_state_temp"
