@@ -44,7 +44,7 @@ def test_application_uses_lifespan_instead_of_removed_fastapi_event_helpers() ->
 
 
 def test_unix_installer_and_launcher_have_valid_bash_syntax() -> None:
-    for name in ("install.sh", "run_caelus.sh", "run_caelus_gui.sh"):
+    for name in ("install.sh", "run_caelus.sh", "run_caelus_gui.sh", "scripts/build_macos_launcher.sh"):
         result = subprocess.run(
             ["bash", "-n", str(ROOT / name)],
             capture_output=True,

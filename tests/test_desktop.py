@@ -121,6 +121,10 @@ def test_macos_app_bundle_contains_identity_and_python_symlink(
             "CFBundleShortVersionString": desktop.__version__.removeprefix("v"),
             "CFBundleVersion": desktop.__version__.removeprefix("v"),
             "NSHighResolutionCapable": True,
+            "NSLocalNetworkUsageDescription": (
+                "Caelus connects to your Ecowitt gateway on the local network "
+                "to read weather measurements and sensor battery status."
+            ),
         }
     executable = contents / "MacOS" / "Caelus"
     assert executable.is_symlink()
@@ -333,7 +337,7 @@ def test_linux_uses_gtk_and_installs_matching_desktop_identity(
     assert desktop_path == tmp_path / "applications" / f"{desktop.LINUX_APP_ID}.desktop"
     text = desktop_path.read_text(encoding="utf-8")
     assert "Name=Caelus\n" in text
-    assert f"Icon={desktop.DESKTOP_ICON_PATH}\n" in text
+    assert f"Icon={desktop.LINUX_APP_ID}\n" in text
     assert f"StartupWMClass={desktop.LINUX_APP_ID}\n" in text
 
 

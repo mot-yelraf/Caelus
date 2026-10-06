@@ -77,6 +77,10 @@ def configure_macos_app_bundle(bundle_path: Path | None = None) -> Path:
             "CFBundleShortVersionString": __version__.removeprefix("v"),
             "CFBundleVersion": __version__.removeprefix("v"),
             "NSHighResolutionCapable": True,
+            "NSLocalNetworkUsageDescription": (
+                "Caelus connects to your Ecowitt gateway on the local network "
+                "to read weather measurements and sensor battery status."
+            ),
         }
     )
     if not plist_path.is_file() or plist_path.read_bytes() != plist_data:
@@ -259,7 +263,11 @@ def _stop_owned_server(process: subprocess.Popen[Any] | None) -> None:
 
 
 def _desktop_exec_arg(value: str) -> str:
-    escaped = str(value).replace("\\", "\\\\").replace('"', '\\"')
+    # Exec has desktop-string escaping followed by command-line unquoting.
+    escaped = str(value).replace("\\", "\\\\\\\\")
+    for character in ('"', '`', '$'):
+        escaped = escaped.replace(character, "\\\\" + character)
+    escaped = escaped.replace("%", "%%")
     return f'"{escaped}"'
 
 
@@ -276,6 +284,15 @@ def configure_linux_app_identity() -> Path | None:
     except Exception as exc:
         print(f"Caelus could not set its Linux application ID: {exc}", file=sys.stderr)
 
+    try:
+        return write_linux_app_launcher(PROJECT_ROOT)
+    except OSError as exc:
+        print(f"Caelus could not install its Linux desktop entry: {exc}", file=sys.stderr)
+        return None
+
+
+def write_linux_app_launcher(runtime_dir: Path) -> Path:
+    """Create the application-menu entry without importing GTK or starting Caelus."""
     data_root = Path(
         os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share")
     ).expanduser()
@@ -283,7 +300,9 @@ def configure_linux_app_identity() -> Path | None:
     icons_dir = data_root / "icons" / "hicolor" / "512x512" / "apps"
     desktop_path = applications_dir / f"{LINUX_APP_ID}.desktop"
     themed_icon_path = icons_dir / f"{LINUX_APP_ID}.png"
-    launcher_path = PROJECT_ROOT / "run_caelus_gui.sh"
+    launcher_path = runtime_dir / "run_caelus_gui.sh"
+    source_icon = runtime_dir / "static/icons/caelus-desktop-icon.png"
+    working_directory = str(runtime_dir).replace("\\", "\\\\")
     desktop_text = "\n".join(
         (
             "[Desktop Entry]",
@@ -291,8 +310,8 @@ def configure_linux_app_identity() -> Path | None:
             "Name=Caelus",
             "Comment=Open the Caelus living weather dashboard",
             f"Exec={_desktop_exec_arg(str(launcher_path))}",
-            f"Path={PROJECT_ROOT}",
-            f"Icon={DESKTOP_ICON_PATH}",
+            f"Path={working_directory}",
+            f"Icon={LINUX_APP_ID}",
             "Terminal=false",
             "StartupNotify=true",
             f"StartupWMClass={LINUX_APP_ID}",
@@ -300,23 +319,19 @@ def configure_linux_app_identity() -> Path | None:
         )
     )
 
-    try:
-        applications_dir.mkdir(parents=True, exist_ok=True)
-        icons_dir.mkdir(parents=True, exist_ok=True)
-        if (
-            not themed_icon_path.is_file()
-            or themed_icon_path.read_bytes() != DESKTOP_ICON_PATH.read_bytes()
-        ):
-            temporary_icon = themed_icon_path.with_suffix(".png.tmp")
-            shutil.copyfile(DESKTOP_ICON_PATH, temporary_icon)
-            temporary_icon.replace(themed_icon_path)
-        if not desktop_path.is_file() or desktop_path.read_text(encoding="utf-8") != desktop_text:
-            temporary_desktop = desktop_path.with_suffix(".desktop.tmp")
-            temporary_desktop.write_text(desktop_text, encoding="utf-8")
-            temporary_desktop.replace(desktop_path)
-    except OSError as exc:
-        print(f"Caelus could not install its Linux desktop entry: {exc}", file=sys.stderr)
-        return None
+    applications_dir.mkdir(parents=True, exist_ok=True)
+    icons_dir.mkdir(parents=True, exist_ok=True)
+    if (
+        not themed_icon_path.is_file()
+        or themed_icon_path.read_bytes() != source_icon.read_bytes()
+    ):
+        temporary_icon = themed_icon_path.with_suffix(".png.tmp")
+        shutil.copyfile(source_icon, temporary_icon)
+        temporary_icon.replace(themed_icon_path)
+    if not desktop_path.is_file() or desktop_path.read_text(encoding="utf-8") != desktop_text:
+        temporary_desktop = desktop_path.with_suffix(".desktop.tmp")
+        temporary_desktop.write_text(desktop_text, encoding="utf-8")
+        temporary_desktop.replace(desktop_path)
     return desktop_path
 
 
