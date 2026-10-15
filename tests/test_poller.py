@@ -1,8 +1,11 @@
 import asyncio
 import threading
+import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from types import SimpleNamespace
+
+import pytest
 
 from caelus.gateway import map_gateway_reading
 from caelus.poller import GatewayPoller
@@ -59,6 +62,77 @@ def test_background_poller_repeats_and_stops_cleanly() -> None:
         assert poller.task.exception() is None
 
     asyncio.run(exercise())
+
+
+@pytest.mark.parametrize('failure', ['empty', 'fetch', 'get_latest', 'log_reading', 'prune_readings'])
+def test_background_poller_recovers_from_gateway_and_storage_failures(failure):
+    async def exercise():
+        poller = make_poller()
+        owner = poller.gateway if failure in {'empty', 'fetch'} else poller.data_logger
+        method = 'fetch' if failure == 'empty' else failure
+        original = getattr(owner, method)
+        calls = 0
+
+        def fail_once(*args):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                if failure == 'empty':
+                    return {}
+                raise sqlite3.OperationalError('temporary failure')
+            return original(*args)
+
+        setattr(owner, method, fail_once)
+        await poller.start()
+        try:
+            for _ in range(100):
+                if calls >= 3:
+                    break
+                await asyncio.sleep(0.005)
+        finally:
+            await poller.stop()
+        assert calls >= 3
+        assert poller.data_logger.readings
+        assert poller.task.exception() is None
+
+    asyncio.run(exercise())
+
+
+def test_fresh_process_recovery_persists_normalized_readings(monkeypatch, tmp_path):
+    import requests
+    from caelus import gateway as module
+    from caelus.data_logger import DataLogger
+    from caelus.settings import AppSettings
+
+    class Session:
+        @staticmethod
+        def get(*args, **kwargs):
+            raise requests.ConnectionError('No route to host')
+
+    def recover(base, endpoint, params):
+        if endpoint == 'get_livedata_info':
+            return {'common_list': [
+                {'id': '0x02', 'val': '10', 'unit': 'C'},
+                {'id': '0x0B', 'val': '0 mph'},
+            ]}
+        return []
+
+    monkeypatch.setattr(module, 'request_in_fresh_process', recover)
+    settings = AppSettings(gateway_enabled=True, gateway_url='http://gw.local')
+    data_logger = DataLogger(str(tmp_path / 'recovered.db'))
+    state = SimpleNamespace(
+        settings=settings, gateway=module.EcowittGateway(settings, session=Session),
+        data_logger=data_logger,
+    )
+    poller = GatewayPoller(SimpleNamespace(state=state))
+    assert poller.poll_once() is None
+    assert poller.poll_once() is None
+    reading = poller.poll_once()
+    assert reading['temperature'] == 50.0
+    assert reading['wind_speed'] == 0.0
+    stored = data_logger.get_latest()
+    assert stored['temperature'] == 50.0
+    assert stored['wind_speed'] == 0.0
 
 
 def test_reset_schedule_applies_a_changed_interval_immediately() -> None:

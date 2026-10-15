@@ -6,6 +6,7 @@ import ctypes
 import os
 import plistlib
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -262,6 +263,84 @@ def _stop_owned_server(process: subprocess.Popen[Any] | None) -> None:
         process.wait(timeout=5)
 
 
+def _orphaned_server_pids() -> list[int]:
+    """Find this user's reparented servers from this exact installation."""
+    result = subprocess.run(
+        ["ps", "-axo", "pid=,ppid=,uid=,command="],
+        check=True, capture_output=True, text=True, timeout=5,
+    )
+    script_suffix = f" {PROJECT_ROOT / 'Caelus.py'}"
+    candidates = []
+    for line in result.stdout.splitlines():
+        fields = line.strip().split(None, 3)
+        if len(fields) != 4:
+            continue
+        pid, parent, uid, command = fields
+        if not (pid.isdigit() and parent == "1" and uid == str(os.getuid())):
+            continue
+        if not command.endswith(script_suffix):
+            continue
+        executable_path = Path(command[:-len(script_suffix)])
+        executable = executable_path.name.lower()
+        if executable_path.is_file() and (
+            executable == "caelus" or executable == "python" or executable.startswith("python3")
+        ):
+            candidates.append(int(pid))
+    return candidates
+
+
+def _stop_orphaned_servers(*, wait: bool = False) -> bool:
+    """Terminate abandoned local servers after the desktop window closes."""
+    if os.environ.get("CAELUS_GUI_URL") or not (
+        sys.platform == "darwin" or sys.platform.startswith("linux")
+    ):
+        return True
+    try:
+        pending = set()
+        failed = False
+        for pid in _orphaned_server_pids():
+            try:
+                os.kill(pid, signal.SIGTERM)
+                pending.add(pid)
+            except ProcessLookupError:
+                continue
+            except OSError as exc:
+                print(f"Caelus could not stop orphaned server {pid}: {exc}", file=sys.stderr)
+                failed = True
+        deadline = time.monotonic() + 10
+        while wait and pending:
+            for pid in list(pending):
+                try:
+                    os.kill(pid, 0)
+                except ProcessLookupError:
+                    pending.remove(pid)
+            if pending:
+                if time.monotonic() >= deadline:
+                    print("Caelus orphaned server did not stop; startup cancelled.", file=sys.stderr)
+                    return False
+                time.sleep(0.1)
+    except (OSError, subprocess.SubprocessError) as exc:
+        print(f"Caelus could not check for orphaned servers: {exc}", file=sys.stderr)
+        return False
+    return not failed
+
+
+def _register_macos_quit_cleanup(callback: Any) -> Any:
+    """Clean up before Cocoa terminates, which can bypass Python's finally."""
+    from AppKit import NSApplicationWillTerminateNotification
+    from Foundation import NSNotificationCenter
+
+    return NSNotificationCenter.defaultCenter().addObserverForName_object_queue_usingBlock_(
+        NSApplicationWillTerminateNotification, None, None, lambda _notification: callback(),
+    )
+
+
+def _remove_macos_quit_cleanup(observer: Any) -> None:
+    from Foundation import NSNotificationCenter
+
+    NSNotificationCenter.defaultCenter().removeObserver_(observer)
+
+
 def _desktop_exec_arg(value: str) -> str:
     # Exec has desktop-string escaping followed by command-line unquoting.
     escaped = str(value).replace("\\", "\\\\\\\\")
@@ -387,6 +466,9 @@ def main() -> int:
         print(f"Caelus GUI not started: pywebview import failed: {exc}", file=sys.stderr)
         return 1
 
+    if not _stop_orphaned_servers(wait=True):
+        return 1
+
     if not _is_healthy(base_url):
         if os.environ.get("CAELUS_GUI_URL"):
             print(f"Caelus GUI not started: {base_url.rstrip('/')} is not ready.", file=sys.stderr)
@@ -401,6 +483,16 @@ def main() -> int:
         _stop_owned_server(owned_server)
         print(f"Caelus GUI not started: {base_url.rstrip('/')} did not become ready.", file=sys.stderr)
         return 1
+
+    cleaned_up = False
+    quit_observer = None
+
+    def cleanup() -> None:
+        nonlocal cleaned_up
+        if not cleaned_up:
+            cleaned_up = True
+            _stop_owned_server(owned_server)
+            _stop_orphaned_servers()
 
     try:
         geometry = _window_geometry()
@@ -420,6 +512,7 @@ def main() -> int:
             confirm_close=True,
         )
         if sys.platform == "darwin":
+            quit_observer = _register_macos_quit_cleanup(cleanup)
             window.events.shown += set_macos_app_icon
             webview.start()
         elif sys.platform == "win32":
@@ -430,7 +523,9 @@ def main() -> int:
         else:
             webview.start()
     finally:
-        _stop_owned_server(owned_server)
+        cleanup()
+        if quit_observer is not None:
+            _remove_macos_quit_cleanup(quit_observer)
     return 0
 
 

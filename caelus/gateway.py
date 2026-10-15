@@ -1,21 +1,26 @@
 """Read and normalize Ecowitt gateway weather data."""
 
+import logging
 import math
 import re
+import subprocess
 from copy import deepcopy
 from datetime import datetime, timezone
 from time import monotonic
 from typing import Any, Dict
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import urlencode, urlsplit, urlunsplit
 
 import requests
 from requests.exceptions import RequestException
 
 from caelus.settings import AppSettings
+from caelus.gateway_recovery import request_in_fresh_process
 
 REQUEST_TIMEOUT_SECONDS = 5
 DISCOVERY_CACHE_SECONDS = 60
 MAX_RESPONSE_BYTES = 512 * 1024
+RECOVERY_FAILURE_THRESHOLD = 3
+logger = logging.getLogger(__name__)
 _NUMBER_RE = re.compile(r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)")
 _INVALID_SENSOR_IDS = {"FFFFFFFF", "FFFFFFFE"}
 
@@ -351,8 +356,11 @@ class EcowittGateway:
             "last_success": "",
         }
         self._discovery_cache: tuple[float, dict[str, Any]] | None = None
+        self._connection_failures: dict[str, int] = {}
+        self._recovery_endpoints: set[str] = set()
 
     def _request(self, base_url: str, endpoint: str, **params: Any) -> Any:
+        key = f"{base_url}/{endpoint}?{urlencode(sorted(params.items()))}"
         try:
             response = self.session.get(
                 f"{base_url}/{endpoint}",
@@ -360,8 +368,38 @@ class EcowittGateway:
                 timeout=REQUEST_TIMEOUT_SECONDS,
             )
             response.raise_for_status()
+        except (requests.ConnectionError, requests.Timeout) as exc:
+            failures = self._connection_failures.get(key, 0) + 1
+            self._connection_failures[key] = failures
+            detail = f"Gateway request failed for {endpoint}: {type(exc).__name__}: {exc}"
+            self.last_status["connection_error"] = detail
+            if failures < RECOVERY_FAILURE_THRESHOLD:
+                raise EcowittGatewayError(detail) from exc
+            if key not in self._recovery_endpoints:
+                logger.warning("%s; trying fresh-process recovery", detail)
+                self._recovery_endpoints.add(key)
+            try:
+                return request_in_fresh_process(base_url, endpoint, params)
+            except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as recovery_exc:
+                raise EcowittGatewayError(
+                    f"{detail}; fresh-process recovery failed: {recovery_exc}"
+                ) from recovery_exc
         except RequestException as exc:
-            raise EcowittGatewayError(f"Gateway request failed for {endpoint}.") from exc
+            # An HTTP error is still evidence that this process can reach the
+            # device. Do not carry connection-failure counts across responses.
+            self._connection_failures.pop(key, None)
+            self._recovery_endpoints.discard(key)
+            if not self._connection_failures:
+                self.last_status["connection_error"] = ""
+            raise EcowittGatewayError(
+                f"Gateway request failed for {endpoint}: {type(exc).__name__}: {exc}"
+            ) from exc
+        self._connection_failures.pop(key, None)
+        if key in self._recovery_endpoints:
+            self._recovery_endpoints.remove(key)
+            logger.info("Gateway direct connection restored for %s", endpoint)
+        if not self._connection_failures:
+            self.last_status["connection_error"] = ""
         content = getattr(response, "content", b"")
         if len(content) > MAX_RESPONSE_BYTES:
             raise EcowittGatewayError(f"Gateway response for {endpoint} was unexpectedly large.")
@@ -429,6 +467,10 @@ class EcowittGateway:
         """Return safe configured and runtime gateway status."""
         return {
             **self.last_status,
+            "recovery_active": self.settings.gateway_enabled and any(
+                key.startswith(self.settings.gateway_url.rstrip("/") + "/")
+                for key in tuple(self._recovery_endpoints)
+            ),
             "enabled": self.settings.gateway_enabled,
             "gateway_url": self.settings.gateway_url,
             "gateway_id": self.settings.gateway_id,
@@ -488,6 +530,8 @@ class EcowittGateway:
                 reading, rain_source=self.settings.gateway_rain_source
             ).values()):
                 raise EcowittGatewayError("Gateway returned no weather readings.")
+            if self.last_status.get("state") == "offline":
+                logger.info("Ecowitt gateway polling recovered")
             self.last_status.update(
                 state="online",
                 label="Receiving Ecowitt weather data",
@@ -496,6 +540,8 @@ class EcowittGateway:
             )
             return reading
         except (RequestException, EcowittGatewayError) as exc:
+            if self.last_status.get("state") != "offline":
+                logger.warning("Ecowitt gateway unavailable: %s", exc)
             self.last_status.update(state="offline", label="Ecowitt gateway unavailable", last_error=str(exc))
             return {}
 

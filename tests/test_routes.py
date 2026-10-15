@@ -1,4 +1,5 @@
 import io
+from html import unescape
 from pathlib import Path
 from urllib.parse import urljoin
 
@@ -291,7 +292,7 @@ def test_dashboard_includes_scene_themes_settings_modal_and_lunar_cycle() -> Non
     assert 'class="custom-theme-help"' not in response.text
     for phase in ("New moon", "First quarter", "Last quarter"):
         assert phase in response.text
-    assert any(name in response.text for name in FULL_MOON_NAMES.values())
+    assert any(name in unescape(response.text) for name in FULL_MOON_NAMES.values())
     for heading in ("Current readings", "Today’s forecast", "Sunlight today", "Regional radar"):
         assert heading in response.text
     conditions_position = response.text.index('class="conditions-row"')
