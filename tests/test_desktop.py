@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 import plistlib
+import signal
+import subprocess
 import sys
 import struct
 import zlib
@@ -11,11 +13,15 @@ from types import ModuleType, SimpleNamespace
 import pytest
 
 import caelus.desktop as desktop
+from caelus.desktop import _orphaned_server_pids
+from caelus.desktop import _register_macos_quit_cleanup, _remove_macos_quit_cleanup
 
 
 @pytest.fixture(autouse=True)
 def _prevent_real_macos_relaunch(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(desktop.MACOS_RELAUNCH_MARKER, "1")
+    monkeypatch.setattr(desktop, "_orphaned_server_pids", lambda: [])
+    monkeypatch.setattr(desktop, "_register_macos_quit_cleanup", lambda callback: None)
 
 
 class FakeEvent:
@@ -291,7 +297,7 @@ def test_gui_starts_and_stops_only_the_server_it_owns(
     assert calls[1] == ("start", (), {})
 
 
-def test_gui_attaches_without_stopping_an_existing_server(
+def test_gui_cleans_up_orphans_after_attaching_to_an_existing_server(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list = []
@@ -306,9 +312,164 @@ def test_gui_attaches_without_stopping_an_existing_server(
         lambda: pytest.fail("an existing server must not be replaced"),
     )
     monkeypatch.setattr(desktop, "_available_screen_size", lambda: None)
+    monkeypatch.delenv("CAELUS_GUI_URL", raising=False)
+    snapshots = iter([[], [12345]])
+    monkeypatch.setattr(desktop, "_orphaned_server_pids", lambda: next(snapshots))
+    monkeypatch.setattr(desktop.os, "kill", lambda pid, sig: calls.append(("stop", pid, sig)))
 
     assert desktop.main() == 0
-    assert calls[-1] == ("start", (), {})
+    assert calls[-2] == ("start", (), {})
+    assert calls[-1] == ("stop", 12345, signal.SIGTERM)
+
+
+def test_orphan_scan_requires_same_user_installation_and_abandoned_parent(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    root = tmp_path / "Application Support" / "Caelus"
+    script = root / "Caelus.py"
+    interpreter = tmp_path / "Python Framework" / "Python"
+    interpreter.parent.mkdir()
+    interpreter.touch()
+    command = f"{interpreter} {script}"
+    snapshot = "\n".join([
+        f"101 1 501 {command}",
+        f"102 1 501 {command}",
+        f"103 42 501 {command}",  # Server still has an owner.
+        f"104 1 502 {command}",  # Another user.
+        "105 1 501 /usr/bin/python3 /another/Caelus.py",
+        f"106 1 501 /bin/sh -c {command}",
+        f"107 1 501 {command} --other-argument",
+        "invalid output",
+    ])
+    monkeypatch.setattr(desktop, "PROJECT_ROOT", root)
+    monkeypatch.setattr(desktop.os, "getuid", lambda: 501)
+    monkeypatch.setattr(
+        desktop.subprocess, "run", lambda *args, **kwargs: SimpleNamespace(stdout=snapshot),
+    )
+
+    assert _orphaned_server_pids() == [101, 102]
+
+
+def test_startup_waits_for_orphan_exit(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(desktop.sys, "platform", "darwin")
+    monkeypatch.delenv("CAELUS_GUI_URL", raising=False)
+    monkeypatch.setattr(desktop, "_orphaned_server_pids", lambda: [101])
+    signals = []
+
+    def kill(pid, sig):
+        signals.append((pid, sig))
+        if sig == 0:
+            raise ProcessLookupError()
+
+    monkeypatch.setattr(desktop.os, "kill", kill)
+    assert desktop._stop_orphaned_servers(wait=True)
+    assert signals == [(101, signal.SIGTERM), (101, 0)]
+
+
+def test_startup_refuses_to_attach_when_orphan_cannot_stop(monkeypatch, capsys):
+    monkeypatch.setattr(desktop.sys, "platform", "darwin")
+    monkeypatch.delenv("CAELUS_GUI_URL", raising=False)
+    monkeypatch.setattr(desktop, "_orphaned_server_pids", lambda: [101])
+    monkeypatch.setattr(desktop.os, "kill", lambda *args: None)
+    times = iter([0, 11])
+    monkeypatch.setattr(desktop.time, "monotonic", lambda: next(times))
+    assert not desktop._stop_orphaned_servers(wait=True)
+    assert "startup cancelled" in capsys.readouterr().err
+
+
+def test_native_quit_notification_invokes_cleanup_and_unregisters(monkeypatch):
+    notifications = []
+    callbacks = []
+    removed = []
+    observer = object()
+
+    def register(name, source, queue, callback):
+        notifications.append(name)
+        callbacks.append(callback)
+        return observer
+
+    center = SimpleNamespace(
+        addObserverForName_object_queue_usingBlock_=register,
+        removeObserver_=removed.append,
+    )
+    monkeypatch.setitem(sys.modules, "AppKit", SimpleNamespace(
+        NSApplicationWillTerminateNotification="will-terminate",
+    ))
+    monkeypatch.setitem(sys.modules, "Foundation", SimpleNamespace(
+        NSNotificationCenter=SimpleNamespace(defaultCenter=lambda: center),
+    ))
+    calls = []
+    assert _register_macos_quit_cleanup(lambda: calls.append("cleanup")) is observer
+    callbacks[0](None)
+    assert calls == ["cleanup"]
+    assert notifications == ["will-terminate"]
+    _remove_macos_quit_cleanup(observer)
+    assert removed == [observer]
+
+
+def test_native_quit_stops_server_before_webview_returns(monkeypatch):
+    calls = []
+    webview, _ = _fake_webview(calls)
+    process = FakeProcess()
+    callbacks = []
+    monkeypatch.setitem(sys.modules, "webview", webview)
+    monkeypatch.setattr(desktop.sys, "platform", "darwin")
+    monkeypatch.delenv("CAELUS_GUI_URL", raising=False)
+    monkeypatch.setattr(desktop, "_is_healthy", lambda url: False)
+    monkeypatch.setattr(desktop, "_wait_for_health", lambda *args: True)
+    monkeypatch.setattr(desktop, "_start_server", lambda: process)
+    monkeypatch.setattr(desktop, "_available_screen_size", lambda: None)
+    monkeypatch.setattr(desktop, "_register_macos_quit_cleanup", callbacks.append)
+
+    def native_quit():
+        callbacks[0]()
+        assert process.terminated
+
+    webview.start = native_quit
+    assert desktop.main() == 0
+
+
+@pytest.mark.parametrize("platform,remote", [("win32", False), ("darwin", True)])
+def test_orphan_cleanup_skips_remote_and_unsupported_process_scans(
+    monkeypatch: pytest.MonkeyPatch, platform: str, remote: bool,
+) -> None:
+    monkeypatch.setattr(desktop.sys, "platform", platform)
+    monkeypatch.delenv("CAELUS_GUI_URL", raising=False)
+    if remote:
+        monkeypatch.setenv("CAELUS_GUI_URL", "http://another-server:8767")
+    monkeypatch.setattr(
+        desktop, "_orphaned_server_pids", lambda: pytest.fail("must not scan"),
+    )
+
+    desktop._stop_orphaned_servers()
+
+
+def test_orphan_cleanup_handles_exited_process_and_reports_failures(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(desktop.sys, "platform", "darwin")
+    monkeypatch.delenv("CAELUS_GUI_URL", raising=False)
+    monkeypatch.setattr(desktop, "_orphaned_server_pids", lambda: [101, 102, 103])
+    stopped = []
+
+    def stop(pid, sig):
+        if pid == 101:
+            raise ProcessLookupError()
+        if pid == 102:
+            raise PermissionError("denied")
+        stopped.append(pid)
+
+    monkeypatch.setattr(desktop.os, "kill", stop)
+    desktop._stop_orphaned_servers()
+    assert stopped == [103]
+    assert "could not stop orphaned server 102" in capsys.readouterr().err
+
+    def failed_scan():
+        raise subprocess.TimeoutExpired("ps", 5)
+
+    monkeypatch.setattr(desktop, "_orphaned_server_pids", failed_scan)
+    desktop._stop_orphaned_servers()
+    assert "could not check for orphaned servers" in capsys.readouterr().err
 
 
 def test_linux_uses_gtk_and_installs_matching_desktop_identity(

@@ -248,3 +248,143 @@ def test_empty_livedata_does_not_mark_station_online():
     gateway = EcowittGateway(AppSettings(gateway_enabled=True, gateway_url='http://gw1100.local'), session=Session)
     assert gateway.fetch() == {}
     assert gateway.status()['state'] == 'offline'
+
+
+def test_repeated_connection_failure_recovers_and_returns_to_direct_requests(monkeypatch):
+    from caelus import gateway as module
+
+    class Session(FakeSession):
+        broken = True
+
+        @classmethod
+        def get(cls, url, params=None, **kwargs):
+            if cls.broken and url.endswith('get_livedata_info'):
+                raise requests.ConnectionError('No route to host')
+            return super().get(url, params=params, **kwargs)
+
+    recovered = []
+
+    def recover(base, endpoint, params):
+        recovered.append(endpoint)
+        return Session.responses[endpoint]
+
+    monkeypatch.setattr(module, 'request_in_fresh_process', recover)
+    gateway = EcowittGateway(
+        AppSettings(gateway_enabled=True, gateway_url='http://gw1100.local'), session=Session,
+    )
+    assert gateway.fetch() == {}
+    assert gateway.fetch() == {}
+    assert not recovered
+    assert 'No route to host' in gateway.status()['last_error']
+    assert gateway.fetch()['common_list']
+    assert gateway.status()['state'] == 'online'
+    assert gateway.status()['recovery_active']
+    assert 'No route to host' in gateway.status()['connection_error']
+    assert recovered == ['get_livedata_info']
+    # Another recovered poll must not reset the failed direct transport's count.
+    assert gateway.fetch()['common_list']
+    assert len(recovered) == 2
+    Session.broken = False
+    assert gateway.fetch()['common_list']
+    assert not gateway.status()['recovery_active']
+    assert gateway.status()['connection_error'] == ''
+    assert len(recovered) == 2
+
+
+def test_failed_recovery_keeps_retrying_and_reports_both_errors(monkeypatch):
+    import subprocess
+    from caelus import gateway as module
+
+    class Session:
+        @staticmethod
+        def get(*args, **kwargs):
+            raise requests.Timeout('LAN timed out')
+
+    def recover(*args):
+        raise subprocess.TimeoutExpired('worker', 8)
+
+    monkeypatch.setattr(module, 'request_in_fresh_process', recover)
+    gateway = EcowittGateway(
+        AppSettings(gateway_enabled=True, gateway_url='http://gw1100.local'), session=Session,
+    )
+    for _ in range(4):
+        assert gateway.fetch() == {}
+    status = gateway.status()
+    assert status['state'] == 'offline'
+    assert 'LAN timed out' in status['last_error']
+    assert 'fresh-process recovery failed' in status['last_error']
+
+
+def test_http_errors_do_not_launch_recovery_workers(monkeypatch):
+    from caelus import gateway as module
+
+    class Session:
+        @staticmethod
+        def get(*args, **kwargs):
+            raise requests.HTTPError('503 Service Unavailable')
+
+    def unexpected(*args):
+        raise AssertionError('HTTP responses should use normal poll retries')
+
+    monkeypatch.setattr(module, 'request_in_fresh_process', unexpected)
+    gateway = EcowittGateway(
+        AppSettings(gateway_enabled=True, gateway_url='http://gw1100.local'), session=Session,
+    )
+    for _ in range(4):
+        assert gateway.fetch() == {}
+    assert '503 Service Unavailable' in gateway.status()['last_error']
+
+
+def test_inventory_pages_have_independent_recovery_counts(monkeypatch):
+    from caelus import gateway as module
+
+    class Session(FakeSession):
+        @classmethod
+        def get(cls, url, params=None, **kwargs):
+            if url.endswith('get_sensors_info') and params == {'page': 2}:
+                raise requests.ConnectionError('second page unavailable')
+            return super().get(url, params=params, **kwargs)
+
+    recovered = []
+
+    def recover(base, endpoint, params):
+        recovered.append(params)
+        return []
+
+    monkeypatch.setattr(module, 'request_in_fresh_process', recover)
+    settings = AppSettings(gateway_enabled=True, gateway_url='http://gw1100.local')
+    gateway = EcowittGateway(settings, session=Session)
+    for _ in range(3):
+        assert gateway.fetch()['common_list']
+    assert recovered == [{'page': 2}]
+    assert gateway.status()['inventory_error'] == ''
+    assert gateway.status()['recovery_active']
+    settings.gateway_enabled = False
+    assert not gateway.status()['recovery_active']
+    settings.gateway_enabled = True
+    settings.gateway_url = 'http://other.local'
+    assert not gateway.status()['recovery_active']
+
+
+def test_http_response_breaks_a_run_of_connection_failures(monkeypatch):
+    from caelus import gateway as module
+
+    failures = iter([
+        requests.ConnectionError('offline'), requests.ConnectionError('offline'),
+        requests.HTTPError('503'), requests.ConnectionError('offline'),
+    ])
+
+    class Session:
+        @staticmethod
+        def get(*args, **kwargs):
+            raise next(failures)
+
+    def unexpected(*args):
+        raise AssertionError('Connection failure counts should reset after HTTP responses')
+
+    monkeypatch.setattr(module, 'request_in_fresh_process', unexpected)
+    gateway = EcowittGateway(
+        AppSettings(gateway_enabled=True, gateway_url='http://gw.local'), session=Session,
+    )
+    for _ in range(4):
+        assert gateway.fetch() == {}

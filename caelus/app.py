@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -16,21 +17,46 @@ from caelus.poller import GatewayPoller
 from caelus.routes import register_routes
 
 BASE_DIR = Path(__file__).resolve().parent
+logger = logging.getLogger(__name__)
+
+
+async def _initialize_optional_services(app: FastAPI) -> None:
+    """Warm optional services without preventing gateway polling or the UI."""
+    try:
+        await asyncio.to_thread(app.state.forecast_service.get, app.state.settings)
+    except Exception:
+        logger.exception("Startup forecast failed; later requests will retry")
+    try:
+        app.state.weather_climate_service.snapshot(app.state.settings)
+    except Exception:
+        logger.exception("Startup weather climate failed; later requests will retry")
 
 
 def create_app() -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        if app.state.settings.use_ip_location:
-            await asyncio.to_thread(resolve_ip_location, app.state.settings)
-        await asyncio.to_thread(app.state.forecast_service.get, app.state.settings)
         await app.state.poller.start()
-        app.state.weather_climate_service.snapshot(app.state.settings)
+        initialization = None
         try:
+            # Resolve coordinates before serving settings mutations or warming
+            # location-dependent services. Provider requests already have timeouts.
+            if app.state.settings.use_ip_location:
+                try:
+                    await asyncio.to_thread(resolve_ip_location, app.state.settings)
+                except Exception:
+                    logger.exception("Startup location lookup failed; retaining configured location")
+            initialization = asyncio.create_task(_initialize_optional_services(app))
             yield
         finally:
-            await app.state.weather_climate_service.close()
-            await app.state.poller.stop()
+            # Finish in-flight settings work before releasing shared services.
+            try:
+                if initialization is not None:
+                    await initialization
+            finally:
+                try:
+                    await app.state.weather_climate_service.close()
+                finally:
+                    await app.state.poller.stop()
 
     app = FastAPI(title="Caelus", lifespan=lifespan)
     app.state.templates = Jinja2Templates(directory=str(BASE_DIR.parent / "templates"))

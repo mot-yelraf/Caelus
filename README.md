@@ -75,6 +75,40 @@ icons and a separate 512×512 maskable icon for adaptive launcher shapes. The
 manifest opens the dashboard in standalone mode when installed by a supporting
 browser.
 
+## Recovery and troubleshooting
+
+Gateway polling retries automatically after failed requests and temporary database
+errors. After three consecutive connection failures for a read-only gateway API
+request, Caelus also tries that request in a fresh Python process. This allows
+readings to resume when the server process has lost LAN access but a new process
+can still reach the gateway. The worker has an eight-second deadline and a
+512 KiB response limit. Each poll continues trying the direct connection and
+returns to it automatically when it succeeds. HTTP errors and malformed data
+continue through normal polling retries.
+
+`/api/ecowitt/status` exposes `recovery_active`, the underlying `connection_error`,
+and `last_error` when recovery also fails. An active recovery path can still
+report the gateway online when it is receiving valid readings. Connection-loss
+and recovery transitions are logged without repeating an outage warning on
+every poll. For a default macOS installation, inspect
+`/Users/<username>/Caelus/data/desktop-launch.log`; saved settings and observations
+remain in `/Users/<username>/Caelus/data/settings.json` and
+`/Users/<username>/Caelus/data/caelus.db`.
+
+Polling starts independently of optional service failures. Forecast warmup runs
+in the background so an unavailable provider cannot hold up server readiness;
+later forecast and historical-weather requests retry and retain available cached
+data. Shutdown stops polling even if another service fails during cleanup.
+
+`/healthz` reports whether the polling task is running; use the gateway status
+and latest reading timestamp to assess data freshness. A disconnected gateway,
+revoked macOS Local Network permission, or failed hardware still requires the
+underlying network or device problem to be corrected. The fallback uses the
+installed Python runtime and does not restart the application. Legacy gateway
+URLs with a path use their existing direct-request retry path. Fatal server
+exits require a desktop relaunch or an external service manager; the desktop
+launcher does not currently supervise a server after opening its window.
+
 ## Location and forecast privacy
 
 Today’s forecast also shows same-calendar-date minimums, maximums, and averages for temperature, relative
@@ -150,7 +184,12 @@ a Mac with Command Line Tools; installing Caelus does not require those tools.
 
 The desktop launcher starts the local server when necessary and stops that
 server when its window closes. If a healthy Caelus server is already running,
-the desktop window attaches to it and leaves it running when the window closes.
+the desktop window attaches to it. On macOS and Linux, quitting also checks for
+orphaned servers from the same installation owned by the current user and sends
+them a termination signal. Startup also clears these orphans before opening the
+dashboard, and macOS Quit runs cleanup through the native termination notification.
+Servers still owned by another process and explicit
+`CAELUS_GUI_URL` connections are left running.
 The separate server launcher remains available for unattended and LAN use.
 
 ### macOS
