@@ -1,6 +1,8 @@
 from datetime import datetime, timedelta
 
-from caelus.metrics import build_24_hour_metric_cards, metric_display_options
+import pytest
+
+from caelus.metrics import build_24_hour_metric_cards, calculate_outdoor_vpd, metric_display_options
 
 
 def test_metric_cards_preserve_zero_and_calculate_complete_window_stats() -> None:
@@ -97,6 +99,7 @@ def test_metric_cards_pin_primary_row_then_sort_remaining_labels() -> None:
         ("wind_dir", "Wind direction"),
         ("rain_total", "Rain today"),
         ("dew_point", "Dew point"),
+        ("vpd", "Outdoor VPD"),
         ("pressure", "Relative pressure"),
         ("uv", "UV index"),
         ("wind_speed", "Wind speed"),
@@ -115,6 +118,71 @@ def test_display_style_options_pin_primary_row_then_sort_remaining_labels() -> N
     assert [option.label for option in options[4:]] == sorted(
         (option.label for option in options[4:]), key=str.casefold
     )
+
+
+@pytest.mark.parametrize("temperature_f, humidity, expected", [
+    (77, 50, 1.584),
+    (68, 50, 1.169),
+    (32, 0, 0.61078),
+    (32, 100, 0),
+    (14, 90, 0.0286),
+    (122, 0, 12.335),
+])
+def test_outdoor_vpd_matches_sensorius_formula(temperature_f, humidity, expected):
+    assert calculate_outdoor_vpd(temperature_f, humidity) == pytest.approx(expected, abs=0.002)
+
+
+@pytest.mark.parametrize("temperature, humidity", [
+    (None, 50), (77, None), (True, 50), (77, False),
+    ("invalid", 50), (77, "invalid"), (float("nan"), 50),
+    (77, float("inf")), (float("inf"), 50), (77, -1), (77, 101), (-500, 50),
+])
+def test_outdoor_vpd_rejects_unavailable_or_invalid_inputs(temperature, humidity):
+    assert calculate_outdoor_vpd(temperature, humidity) is None
+
+
+def test_vpd_is_derived_from_each_observation_before_sampling_or_unit_conversion():
+    observed = datetime(2026, 10, 19, 12)
+    rows = [
+        {"timestamp": (observed - timedelta(hours=12)).isoformat(), "temperature": 68, "humidity": 50},
+        {"timestamp": (observed - timedelta(hours=2)).isoformat(), "temperature": 77, "humidity": 50},
+        {"timestamp": observed.isoformat(), "temperature": 77, "humidity": 100},
+    ]
+    cards = [next(card for card in build_24_hour_metric_cards(rows, system, observed_at=observed)
+                  if card["key"] == "vpd") for system in ("imperial", "metric")]
+    assert cards[0] == cards[1]
+    card = cards[0]
+    assert card["unit"] == "kPa"
+    assert card["current"] == 0
+    assert card["decimals"] == 3
+    assert card["stats"]["samples"] == 3
+    assert card["stats"]["min"] == 0
+    assert card["stats"]["max"] == pytest.approx(1.584, abs=0.002)
+    assert card["stats"]["avg"] == pytest.approx(0.918, abs=0.002)
+    assert card["stats_by_hours"]["6"]["samples"] == 2
+    assert card["stats_by_hours"]["6"]["avg"] == pytest.approx(0.792, abs=0.002)
+    assert "vpd" not in rows[0]
+
+
+def test_vpd_never_pairs_inputs_from_different_observations():
+    rows = [
+        {"timestamp": "2026-10-19T10:00:00", "temperature": 77},
+        {"timestamp": "2026-10-19T11:00:00", "humidity": 50},
+        {"timestamp": "2026-10-19T12:00:00", "temperature": 77, "humidity": 101},
+    ]
+    assert not any(card["key"] == "vpd" for card in build_24_hour_metric_cards(rows))
+
+
+def test_vpd_works_with_existing_sqlite_history_without_storing_a_new_column(tmp_path):
+    from caelus.data_logger import DataLogger
+
+    logger = DataLogger(str(tmp_path / "history.db"))
+    observed = datetime(2026, 10, 19, 12)
+    logger.log_reading(observed, {"temperature": 77, "humidity": 50})
+    rows = logger.get_readings_since(observed - timedelta(hours=24))
+    assert "vpd" not in rows[0]
+    card = next(card for card in build_24_hour_metric_cards(rows) if card["key"] == "vpd")
+    assert card["current"] == pytest.approx(1.584, abs=0.002)
 
 
 def test_wind_direction_card_includes_paired_wind_speed_history_and_stats() -> None:

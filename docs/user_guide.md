@@ -191,11 +191,26 @@ The **24-hour sensor metrics** section shows every metric that has valid stored 
 
 Each card includes the current value and the minimum, average, and maximum calculated from the complete 24-hour window. Minimum and maximum timestamps use the configured local timezone.
 
+**Outdoor VPD** (vapor pressure deficit) is calculated from outdoor temperature
+and relative humidity recorded together. It uses the Sensorius saturation-pressure
+formula: `VPD = 0.61078 × 10^(7.5 × T / (237.3 + T)) × (1 − RH/100)`,
+where `T` is in °C. Values remain in kPa with either display unit system. Missing
+or invalid inputs are skipped. The card supports both history graphs and a gauge,
+and appears in Display Style settings and the full-screen graph selector.
+Its Sensorius color boundaries are 0.4, 0.8, 1.2, and 1.6 kPa; the gauge spans
+0–5 kPa. Calculated readings above 5 kPa remain available in history graphs and
+statistics, while the gauge needle stops at its upper limit.
+
 A card can display:
 
 - **24Hr Graph**: stored readings for the last 24 hours.
 - **6Hr Graph**: stored readings for the last six hours.
 - **Gauge**: the current value on that metric’s display scale.
+
+Gauges and graph backgrounds share fixed color zones. Temperature and dew point
+use blue, green, yellow, and red bands; relative humidity uses dry-to-wet bands.
+Pressure uses light blue, while rain keeps its graduated blue bands. Thresholds
+convert with the selected units. Graph traces and dashed averages are white.
 
 Select a metric card to cycle its current view. To make the starting style persistent, use **Settings > Appearance > Display Style**.
 
@@ -208,6 +223,9 @@ Select the **Graph glyph** to the left of the Caelus title to open the full-scre
 ![Full-screen weather history graph](screenshots/history-graph.png)
 
 Horizontal grid lines appear when a single metric is graphed. With multiple metrics, those horizontal lines are omitted. Every station-local day boundary has a vertical line and a date tick in `ddmmm` format, such as `09Sep`.
+
+A single metric uses its color-zone background and a white trace. Multiple
+metrics retain distinct line colors on a shared neutral background.
 
 Choose a time window of 1, 6, 12, or 24 hours, or 3, 7, 14, or 29 days. Select up to four metrics. Caelus gives each selected measurement an independently labeled scale so values with different units can be compared over the same time period.
 

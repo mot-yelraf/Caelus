@@ -279,7 +279,7 @@ def test_dashboard_includes_scene_themes_settings_modal_and_lunar_cycle() -> Non
     assert 'href="#conditions"' not in response.text
     assert 'href="#map"' not in response.text
     assert response.text.count("data-graph-hours=") == 8
-    assert response.text.count("data-graph-metric") == 26
+    assert response.text.count("data-graph-metric") == 27
     assert "data-render-graph" not in response.text
     assert "6-day details" not in response.text
     assert f'<p class="eyebrow">Caelus {__version__}</p>' in response.text
@@ -495,6 +495,23 @@ def test_24_hour_metrics_endpoint_returns_only_valid_stored_metrics() -> None:
         "max_at": "2026-08-12T13:00:00",
         "samples": 2,
     }
+
+
+def test_vpd_is_available_in_metric_routes_and_display_controls() -> None:
+    app = make_app()
+    app.state.data_logger.get_readings_since = lambda _cutoff: [
+        {"timestamp": "2026-10-19T12:00:00", "temperature": 77, "humidity": 50},
+    ]
+    client = TestClient(app)
+    for endpoint in ("/api/metrics/24h", "/api/metrics/range?hours=168"):
+        response = client.get(endpoint)
+        assert response.status_code == 200
+        card = next(metric for metric in response.json()["metrics"] if metric["key"] == "vpd")
+        assert card["unit"] == "kPa"
+        assert card["current"] == pytest.approx(1.584, abs=0.002)
+    dashboard = client.get("/").text
+    assert 'value="vpd"' in dashboard
+    assert 'data-metric-style-key="vpd"' in dashboard
 
 
 def test_ecowitt_discovery_save_status_and_disable_routes(tmp_path, monkeypatch) -> None:
