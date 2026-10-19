@@ -336,14 +336,7 @@ python3 -m pip install -r requirements.txt
 python3 Caelus.py
 ```
 
-## Test
+## Attribution
 
-Run the validation suite with:
-
-```bash
-pytest -q
-```
-
-### Forecast alignment
-
-Forecast artwork and condition rules follow Sensorius. See the [asset and mapping contract](docs/forecast-alignment.md) for attribution, hash verification, day/night selection, and forecast windows.
+- System Architecture: TW Farley
+- Implementation and Coding: TW Farley and ChatGPT/Codex
