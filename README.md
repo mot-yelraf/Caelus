@@ -86,9 +86,11 @@ can still reach the gateway. The worker has an eight-second deadline and a
 returns to it automatically when it succeeds. HTTP errors and malformed data
 continue through normal polling retries.
 
-`/api/ecowitt/status` exposes `recovery_active`, the underlying `connection_error`,
-and `last_error` when recovery also fails. An active recovery path can still
-report the gateway online when it is receiving valid readings. Connection-loss
+`/api/ecowitt/status` exposes `recovery_active` and fixed summaries in
+`connection_error`, `inventory_error`, and `last_error` when those failures occur.
+Full exception diagnostics remain in server logs rather than browser responses.
+An active recovery path can still report the gateway online when it is receiving
+valid readings. Connection-loss
 and recovery transitions are logged without repeating an outage warning on
 every poll. For a default macOS installation, inspect
 `/Users/<username>/Caelus/data/desktop-launch.log`; saved settings and observations
@@ -99,6 +101,9 @@ Polling starts independently of optional service failures. Forecast warmup runs
 in the background so an unavailable provider cannot hold up server readiness;
 later forecast and historical-weather requests retry and retain available cached
 data. Shutdown stops polling even if another service fails during cleanup.
+
+Manual `POST /poll` requests require the dashboard's `csrf_token` form field,
+like other browser mutation requests.
 
 `/healthz` reports whether the polling task is running; use the gateway status
 and latest reading timestamp to assess data freshness. A disconnected gateway,

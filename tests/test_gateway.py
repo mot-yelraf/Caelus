@@ -275,11 +275,13 @@ def test_repeated_connection_failure_recovers_and_returns_to_direct_requests(mon
     assert gateway.fetch() == {}
     assert gateway.fetch() == {}
     assert not recovered
-    assert 'No route to host' in gateway.status()['last_error']
+    assert 'No route to host' in gateway.last_status['last_error']
+    assert 'No route to host' not in gateway.status()['last_error']
     assert gateway.fetch()['common_list']
     assert gateway.status()['state'] == 'online'
     assert gateway.status()['recovery_active']
-    assert 'No route to host' in gateway.status()['connection_error']
+    assert 'No route to host' in gateway.last_status['connection_error']
+    assert 'No route to host' not in gateway.status()['connection_error']
     assert recovered == ['get_livedata_info']
     # Another recovered poll must not reset the failed direct transport's count.
     assert gateway.fetch()['common_list']
@@ -311,8 +313,9 @@ def test_failed_recovery_keeps_retrying_and_reports_both_errors(monkeypatch):
         assert gateway.fetch() == {}
     status = gateway.status()
     assert status['state'] == 'offline'
-    assert 'LAN timed out' in status['last_error']
-    assert 'fresh-process recovery failed' in status['last_error']
+    assert 'LAN timed out' in gateway.last_status['last_error']
+    assert 'fresh-process recovery failed' in gateway.last_status['last_error']
+    assert status['last_error'] == 'Gateway request failed. See server logs for details.'
 
 
 def test_http_errors_do_not_launch_recovery_workers(monkeypatch):
@@ -332,7 +335,8 @@ def test_http_errors_do_not_launch_recovery_workers(monkeypatch):
     )
     for _ in range(4):
         assert gateway.fetch() == {}
-    assert '503 Service Unavailable' in gateway.status()['last_error']
+    assert '503 Service Unavailable' in gateway.last_status['last_error']
+    assert '503 Service Unavailable' not in gateway.status()['last_error']
 
 
 def test_inventory_pages_have_independent_recovery_counts(monkeypatch):
