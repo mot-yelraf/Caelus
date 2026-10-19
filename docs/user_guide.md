@@ -8,7 +8,7 @@ Caelus is a local weather dashboard and history service for an Ecowitt-compatibl
 
 This guide is for day-to-day users. You do not need to understand Python, FastAPI, or SQLite to operate Caelus.
 
-The dashboard and Location, Station, and Data & Map screenshots were updated from a running Caelus station on September 30, 2026. Other screenshots, including the Mobile Operation graphics, were captured on September 9, 2026. The Location and Station screenshots use example coordinates and a documentation-only gateway address; enter your own values during setup. Your location, readings, gateway model, forecast, lunar view, and available metrics will differ.
+The dashboard overview and full-dashboard screenshots were updated from a running Caelus station on October 19, 2026, and show the centered title block and sensor heading. The remaining dashboard and Location, Station, and Data & Map screenshots were updated on September 30, 2026. Other screenshots, including the Mobile Operation graphics, were captured on September 9, 2026. The Location and Station screenshots use example coordinates and a documentation-only gateway address; enter your own values during setup. Your location, readings, gateway model, forecast, lunar view, and available metrics will differ.
 
 ## Open Caelus
 

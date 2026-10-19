@@ -464,9 +464,17 @@ class EcowittGateway:
         return self.discover(base_url)
 
     def status(self) -> dict[str, Any]:
-        """Return safe configured and runtime gateway status."""
+        """Return runtime status with fixed messages instead of private diagnostics."""
+        public_status = dict(self.last_status)
+        for field, message in {
+            "last_error": "Gateway request failed. See server logs for details.",
+            "connection_error": "Direct gateway connection failed. See server logs for details.",
+            "inventory_error": "Gateway sensor inventory is unavailable. See server logs for details.",
+        }.items():
+            if public_status.get(field):
+                public_status[field] = message
         return {
-            **self.last_status,
+            **public_status,
             "recovery_active": self.settings.gateway_enabled and any(
                 key.startswith(self.settings.gateway_url.rstrip("/") + "/")
                 for key in tuple(self._recovery_endpoints)
@@ -525,6 +533,8 @@ class EcowittGateway:
                     self.last_status["inventory_error"] = ""
                 except EcowittGatewayError as exc:
                     self.last_status["inventory"] = []
+                    if not self.last_status.get("inventory_error"):
+                        logger.warning("Ecowitt sensor inventory unavailable: %s", exc)
                     self.last_status["inventory_error"] = str(exc)
             if not reading or not any(value is not None for value in map_gateway_reading(
                 reading, rain_source=self.settings.gateway_rain_source

@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import secrets
 from dataclasses import fields, replace
 from datetime import datetime, timedelta, timezone
@@ -35,6 +36,7 @@ from caelus.theme_manager import (
 )
 
 GRAPH_RANGE_HOURS = {1, 6, 12, 24, 72, 168, 336, 696}
+logger = logging.getLogger(__name__)
 FAVICON_SVG = (
     Path(__file__).resolve().parents[1]
     / "static"
@@ -411,8 +413,12 @@ def register_routes(app: FastAPI) -> None:
             result = await asyncio.to_thread(
                 app.state.gateway.discover, payload.get("gateway_url")
             )
-        except EcowittGatewayError as exc:
-            return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+        except EcowittGatewayError:
+            logger.warning("Ecowitt discovery failed", exc_info=True)
+            return JSONResponse(
+                {"ok": False, "error": "Could not discover the Ecowitt gateway. Check its address and connection; see server logs for details."},
+                status_code=400,
+            )
         return JSONResponse(result)
 
     @app.post("/api/ecowitt/save")
@@ -437,8 +443,12 @@ def register_routes(app: FastAPI) -> None:
             discovery = await asyncio.to_thread(
                 discover_for_save, payload.get("gateway_url")
             )
-        except EcowittGatewayError as exc:
-            return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+        except EcowittGatewayError:
+            logger.warning("Ecowitt gateway validation before saving failed", exc_info=True)
+            return JSONResponse(
+                {"ok": False, "error": "Could not validate the Ecowitt gateway. Check its address and connection; see server logs for details."},
+                status_code=400,
+            )
 
         settings: AppSettings = app.state.settings
         candidate = replace(settings)
@@ -572,7 +582,10 @@ def register_routes(app: FastAPI) -> None:
         return Response(payload, media_type=content_type)
 
     @app.post("/poll")
-    async def poll_gateway() -> Dict[str, Any]:
+    async def poll_gateway(csrf_token: str = Form("")) -> Dict[str, Any]:
+        """Poll the gateway only after validating the browser mutation token."""
+        if not secrets.compare_digest(csrf_token, app.state.csrf_token):
+            raise HTTPException(status_code=403, detail="invalid CSRF token")
         reading = await asyncio.to_thread(app.state.poller.poll_once)
         if reading is None:
             return {"status": "error", "message": "gateway fetch failed"}

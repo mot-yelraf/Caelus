@@ -1,4 +1,5 @@
 import io
+import logging
 from html import unescape
 from pathlib import Path
 from urllib.parse import urljoin
@@ -8,10 +9,12 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.testclient import TestClient
 from PIL import Image
+import pytest
 
 import caelus.routes as routes_module
 from caelus import __version__
 from caelus.astronomy import FULL_MOON_NAMES, moon_phase_context
+from caelus.gateway import EcowittGateway, EcowittGatewayError
 from caelus.routes import format_observation_time, register_routes
 from caelus.settings import AppSettings
 from caelus.theme_manager import ThemeManager
@@ -565,6 +568,67 @@ def test_ecowitt_mutations_require_csrf() -> None:
     )
 
     assert response.status_code == 403
+
+
+@pytest.mark.parametrize("endpoint", ["discover", "save"])
+def test_ecowitt_errors_keep_diagnostics_in_logs(endpoint, caplog) -> None:
+    diagnostic = "ConnectionError: private-gateway.example:8767 /private/operator/config"
+
+    class FailingGateway:
+        def discover(self, gateway_url):
+            raise EcowittGatewayError(diagnostic)
+
+        def discover_for_save(self, gateway_url):
+            raise EcowittGatewayError(diagnostic)
+
+    app = make_app()
+    app.state.gateway = FailingGateway()
+    original_url = app.state.settings.gateway_url
+    with caplog.at_level(logging.WARNING, logger="caelus.routes"):
+        response = TestClient(app).post(
+            f"/api/ecowitt/{endpoint}",
+            json={"gateway_url": "http://gateway.local", "csrf_token": "test-token"},
+        )
+    assert response.status_code == 400
+    assert response.json()["ok"] is False
+    assert "see server logs" in response.json()["error"]
+    for private_value in (diagnostic, "private-gateway.example", "/private/operator/config"):
+        assert private_value not in response.text
+    assert diagnostic in caplog.text
+    assert app.state.settings.gateway_url == original_url
+    assert app.state.poller.poll_calls == 0
+
+
+def test_ecowitt_status_hides_diagnostics_without_changing_private_state() -> None:
+    app = make_app()
+    gateway = EcowittGateway(app.state.settings)
+    app.state.gateway = gateway
+    diagnostic = "private-gateway.example /private/operator/config"
+    fields = ("last_error", "connection_error", "inventory_error")
+    gateway.last_status.update({field: diagnostic for field in fields})
+    client = TestClient(app)
+    response = client.get("/api/ecowitt/status")
+    assert response.status_code == 200
+    assert diagnostic not in response.text
+    for field in fields:
+        assert "See server logs" in response.json()[field]
+        assert gateway.last_status[field] == diagnostic
+    gateway.last_status.update({field: "" for field in fields})
+    cleared = client.get("/api/ecowitt/status").json()
+    assert all(cleared[field] == "" for field in fields)
+
+
+def test_manual_poll_requires_csrf_before_calling_poller() -> None:
+    app = make_app()
+    client = TestClient(app)
+    for data in ({}, {"csrf_token": "incorrect"}):
+        response = client.post("/poll", data=data, headers={"Origin": "https://untrusted.example"})
+        assert response.status_code == 403
+    assert app.state.poller.poll_calls == 0
+    response = client.post("/poll", data={"csrf_token": "test-token"})
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"
+    assert app.state.poller.poll_calls == 1
 
 
 def test_dashboard_tolerates_astronomy_payload_from_running_older_code(monkeypatch) -> None:
