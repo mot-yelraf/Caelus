@@ -1161,7 +1161,7 @@
       const side = index < 2 ? "left" : "right";
       const sideIndex = index % 2;
       const axisX = side === "left" ? plotLeft - sideIndex * 62 : plotRight + sideIndex * 62;
-      return {metric, points, minimum, maximum, side, sideIndex, axisX, color: colors[index]};
+      return {metric, points, minimum, maximum, side, sideIndex, axisX, color: metrics.length === 1 ? "#ffffff" : colors[index]};
     });
     const requestedDuration = Math.max(1, Number(payload.hours) || 24) * 60 * 60 * 1000;
     const requestedEndTime = metricDate(payload.generated_at).getTime();
@@ -1172,6 +1172,11 @@
       : requestedStartTime;
     const endTime = startTime + requestedDuration;
     const x = (time) => plotLeft + Math.max(0, Math.min(1, (time - startTime) / requestedDuration)) * (plotRight - plotLeft);
+
+    if (axes.length === 1) {
+      const axis = axes[0];
+      drawMetricZones(context, axis.metric, axis.minimum, axis.maximum, plotLeft, plotTop, plotRight, plotBottom);
+    }
 
     context.font = "10px Inter, sans-serif";
     context.strokeStyle = "rgba(185,226,211,.14)";
@@ -1355,10 +1360,9 @@
     context.clearRect(0, 0, width, height);
 
     const styles = getComputedStyle(canvas.closest(".glass-card") || document.documentElement);
-    const accent = styles.getPropertyValue("--metric-graph-accent").trim()
-      || styles.getPropertyValue("--accent-2").trim() || "#55d5c7";
+    const accent = "#ffffff";
     const muted = styles.getPropertyValue("--muted").trim() || "rgba(235,247,240,.7)";
-    const line = styles.getPropertyValue("--line").trim() || "rgba(196,235,220,.28)";
+    const line = "rgba(0,0,0,.18)";
     const left = 52;
     const right = width - 12;
     const top = 12;
@@ -1385,6 +1389,8 @@
     }
     const x = (time) => left + ((time - start) / (end - start)) * (right - left);
     const y = (value) => bottom - ((value - low) / (high - low)) * (bottom - top);
+
+    drawMetricZones(context, metric, low, high, left, top, right, bottom);
     const valueRange = high - low;
     const yTickCount = 4;
     const tickStep = valueRange / yTickCount;
@@ -1439,7 +1445,7 @@
       const averageY = y(average);
       context.save();
       context.setLineDash([5, 4]);
-      context.strokeStyle = muted;
+      context.strokeStyle = accent;
       context.beginPath();
       context.moveTo(left, averageY);
       context.lineTo(right, averageY);
@@ -1452,8 +1458,7 @@
       context.textBaseline = "middle";
       const labelWidth = context.measureText(averageLabel).width + 8;
       const labelY = Math.max(top + 7, Math.min(bottom - 7, averageY - 8));
-      context.fillStyle = styles.getPropertyValue("--metric-graph-bg").trim()
-        || styles.getPropertyValue("--glass-strong").trim() || "rgba(3,22,28,.82)";
+      context.fillStyle = "rgba(0,0,0,.65)";
       context.fillRect(right - labelWidth, labelY - 7, labelWidth, 14);
       context.fillStyle = accent;
       context.fillText(averageLabel, right - 4, labelY);
@@ -1633,30 +1638,57 @@
         [0, oneMillimeter / maximum, 0.1, 0.25, 0.5, 1],
       ];
     }
-    const configs = {
-      temperature: [-20, 50, ["#2474c6", "#65b8e8", "#65b96e", "#f0c64e", "#cf4b3f"]],
-      dew_point: [-20, 50, ["#2474c6", "#65b8e8", "#65b96e", "#f0c64e", "#cf4b3f"]],
-      wind_chill: [-20, 50, ["#2474c6", "#65b8e8", "#65b96e", "#f0c64e", "#cf4b3f"]],
-      heat_index: [-20, 50, ["#2474c6", "#65b8e8", "#65b96e", "#f0c64e", "#cf4b3f"]],
-      humidity: [0, 100, ["#b47a16", "#e6bb38", "#9ed6e4", "#4a9fdf", "#174da8"]],
-      indoor_humidity: [0, 100, ["#b47a16", "#e6bb38", "#9ed6e4", "#4a9fdf", "#174da8"]],
-      pressure: [950, 1050, ["#9ed6e4"]],
-      absolute_pressure: [950, 1050, ["#9ed6e4"]],
-      indoor_pressure: [950, 1050, ["#9ed6e4"]],
-      indoor_absolute_pressure: [950, 1050, ["#9ed6e4"]],
-      uv: [0, 12, ["#65b96e", "#f0c64e", "#e88b35", "#cf4b3f", "#7a398f"]],
-      wind_speed: [0, metric.unit === "km/h" ? 80 : 50, ["#9ed6e4", "#65b8e8", "#2474c6", "#174da8"]],
-      wind_gust: [0, metric.unit === "km/h" ? 80 : 50, ["#9ed6e4", "#65b8e8", "#2474c6", "#174da8"]],
-      daily_max_wind: [0, metric.unit === "km/h" ? 80 : 50, ["#9ed6e4", "#65b8e8", "#2474c6", "#174da8"]],
+    // Sensorius temperature/humidity zones, shared by gauges and graph fills.
+    // Convert the thresholds themselves so a unit change preserves every band.
+    const zoned = (bounds, colors, convert = (value) => value) => {
+      const converted = bounds.map(convert);
+      const minimum = converted[0];
+      const maximum = converted[converted.length - 1];
+      return [minimum, maximum, colors, converted.map((value) => (value - minimum) / (maximum - minimum))];
     };
-    if (configs[metric.key]) {
-      const config = configs[metric.key];
-      if (metric.unit === "°F" && config[0] === -20 && config[1] === 50) return [0, 140, config[2]];
-      if (metric.unit === "inHg" && config[0] === 950) return [28, 31, config[2]];
-      return config;
+    if (["temperature", "indoor_temperature", "dew_point", "wind_chill", "heat_index"].includes(metric.key)) {
+      return zoned([-20, 0, 10, 30, 40, 60],
+        ["#0000ff", "#3399ff", "#66cc66", "#ffcc00", "#ff0000"],
+        metric.unit === "°F" ? (value) => value * 9 / 5 + 32 : undefined);
     }
+    if (["humidity", "indoor_humidity"].includes(metric.key)) {
+      return zoned([0, 20, 30, 70, 80, 100],
+        ["#bf9000", "#ffcc00", "#add8e6", "#66b2ff", "#0033cc"]);
+    }
+    if (metric.key === "vpd") {
+      return zoned([0, 0.4, 0.8, 1.2, 1.6, 5],
+        ["#0033cc", "#66cc66", "#03a603", "#3e803e", "#bf9000"]);
+    }
+    if (["pressure", "absolute_pressure", "indoor_pressure", "indoor_absolute_pressure"].includes(metric.key)) {
+      return zoned([700, 1100], ["#add8e6"],
+        metric.unit === "inHg" ? (value) => value / 33.8638866667 : undefined);
+    }
+    if (metric.key === "uv") {
+      return zoned([0, 3, 6, 8, 11, 15], ["#66cc66", "#ffcc00", "#ffa500", "#ff0000", "#800080"]);
+    }
+    if (["wind_speed", "wind_gust", "daily_max_wind"].includes(metric.key)) {
+      return zoned([0, 5, 15, 30, 50], ["#add8e6", "#66b2ff", "#3399ff", "#0033cc"],
+        metric.unit === "km/h" ? (value) => value * 1.609344 : undefined);
+    }
+    if (metric.key === "solar_radiation") return [0, 1500, ["#add8e6"]];
+    if (metric.key === "light_intensity") return [0, Math.max(100000, observedMax), ["#add8e6"]];
     const spread = Math.max(observedMax - observedMin, Math.abs(observedMax) * 0.2, 1);
-    return [Math.min(0, observedMin - spread * 0.15), observedMax + spread * 0.2, ["#65b8e8", "#65b96e", "#f0c64e", "#cf4b3f"]];
+    return [Math.min(0, observedMin - spread * 0.15), observedMax + spread * 0.2, ["#add8e6"]];
+  }
+
+  function drawMetricZones(context, metric, low, high, left, top, right, bottom) {
+    const [minimum, maximum, colors, configuredStops] = gaugeConfig(metric);
+    const stops = configuredStops || colors.map((_color, index) => index / colors.length).concat(1);
+    colors.forEach((color, index) => {
+      // Extend the outer colors beyond the dial range; never leave gaps for
+      // outlying readings or the padding around a constant-value series.
+      const lower = index === 0 ? low : Math.max(low, minimum + stops[index] * (maximum - minimum));
+      const upper = index === colors.length - 1 ? high : Math.min(high, minimum + stops[index + 1] * (maximum - minimum));
+      if (upper <= lower) return;
+      const y = (value) => bottom - (value - low) / (high - low) * (bottom - top);
+      context.fillStyle = color;
+      context.fillRect(left, y(upper), right - left, y(lower) - y(upper));
+    });
   }
 
   function drawMetricGauge(canvas, metric) {
@@ -1672,7 +1704,7 @@
     const ink = styles.getPropertyValue("--ink").trim() || "#eef8f4";
     const muted = styles.getPropertyValue("--muted").trim() || "rgba(235,247,240,.7)";
     const rainGauge = metric.key.startsWith("rain_");
-    const rawValue = Number(metric.current);
+    const rawValue = metric.current == null ? NaN : Number(metric.current);
     const value = rainGauge && Number.isFinite(rawValue) ? Math.max(0, rawValue) : rawValue;
     const [minimum, maximum, zones, configuredZoneStops] = gaugeConfig(metric);
     const zoneStops = configuredZoneStops || zones.map((_color, index) => index / zones.length).concat(1);
@@ -1684,7 +1716,7 @@
     const angleFor = (number) => start + Math.max(0, Math.min(1, (number - minimum) / (maximum - minimum))) * (end - start);
 
     context.lineCap = "butt";
-    context.lineWidth = 21;
+    context.lineWidth = 32;
     zones.forEach((color, index) => {
       context.strokeStyle = color;
       context.beginPath();
@@ -1703,13 +1735,13 @@
     }
     if (Number.isFinite(value)) {
       const needle = angleFor(value);
-      context.strokeStyle = ink;
-      context.lineWidth = 4;
-      context.lineCap = "round";
+      context.fillStyle = ink;
       context.beginPath();
-      context.moveTo(centerX - Math.cos(needle) * 13, centerY - Math.sin(needle) * 13);
-      context.lineTo(centerX + Math.cos(needle) * radius * 0.72, centerY + Math.sin(needle) * radius * 0.72);
-      context.stroke();
+      context.moveTo(centerX + Math.cos(needle) * radius * 0.9, centerY + Math.sin(needle) * radius * 0.9);
+      context.lineTo(centerX + Math.cos(needle + Math.PI / 2) * 6, centerY + Math.sin(needle + Math.PI / 2) * 6);
+      context.lineTo(centerX + Math.cos(needle - Math.PI / 2) * 6, centerY + Math.sin(needle - Math.PI / 2) * 6);
+      context.closePath();
+      context.fill();
       context.fillStyle = ink;
       context.beginPath();
       context.arc(centerX, centerY, 7, 0, Math.PI * 2);

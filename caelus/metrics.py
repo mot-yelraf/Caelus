@@ -22,6 +22,7 @@ WEATHER_METRICS = (
     MetricSpec("wind_chill", "Wind chill", ""),
     MetricSpec("heat_index", "Heat index", ""),
     MetricSpec("humidity", "Outdoor relative humidity", "%", 0),
+    MetricSpec("vpd", "Outdoor VPD", "kPa", 3),
     MetricSpec("pressure", "Relative pressure", ""),
     MetricSpec("absolute_pressure", "Absolute pressure", ""),
     MetricSpec("wind_speed", "Wind speed", ""),
@@ -79,6 +80,24 @@ def _finite_number(value: Any) -> float | None:
     except (TypeError, ValueError):
         return None
     return numeric if math.isfinite(numeric) else None
+
+
+def calculate_outdoor_vpd(temperature_f: Any, relative_humidity: Any) -> float | None:
+    """Derive ambient vapor pressure deficit in kPa from normalized °F and RH%."""
+    temperature = _finite_number(temperature_f)
+    humidity = _finite_number(relative_humidity)
+    if temperature is None or humidity is None or not 0 <= humidity <= 100:
+        return None
+    temperature_c = (temperature - 32) * 5 / 9
+    # The Sensorius saturation-pressure equation is undefined at -237.3°C.
+    if temperature_c <= -237.3:
+        return None
+    try:
+        saturation_kpa = 0.61078 * 10 ** (7.5 * temperature_c / (237.3 + temperature_c))
+        deficit = saturation_kpa * (1 - humidity / 100)
+    except OverflowError:
+        return None
+    return deficit if math.isfinite(deficit) else None
 
 
 def _sample_series(
@@ -150,13 +169,17 @@ def build_24_hour_metric_cards(
     pressure_unit: str = "hpa",
     observed_at: datetime | None = None,
 ) -> list[dict[str, Any]]:
-    """Return cards only for weather metrics containing valid numeric data."""
+    """Return stored metric cards and outdoor VPD derived from paired readings."""
     readings = list(rows)
     cards: list[dict[str, Any]] = []
     for spec in WEATHER_METRICS:
         series = []
         for reading in readings:
-            value = _finite_number(reading.get(spec.key))
+            value = (
+                calculate_outdoor_vpd(reading.get("temperature"), reading.get("humidity"))
+                if spec.key == "vpd"
+                else _finite_number(reading.get(spec.key))
+            )
             timestamp = reading.get("timestamp")
             if value is not None and timestamp:
                 display_value = convert_value(
