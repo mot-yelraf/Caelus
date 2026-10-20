@@ -6,6 +6,9 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from packaging.markers import default_environment
+from packaging.requirements import Requirement
+from packaging.version import Version
 
 import caelus.app
 
@@ -264,3 +267,19 @@ def test_development_requirements_pin_the_ci_toolchain() -> None:
     assert "-r requirements.txt" in requirements
     for package in ("anyio", "httpx2", "playwright", "pytest", "ruff"):
         assert any(line.startswith(f"{package}==") for line in requirements)
+
+
+def test_starlette_pin_preserves_python_310_support() -> None:
+    environment = {**default_environment(), "python_version": "3.10", "python_full_version": "3.10.0"}
+    active_pins = []
+    for line in (ROOT / "requirements.txt").read_text(encoding="utf-8").splitlines():
+        if not line.startswith("starlette"):
+            continue
+        requirement = Requirement(line)
+        if requirement.marker is None or requirement.marker.evaluate(environment):
+            active_pins.extend(
+                Version(spec.version) for spec in requirement.specifier if spec.operator == "=="
+            )
+
+    assert len(active_pins) == 1, "Python 3.10 must have an exact Starlette pin"
+    assert active_pins[0] < Version("1.8.0"), "Starlette 1.8+ requires Python 3.11+"
