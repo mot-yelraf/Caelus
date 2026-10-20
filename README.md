@@ -336,6 +336,18 @@ python3 -m pip install -r requirements.txt
 python3 Caelus.py
 ```
 
+Dependency updates must continue to install and pass CI on Python 3.10 and
+3.13. CI checks the installed dependency graph with `pip check` and audits
+runtime dependencies on both versions. Keep both quality-and-tests checks
+required in GitHub branch protection before merging dependency updates.
+
+Starlette 1.8 and newer require Python 3.11, so Dependabot excludes those
+versions while Caelus supports Python 3.10. If an existing dependency PR pins
+Starlette 1.8 or newer, restore the compatible pin from `requirements.txt`
+(currently 1.6.0), or close that PR. Rerunning the same incompatible pin will
+not fix installation. Review this exclusion when raising the minimum Python
+version; review security alerts manually if a fix requires a newer interpreter.
+
 ## Attribution
 
 - System Architecture: TW Farley
