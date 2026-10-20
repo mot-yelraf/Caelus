@@ -341,12 +341,17 @@ Dependency updates must continue to install and pass CI on Python 3.10 and
 runtime dependencies on both versions. Keep both quality-and-tests checks
 required in GitHub branch protection before merging dependency updates.
 
-Starlette 1.8 and newer require Python 3.11, so Dependabot excludes those
+Starlette 1.8+ and Pillow 13+ require Python 3.11, so Dependabot excludes those
 versions while Caelus supports Python 3.10. If an existing dependency PR pins
-Starlette 1.8 or newer, restore the compatible pin from `requirements.txt`
-(currently 1.6.0), or close that PR. Rerunning the same incompatible pin will
-not fix installation. Review this exclusion when raising the minimum Python
-version; review security alerts manually if a fix requires a newer interpreter.
+an incompatible release, restore the compatible pin from `requirements.txt`
+(currently Starlette 1.7.0 and Pillow 12.3.0), or close that PR. Rerunning the
+same incompatible pin will not fix installation. Review these exclusions when
+raising the minimum Python version; review security alerts manually if a fix
+requires a newer interpreter.
+
+Dependabot groups Python minor and patch version updates into one weekly PR;
+major version updates remain separate for review. New update PRs are expected
+while version updates are enabled, even after existing PRs have been resolved.
 
 ## Attribution
 

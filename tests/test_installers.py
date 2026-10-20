@@ -269,11 +269,17 @@ def test_development_requirements_pin_the_ci_toolchain() -> None:
         assert any(line.startswith(f"{package}==") for line in requirements)
 
 
-def test_starlette_pin_preserves_python_310_support() -> None:
+@pytest.mark.parametrize(
+    ("package", "first_incompatible_version"),
+    [("starlette", "1.8.0"), ("pillow", "13.0.0")],
+)
+def test_dependency_pins_preserve_python_310_support(
+    package: str, first_incompatible_version: str
+) -> None:
     environment = {**default_environment(), "python_version": "3.10", "python_full_version": "3.10.0"}
     active_pins = []
     for line in (ROOT / "requirements.txt").read_text(encoding="utf-8").splitlines():
-        if not line.startswith("starlette"):
+        if not line.lower().startswith(package):
             continue
         requirement = Requirement(line)
         if requirement.marker is None or requirement.marker.evaluate(environment):
@@ -281,5 +287,7 @@ def test_starlette_pin_preserves_python_310_support() -> None:
                 Version(spec.version) for spec in requirement.specifier if spec.operator == "=="
             )
 
-    assert len(active_pins) == 1, "Python 3.10 must have an exact Starlette pin"
-    assert active_pins[0] < Version("1.8.0"), "Starlette 1.8+ requires Python 3.11+"
+    assert len(active_pins) == 1, f"Python 3.10 must have an exact {package} pin"
+    assert active_pins[0] < Version(first_incompatible_version), (
+        f"{package} {first_incompatible_version}+ requires Python 3.11+"
+    )
