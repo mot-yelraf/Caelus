@@ -8,11 +8,17 @@ updates:
       time: "09:00"
       timezone: America/Denver
     open-pull-requests-limit: 5
-    # Starlette 1.8+ drops Python 3.10, which Caelus still supports.
-    # Revisit this ceiling when raising the application's minimum Python.
+    # These releases drop Python 3.10, which Caelus still supports.
+    # Revisit these ceilings when raising the application's minimum Python.
     ignore:
       - dependency-name: starlette
         versions: [">=1.8.0"]
+      - dependency-name: pillow
+        versions: [">=13.0.0"]
+    groups:
+      python-minor-and-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]
     labels:
       - dependencies
 
