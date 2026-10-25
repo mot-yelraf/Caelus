@@ -85,7 +85,7 @@ def reading_for_display(
 ) -> dict[str, Any]:
     """Convert one normalized reading into configured display units."""
     result = convert_reading(reading, unit_system, pressure_unit)
-    for field in ("temperature", "dew_point", "wind_chill", "heat_index", "indoor_temperature", "wind_speed", "wind_gust", "daily_max_wind", "pressure", "absolute_pressure", "indoor_pressure", "indoor_absolute_pressure"):
+    for field in ("temperature", "feels_like", "dew_point", "wind_chill", "heat_index", "indoor_temperature", "wind_speed", "wind_gust", "daily_max_wind", "pressure", "absolute_pressure", "indoor_pressure", "indoor_absolute_pressure"):
         if isinstance(result.get(field), (int, float)):
             result[field] = round(float(result[field]), 1)
     for field in ("rain_rate", "rain_total", "rain_event", "rain_week", "rain_month", "rain_year", "rain_lifetime", "rain_increment"):
@@ -184,7 +184,7 @@ def register_routes(app: FastAPI) -> None:
                 "decisions": build_decisions(forecast),
                 "display_units": {
                     field: display_unit_for(field, settings.unit_system, settings.pressure_unit)
-                    for field in ("temperature", "pressure", "wind_speed", "wind_gust", "rain_total")
+                    for field in ("temperature", "feels_like", "wind_chill", "pressure", "wind_speed", "wind_gust", "rain_total")
                 },
                 "metric_display_options": metric_display_options(),
                 "custom_themes": manager.list_themes(),
@@ -506,7 +506,7 @@ def register_routes(app: FastAPI) -> None:
             "poll_interval_seconds": settings.poll_interval_seconds,
             "display_units": {
                 field: display_unit_for(field, settings.unit_system, settings.pressure_unit)
-                for field in ("temperature", "pressure", "wind_speed", "wind_gust", "rain_total")
+                for field in ("temperature", "feels_like", "wind_chill", "pressure", "wind_speed", "wind_gust", "rain_total")
             },
         }
 

@@ -69,12 +69,12 @@ if (Get-Command py -ErrorAction SilentlyContinue) {
     $PythonExe = (Get-Command python).Source
     $PythonArgs = @()
 } else {
-    throw "Python 3.10 or newer was not found. Install Python from python.org and enable the Python launcher."
+    throw "Python 3.11 or newer was not found. Install Python from python.org and enable the Python launcher."
 }
 
-& $PythonExe @PythonArgs -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)"
+& $PythonExe @PythonArgs -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)"
 if ($LASTEXITCODE -ne 0) {
-    throw "Python 3.10 or newer is required."
+    throw "Python 3.11 or newer is required."
 }
 
 $Directories = @(

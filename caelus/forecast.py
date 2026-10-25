@@ -15,6 +15,7 @@ from astral.sun import elevation as sun_elevation
 
 from caelus import __version__
 from caelus.settings import AppSettings
+from caelus.metrics import calculate_feels_like, calculate_wind_chill
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +30,7 @@ NWS_POINTS_URL = "https://api.weather.gov/points/{latitude:.4f},{longitude:.4f}"
 NWS_ALERTS_URL = "https://api.weather.gov/alerts/active"
 ALERT_CACHE_SECONDS = 60
 CACHE_SECONDS = 60 * 60
-CACHE_FORMAT = 9
+CACHE_FORMAT = 10
 
 
 def normalize_nws_alerts(payload: dict[str, Any], now: datetime) -> list[dict[str, str]]:
@@ -220,7 +221,7 @@ def _hour_record(
     temperature_f: Any,
     precipitation_probability: Any = 0,
     precipitation_mm: Any = 0,
-    wind_mph: Any = 0,
+    wind_mph: Any = None,
     humidity: Any = None,
     cloud_percent: Any = None,
     condition: str,
@@ -236,7 +237,11 @@ def _hour_record(
     if timestamp.tzinfo is None:
         timestamp = timestamp.replace(tzinfo=ZoneInfo(timezone_name))
     local = timestamp.astimezone(ZoneInfo(timezone_name))
+    feels_like = calculate_feels_like(temperature, humidity, wind_mph)
+    wind_chill = calculate_wind_chill(temperature, wind_mph)
     return {
+        "feels_like_f": round(feels_like, 1) if feels_like is not None else None,
+        "wind_chill_f": round(wind_chill, 1) if wind_chill is not None else None,
         "time": local.isoformat(),
         "label": local.strftime("%I %p").lstrip("0"),
         "temperature_f": round(temperature),
@@ -309,14 +314,14 @@ def normalize_met(payload: dict[str, Any], timezone_name: str) -> list[dict[str,
             probability = 85 if precip >= 1 else 55 if precip > 0 else 5
         condition = _met_condition(str(summary.get("symbol_code") or ""))
         temp_c = _safe_float(instant.get("air_temperature"))
-        wind_mps = _safe_float(instant.get("wind_speed")) or 0
+        wind_mps = _safe_float(instant.get("wind_speed"))
         row = _hour_record(
             time_value=item.get("time"),
             symbol=str(summary.get("symbol_code") or ""),
             temperature_f=_c_to_f(temp_c) if temp_c is not None else None,
             precipitation_probability=probability,
             precipitation_mm=precip,
-            wind_mph=_mps_to_mph(wind_mps),
+            wind_mph=_mps_to_mph(wind_mps) if wind_mps is not None else None,
             humidity=instant.get("relative_humidity"),
             cloud_percent=instant.get("cloud_area_fraction"),
             condition=condition,
@@ -340,7 +345,7 @@ def normalize_nws(payload: dict[str, Any], timezone_name: str) -> list[dict[str,
         wind_text = str(period.get("windSpeed") or "")
         wind_values = [_safe_float(part) for part in wind_text.replace("to", " ").split()]
         wind_values = [value for value in wind_values if value is not None]
-        wind = sum(wind_values) / len(wind_values) if wind_values else 0
+        wind = sum(wind_values) / len(wind_values) if wind_values else None
         probability = period.get("probabilityOfPrecipitation")
         if isinstance(probability, dict):
             probability = probability.get("value")
@@ -476,7 +481,15 @@ def _daily_detail(rows: list[dict[str, Any]], local_date: Any, timezone_name: st
     low_mph, high_mph = min(winds_mph), max(winds_mph)
     average_mps = sum(_mph_to_mps(value) for value in winds_mph) / len(winds_mph)
     condition = Counter(row["condition"] for row in rows).most_common(1)[0][0]
+    thermal_ranges = {}
+    for metric in ("feels_like", "wind_chill"):
+        values = [value for row in rows if (value := _safe_float(row.get(f"{metric}_f"))) is not None]
+        for bound, operation in (("low", min), ("high", max)):
+            value = operation(values) if values else None
+            thermal_ranges[f"{metric}_{bound}_f"] = value
+            thermal_ranges[f"{metric}_{bound}_c"] = round(_f_to_c(value), 1) if value is not None else None
     return {
+        **thermal_ranges,
         "date": local_date.isoformat(),
         "label": f"{local_date.strftime('%a %b')} {local_date.day}",
         "condition": condition,

@@ -113,6 +113,10 @@ def verify_dashboard(page: Page, base_url: str) -> None:
     expect(page.locator(".forecast-history-label")).to_have_text("Historical Min, Max, Avg 1991–2026 for 18-Sep")
     expect(page.locator('[data-history-value="temperature_c"]')).to_have_text("Min 50.0°F (1995) Max 86.0°F (2012) Avg 66.0°F")
     expect(page.locator('[data-history-value="rain_mm"]')).to_have_text("Min 0.00 in (1995) Max 1.00 in (2012) Avg 0.08 in")
+    expect(page.locator(".forecast-hour-feels_like").first).to_have_text("FL 38°F")
+    expect(page.locator(".forecast-hour-wind_chill").first).to_have_text("WC 6°F")
+    expect(page.locator(".forecast-day-feels_like").first).to_have_text("FL 0–38°F")
+    expect(page.locator(".forecast-day-wind_chill").first).to_have_text("WC -10–6°F")
     expect(page.locator(".forecast-hour-humidity").first).to_have_text("RH 48%")
     expect(page.locator(".forecast-hour-wind").first).to_have_text("Wind 8 mph")
     expect(page.locator(".forecast-day")).to_have_count(6)
@@ -375,6 +379,14 @@ def verify_station_footer(page: Page, base_url: str) -> None:
     page.route("**/api/ecowitt/status", lambda route: route.fulfill(json=status))
     page.clock.install()
     page.goto(base_url, wait_until="domcontentloaded")
+    page.route("**/api/readings/current", lambda route: route.fulfill(json={
+        "reading": {"temperature": 20, "feels_like": 20, "wind_chill": 6.2},
+        "display_units": {"temperature": "°F", "feels_like": "°F", "wind_chill": "°F"},
+        "poll_interval_seconds": 300,
+    }))
+    page.clock.fast_forward(301_000)
+    expect(page.locator('[data-reading-field="feels_like"]')).to_have_text("20 °F")
+    expect(page.locator('[data-reading-field="wind_chill"]')).to_have_text("6.2 °F")
     footer = page.locator(".readings-footer")
     expect(footer.locator("[data-battery-status]")).to_have_attribute("aria-label", "Battery Status OK")
     expect(footer.locator("[data-battery-status]")).to_have_text("Battery Status")
@@ -385,6 +397,11 @@ def verify_station_footer(page: Page, base_url: str) -> None:
         bounds = footer.bounding_box()
         assert bounds and bounds["x"] >= 0 and bounds["x"] + bounds["width"] <= width
         footer.screenshot(path=RESULTS / f"station-footer-{width}.png")
+        derived = page.locator(".derived-temperatures")
+        expect(derived).to_be_visible()
+        bounds = derived.bounding_box()
+        assert bounds and bounds["x"] >= 0 and bounds["x"] + bounds["width"] <= width
+        page.locator(".readings-panel").screenshot(path=RESULTS / f"derived-temperatures-{width}.png")
     for reporting, battery in ((True, "LOW"), (False, "UNKNOWN"), (True, "OK")):
         status["station"] = {"reporting": reporting, "battery_status": battery}
         page.clock.fast_forward(301_000)

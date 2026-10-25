@@ -7,7 +7,7 @@ MPH_TO_KMH = 1.609344
 INCH_TO_MM = 25.4
 
 TEMPERATURE_FIELDS = {
-    "temperature", "dew_point", "wind_chill", "heat_index", "indoor_temperature"
+    "temperature", "feels_like", "dew_point", "wind_chill", "heat_index", "indoor_temperature"
 }
 WIND_FIELDS = {"wind_speed", "wind_gust", "daily_max_wind"}
 RAIN_FIELDS = {

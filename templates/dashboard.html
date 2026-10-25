@@ -33,7 +33,12 @@
       <section class="conditions-row" id="conditions" aria-label="Weather overview">
         <article class="glass-card readings-panel">
           <div class="card-heading"><div><p class="eyebrow">Current readings</p><h2>Right outside</h2></div><span class="weather-badge">Live</span></div>
-          <div class="reading-hero"><div class="weather-symbol compact-symbol" aria-hidden="true"><span class="symbol-sun"></span><span class="symbol-cloud"></span></div><div><span class="temperature-number" data-reading-field="temperature">{{ reading(latest.get('temperature')) }}</span><span class="temperature-unit" data-reading-unit="temperature">{{ display_units.temperature }}</span><p>Outdoor temperature</p></div></div>
+          <div class="reading-hero"><div class="weather-symbol compact-symbol" aria-hidden="true"><span class="symbol-sun"></span><span class="symbol-cloud"></span></div><div><span class="temperature-number" data-reading-field="temperature">{{ reading(latest.get('temperature')) }}</span><span class="temperature-unit" data-reading-unit="temperature">{{ display_units.temperature }}</span><p>Outdoor temperature</p>
+            <dl class="derived-temperatures">
+              <div title="Apparent temperature from temperature, humidity and wind in the shade"><dt>Feels Like</dt><dd data-reading-field="feels_like" data-reading-suffix=" {{ display_units.feels_like }}">{{ reading(latest.get('feels_like'), ' ' ~ display_units.feels_like) }}</dd></div>
+              <div title="Calculated at 50°F (10°C) or below with wind above 3 mph (4.8 km/h); otherwise unavailable"><dt>Wind Chill</dt><dd data-reading-field="wind_chill" data-reading-suffix=" {{ display_units.wind_chill }}">{{ reading(latest.get('wind_chill'), ' ' ~ display_units.wind_chill) }}</dd></div>
+            </dl>
+          </div></div>
           <div class="current-reading-list">
             <div><span>Humidity</span><strong data-reading-field="humidity" data-reading-suffix="%">{{ reading(latest.get('humidity'), '%') }}</strong></div>
             <div><span>Pressure</span><strong data-reading-field="pressure" data-reading-suffix=" {{ display_units.pressure }}">{{ reading(latest.get('pressure'), ' ' ~ display_units.pressure) }}</strong></div>
@@ -80,6 +85,7 @@
           </div>
           {% if forecast.ok %}
             {% set hour_count = forecast.hours | length %}
+            <p class="forecast-metric-key">FL: Feels Like · WC: Wind Chill</p>
             <div class="hourly-carousel" data-hourly-carousel data-page-size="8">
               <button class="hourly-page-button hourly-page-previous" type="button" data-hourly-previous aria-label="Show previous forecast hour" hidden>&lt;</button>
               <div class="hourly-strip">
@@ -87,6 +93,9 @@
                   <div class="forecast-hour" data-hourly-index="{{ loop.index0 }}"{% if loop.index0 >= 8 %} hidden{% endif %}>
                     <time>{{ hour.label }}</time><img class="forecast-glyph" src="/static/weather-glyphs/{{ hour.icon_key }}.svg?v={{ version }}" alt="{{ hour.condition }}" width="28" height="28" />
                     <strong>{{ ((hour.temperature_f - 32) * 5 / 9) | round | int if metric_display else hour.temperature_f }}{{ temperature_unit }}</strong>
+                    {% for key, label, abbreviation in [('feels_like', 'Feels Like', 'FL'), ('wind_chill', 'Wind Chill', 'WC')] %}
+                    <small class="forecast-hour-{{ key }}" title="{{ label }}" aria-label="{{ label }}">{{ abbreviation }} {% set value = hour.get(key ~ '_f') %}{% if value is not none %}{{ (((value - 32) * 5 / 9) if metric_display else value) | round | int }}{{ temperature_unit }}{% else %}—{% endif %}</small>
+                    {% endfor %}
                     <small class="forecast-hour-humidity">RH {% if hour.get('humidity') is not none %}{{ hour.humidity }}%{% else %}—{% endif %}</small>
                     <small class="forecast-hour-wind">Wind {% if hour.get('wind_mph') is not none %}{{ (hour.wind_mph * 1.609344) | round | int if metric_display else hour.wind_mph }} {{ 'km/h' if metric_display else 'mph' }}{% else %}—{% endif %}</small>
                     <small>{{ hour.precip_label | replace(' chance', '') }} {{ hour.precip_probability }}%</small>
@@ -104,6 +113,9 @@
                     <time datetime="{{ day.date }}">{{ day.label }}</time>
                     <img class="forecast-glyph" src="/static/weather-glyphs/{{ day.icon_key }}.svg?v={{ version }}" alt="{{ day.condition }}" width="26" height="26" />
                     <strong aria-label="Temperature minimum to maximum">{{ day.low_c if metric_display else day.low_f }}–{{ day.high_c if metric_display else day.high_f }}{{ temperature_unit }}</strong>
+                    {% for key, label, abbreviation in [('feels_like', 'Feels Like', 'FL'), ('wind_chill', 'Wind Chill', 'WC')] %}
+                    <small class="forecast-day-{{ key }}" title="{{ label }} minimum to maximum" aria-label="{{ label }} minimum to maximum">{{ abbreviation }} {% set low = day.get(key ~ '_low_c' if metric_display else key ~ '_low_f') %}{% set high = day.get(key ~ '_high_c' if metric_display else key ~ '_high_f') %}{% if low is not none and high is not none %}{{ low | round | int }}–{{ high | round | int }}{{ temperature_unit }}{% else %}—{% endif %}</small>
+                    {% endfor %}
                     <small class="forecast-day-humidity">RH {% if day.humidity_low is not none and day.humidity_high is not none %}{{ day.humidity_low }}–{{ day.humidity_high }}%{% else %}—{% endif %}</small>
                     <small class="forecast-day-wind">Wind {% if day.wind_low_mph is not none and day.wind_high_mph is not none %}{% if metric_display %}{{ (day.wind_low_mph * 1.609344) | round | int }}–{{ (day.wind_high_mph * 1.609344) | round | int }} km/h{% else %}{{ day.wind_low_mph }}–{{ day.wind_high_mph }} mph{% endif %}{% else %}—{% endif %}</small>
                     <small class="forecast-day-rain">{{ day.precip_label | replace(' chance', '') }} {{ day.precip_probability }}%</small>

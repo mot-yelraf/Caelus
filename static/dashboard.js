@@ -1646,7 +1646,7 @@
       const maximum = converted[converted.length - 1];
       return [minimum, maximum, colors, converted.map((value) => (value - minimum) / (maximum - minimum))];
     };
-    if (["temperature", "indoor_temperature", "dew_point", "wind_chill", "heat_index"].includes(metric.key)) {
+    if (["temperature", "feels_like", "indoor_temperature", "dew_point", "wind_chill", "heat_index"].includes(metric.key)) {
       return zoned([-20, 0, 10, 30, 40, 60],
         ["#0000ff", "#3399ff", "#66cc66", "#ffcc00", "#ff0000"],
         metric.unit === "°F" ? (value) => value * 9 / 5 + 32 : undefined);

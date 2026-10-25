@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 from fastapi import FastAPI
 
 from caelus.gateway import map_gateway_reading
+from caelus.metrics import calculate_feels_like, calculate_heat_index, calculate_wind_chill
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +73,11 @@ class GatewayPoller:
             )
             if not mapped:
                 return None
+            mapped["feels_like"] = calculate_feels_like(
+                mapped.get("temperature"), mapped.get("humidity"), mapped.get("wind_speed")
+            )
+            mapped["heat_index"] = calculate_heat_index(mapped.get("temperature"), mapped.get("humidity"))
+            mapped["wind_chill"] = calculate_wind_chill(mapped.get("temperature"), mapped.get("wind_speed"))
             timestamp = datetime.now(timezone.utc).replace(tzinfo=None)
             latest_reader = getattr(self.data_logger, "get_latest", None)
             latest = latest_reader() if callable(latest_reader) else None

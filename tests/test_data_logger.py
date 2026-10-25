@@ -37,6 +37,8 @@ def test_export_can_convert_normalized_values_to_metric_display_units(tmp_path) 
         now,
         {
             "temperature": 68.0,
+            "feels_like": 77.0,
+            "wind_chill": 32.0,
             "wind_speed": 10.0,
             "rain_total": 1.0,
             "indoor_pressure": 29.92,
@@ -46,6 +48,8 @@ def test_export_can_convert_normalized_values_to_metric_display_units(tmp_path) 
     row = json.loads(logger.export_readings(1, "json", "metric", "auto"))[0]
 
     assert row["temperature"] == 20.0
+    assert row["feels_like"] == 25.0
+    assert row["wind_chill"] == 0.0
     assert row["wind_speed"] == 16.09344
     assert row["rain_total"] == 25.4
     assert row["indoor_pressure"] == pytest.approx(1013.21, abs=0.01)
@@ -94,3 +98,23 @@ def test_readings_since_returns_elapsed_window_in_chronological_order(tmp_path) 
     rows = logger.get_readings_since(now - timedelta(hours=24))
 
     assert [row["temperature"] for row in rows] == [65.0, 70.0]
+
+
+def test_feels_like_migration_preserves_existing_rows(tmp_path):
+    from contextlib import closing
+
+    path = tmp_path / 'old.db'
+    logger = DataLogger(str(path))
+    timestamp = datetime(2026, 1, 1)
+    logger.log_reading(timestamp, {'temperature': 20, 'wind_chill': 7})
+    # Reproduce the immediately preceding schema with no feels_like column.
+    with closing(sqlite3.connect(path)) as connection:
+        connection.execute('ALTER TABLE readings DROP COLUMN feels_like')
+        connection.commit()
+    migrated = DataLogger(str(path))
+    latest = migrated.get_latest()
+    assert latest['timestamp'] == timestamp.isoformat()
+    assert latest['temperature'] == 20
+    assert latest['wind_chill'] == 7
+    assert latest['feels_like'] is None
+    assert DataLogger(str(path)).get_latest() == latest
