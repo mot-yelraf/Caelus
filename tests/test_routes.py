@@ -208,6 +208,8 @@ def test_current_reading_api_uses_configured_refresh_interval() -> None:
         "poll_interval_seconds": 120,
         "display_units": {
             "temperature": "°F",
+            "feels_like": "°F",
+            "wind_chill": "°F",
             "pressure": "inHg",
             "wind_speed": "mph",
             "wind_gust": "mph",
@@ -279,7 +281,7 @@ def test_dashboard_includes_scene_themes_settings_modal_and_lunar_cycle() -> Non
     assert 'href="#conditions"' not in response.text
     assert 'href="#map"' not in response.text
     assert response.text.count("data-graph-hours=") == 8
-    assert response.text.count("data-graph-metric") == 27
+    assert response.text.count("data-graph-metric") == 28
     assert "data-render-graph" not in response.text
     assert "6-day details" not in response.text
     assert f'<p class="eyebrow">Caelus {__version__}</p>' in response.text
@@ -1050,3 +1052,58 @@ def test_current_readings_footer_uses_runtime_station_health():
     assert 'data-battery-status="UNKNOWN"' in response.text
     assert 'data-station-state-label>Station offline' in response.text
     assert 'data-reading-field="temperature">0.0' in response.text
+
+
+@pytest.mark.parametrize('system,expected_feels,expected_chill,unit', [
+    ('imperial', 20.0, 6.2, '°F'), ('metric', -6.7, -14.3, '°C'),
+])
+def test_derived_temperatures_render_and_refresh(system, expected_feels, expected_chill, unit):
+    app = make_app()
+    app.state.settings.unit_system = system
+    app.state.data_logger.get_latest = lambda: {
+        'temperature': 20, 'feels_like': 20, 'wind_chill': 6.2189,
+    }
+    client = TestClient(app)
+    html = client.get('/').text
+    assert f'{expected_feels} {unit}</dd>' in html
+    assert f'{expected_chill} {unit}</dd>' in html
+    payload = client.get('/api/readings/current').json()
+    assert payload['reading']['feels_like'] == expected_feels
+    assert payload['reading']['wind_chill'] == expected_chill
+    assert payload['display_units']['feels_like'] == unit
+    assert payload['display_units']['wind_chill'] == unit
+
+
+@pytest.mark.parametrize('unit_system', ['imperial', 'metric'])
+def test_forecast_thermal_values_use_compact_labels_and_selected_units(unit_system):
+    from datetime import date
+    from types import SimpleNamespace
+    from caelus.forecast import _daily_detail, normalize_open_meteo
+
+    rows = normalize_open_meteo({'hourly': {
+        'time': ['2026-10-26T06:00Z', '2026-10-26T12:00Z'],
+        'temperature_2m': [20, 41], 'relative_humidity_2m': [70, 91],
+        'wind_speed_10m': [15, 0.2],
+    }}, 'UTC')
+    day = _daily_detail(rows, date(2026, 10, 26), 'UTC')
+    forecast = {'ok': True, 'provider_label': 'Fixture', 'condition': 'Clear',
+                'icon_key': 'sunny', 'high_f': 41, 'low_f': 20, 'high_c': 5, 'low_c': -6.7,
+                'precip_probability': 0, 'precip_label': 'Rain chance',
+                'hours': rows, 'days': [day]}
+    app = make_app()
+    app.state.settings.unit_system = unit_system
+    app.state.forecast_service = SimpleNamespace(get=lambda settings: forecast)
+    html = TestClient(app).get('/').text
+    assert 'FL: Feels Like · WC: Wind Chill' in html
+    assert 'title="Feels Like" aria-label="Feels Like">FL ' in html
+    assert 'title="Wind Chill" aria-label="Wind Chill">WC ' in html
+    assert 'aria-label="Feels Like minimum to maximum">FL ' in html
+    assert '>WC —</small>' in html
+    if unit_system == 'imperial':
+        assert '>FL 6°F</small>' in html
+        assert '>FL 6–38°F</small>' in html
+        assert '>WC 6°F</small>' in html
+    else:
+        assert '>FL -14°C</small>' in html
+        assert '>FL -14–4°C</small>' in html
+        assert '>WC -14°C</small>' in html

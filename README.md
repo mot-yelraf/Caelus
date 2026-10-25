@@ -14,6 +14,26 @@ For illustrated setup and operating instructions, see the
 - Additively migrated SQLite weather history, including normalized temperature,
   humidity, pressure, wind, UV/solar, rain-rate, interval-rain, and cumulative
   rain metrics
+- Locally calculated Feels Like (temperature/RH/wind) and Wind Chill (temperature/wind)
+  displayed below the current temperature and persisted with each new observation.
+  Feels Like uses the [Bureau of Meteorology's apparent-temperature formula](https://www.bom.gov.au/info/thermal_stress/#atapproximation)
+  across cool and hot conditions, using station wind without a sensor-height
+  correction and assuming shade. [NWS wind chill](https://www.weather.gov/epz/wxcalc_windchill)
+  applies at ≤50°F with wind >3 mph; outside that range it is stored as NULL
+  and displayed as a dash. Missing or invalid required inputs also yield NULL.
+  Values are stored in °F and converted for metric display and exports. Existing
+  history is preserved without backfilling; new Wind Chill values are calculated
+  locally instead of using gateway-reported wind chill.
+- Heat Index is calculated locally from station temperature/RH and stored in the
+  existing heat-index column, using the NWS Rothfusz formula and humidity
+  adjustments when temperature is at least 80°F and the NWS screening value
+  reaches 80°F; otherwise NULL. It is available in history graphs and exports.
+- Hourly forecasts include Feels Like and Wind Chill calculated from each
+  provider's predicted conditions. Daily cards show ranges of valid calculated
+  values within that day; Wind Chill excludes hours outside its applicable range.
+  Compact forecast labels use FL (Feels Like) and WC (Wind Chill), with a legend.
+  Missing required inputs display a dash. Forecast values remain separate from
+  recorded station readings and follow the selected °F/°C display units.
 - Immersive current-conditions dashboard with wind, rain, atmosphere, indoor
   metrics, and a Windy iframe map
 - Full-width Windy map that defaults to radar and remains interaction-locked

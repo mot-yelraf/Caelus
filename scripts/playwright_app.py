@@ -56,7 +56,7 @@ class BrowserTestForecast:
             "precip_probability": 44, "precip_label": "Rain chance",
             "hours": [
                 {"label": f"{hour % 12 or 12} {'AM' if hour < 12 else 'PM'}",
-                 "icon_key": "sunny", "condition": "Clear", "temperature_f": 66 + hour % 12, "humidity": 48, "wind_mph": 8,
+                 "icon_key": "sunny", "condition": "Clear", "temperature_f": 66 + hour % 12, "feels_like_f": 38.4, "wind_chill_f": 6.2, "humidity": 48, "wind_mph": 8,
                  "precip_probability": 4, "precip_label": "Rain chance"}
                 for hour in range(24)
             ],
@@ -65,6 +65,10 @@ class BrowserTestForecast:
                  "icon_key": "sunny", "condition": "Clear", "summary": "Mostly clear early",
                  "high_f": 88, "low_f": 64, "high_c": 31, "low_c": 18,
                  "humidity_low": 30, "humidity_high": 85,
+                 "feels_like_low_f": 0, "feels_like_high_f": 38.4,
+                 "feels_like_low_c": -17.8, "feels_like_high_c": 3.6,
+                 "wind_chill_low_f": -10, "wind_chill_high_f": 6.2,
+                 "wind_chill_low_c": -23.3, "wind_chill_high_c": -14.3,
                  "wind_low_mph": 0, "wind_high_mph": 12, "wind_descriptor": "light",
                  "precip_probability": 32, "precip_label": "Rain chance"}
                 for day, weekday in enumerate(("Thu", "Fri", "Sat", "Sun", "Mon", "Tue"))

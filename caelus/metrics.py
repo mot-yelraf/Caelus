@@ -18,6 +18,7 @@ class MetricSpec:
 
 WEATHER_METRICS = (
     MetricSpec("temperature", "Outdoor temperature", ""),
+    MetricSpec("feels_like", "Feels like", ""),
     MetricSpec("dew_point", "Dew point", ""),
     MetricSpec("wind_chill", "Wind chill", ""),
     MetricSpec("heat_index", "Heat index", ""),
@@ -98,6 +99,76 @@ def calculate_outdoor_vpd(temperature_f: Any, relative_humidity: Any) -> float |
     except OverflowError:
         return None
     return deficit if math.isfinite(deficit) else None
+
+
+def calculate_feels_like(
+    temperature_f: Any, relative_humidity: Any, wind_mph: Any
+) -> float | None:
+    """Return Steadman apparent temperature in °F from temperature, RH and wind.
+
+    Uses the Bureau of Meteorology's shade approximation (no solar radiation):
+    https://www.bom.gov.au/info/thermal_stress/#atapproximation.
+    Wind is the station measurement, without adjustment for sensor height.
+    """
+    temperature = _finite_number(temperature_f)
+    humidity = _finite_number(relative_humidity)
+    wind = _finite_number(wind_mph)
+    if (temperature is None or humidity is None or wind is None
+            or not 0 <= humidity <= 100 or wind < 0):
+        return None
+    temperature_c = (temperature - 32) * 5 / 9
+    if temperature_c <= -237.7:
+        return None
+    try:
+        vapor_pressure_hpa = humidity / 100 * 6.105 * math.exp(
+            17.27 * temperature_c / (237.7 + temperature_c)
+        )
+        apparent_c = temperature_c + 0.33 * vapor_pressure_hpa - 0.70 * wind * 0.44704 - 4
+        apparent_f = apparent_c * 9 / 5 + 32
+    except OverflowError:
+        return None
+    return apparent_f if math.isfinite(apparent_f) else None
+
+
+def calculate_heat_index(temperature_f: Any, relative_humidity: Any) -> float | None:
+    """Return NWS Rothfusz heat index in °F for hot conditions, else unavailable.
+
+    Uses the screening equation and humidity adjustments documented at
+    https://www.wpc.ncep.noaa.gov/html/heatindex_equation.shtml.
+    """
+    temperature = _finite_number(temperature_f)
+    humidity = _finite_number(relative_humidity)
+    if temperature is None or humidity is None or not 0 <= humidity <= 100:
+        return None
+    simple = 0.5 * (temperature + 61 + (temperature - 68) * 1.2 + humidity * 0.094)
+    if temperature < 80 or (simple + temperature) / 2 < 80:
+        return None
+    try:
+        index = (
+            -42.379 + 2.04901523 * temperature + 10.14333127 * humidity
+            - 0.22475541 * temperature * humidity - 0.00683783 * temperature**2
+            - 0.05481717 * humidity**2 + 0.00122874 * temperature**2 * humidity
+            + 0.00085282 * temperature * humidity**2
+            - 0.00000199 * temperature**2 * humidity**2
+        )
+        if humidity < 13 and 80 <= temperature <= 112:
+            index -= (13 - humidity) / 4 * math.sqrt((17 - abs(temperature - 95)) / 17)
+        elif humidity > 85 and 80 <= temperature <= 87:
+            index += (humidity - 85) / 10 * (87 - temperature) / 5
+    except OverflowError:
+        return None
+    return index if math.isfinite(index) else None
+
+
+def calculate_wind_chill(temperature_f: Any, wind_mph: Any) -> float | None:
+    """Return NWS wind chill in °F at ≤50°F and wind >3 mph, else unavailable."""
+    temperature = _finite_number(temperature_f)
+    wind = _finite_number(wind_mph)
+    if temperature is None or wind is None or temperature > 50 or wind <= 3:
+        return None
+    wind_factor = wind**0.16
+    chill = 35.74 + 0.6215 * temperature - 35.75 * wind_factor + 0.4275 * temperature * wind_factor
+    return chill if math.isfinite(chill) else None
 
 
 def _sample_series(

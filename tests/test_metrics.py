@@ -280,3 +280,56 @@ def test_rain_metric_cards_never_expose_negative_values() -> None:
     rain = cards[0]
     assert [point["value"] for point in rain["series"]] == [0.0, 0.25]
     assert rain["stats"]["min"] == 0.0
+
+
+@pytest.mark.parametrize(('temperature', 'humidity', 'wind', 'expected'), [
+    (41, 91, 0, 38.51), (41, 91, 0.2, 38.40), (45, 72, 0, 42.14),
+    (20, 70, 15, 5.89), (90, 70, 0, 102.75), (0, 0, 0, -7.2),
+    (75, 100, 0, 85.36), (85, 90, 0, 99.70),
+])
+def test_feels_like_uses_apparent_temperature_in_cool_and_hot_weather(temperature, humidity, wind, expected):
+    from caelus.metrics import calculate_feels_like
+
+    assert calculate_feels_like(temperature, humidity, wind) == pytest.approx(expected, abs=0.02)
+
+
+@pytest.mark.parametrize(('temperature', 'humidity', 'wind'), [
+    (None, 50, 0), (70, None, 0), (70, -1, 0), (70, 101, 0), ('bad', 50, 0),
+    (float('nan'), 50, 0), (70, float('inf'), 0), (True, 50, 0),
+    (41, 91, None), (41, 91, -1), (41, 91, float('nan')),
+    (41, 91, float('inf')), (41, 91, True), (41, 91, 'bad'),
+    (-400, 91, 0), (float('1e308'), 91, 0),
+])
+def test_feels_like_requires_valid_paired_inputs(temperature, humidity, wind):
+    from caelus.metrics import calculate_feels_like
+
+    assert calculate_feels_like(temperature, humidity, wind) is None
+
+
+@pytest.mark.parametrize(('temperature', 'wind', 'expected'), [
+    (20, 15, 6.22), (0, 10, -15.93), (50, 4, 48.88),
+    (50.1, 10, None), (30, 3, None), (30, 0, None), (30, -1, None),
+    (None, 10, None), (30, None, None), ('bad', 10, None),
+    (30, float('inf'), None), (False, 10, None),
+])
+def test_wind_chill_validity_and_reference_values(temperature, wind, expected):
+    from caelus.metrics import calculate_wind_chill
+
+    result = calculate_wind_chill(temperature, wind)
+    if expected is None:
+        assert result is None
+    else:
+        assert result == pytest.approx(expected, abs=0.02)
+
+
+@pytest.mark.parametrize(('temperature', 'humidity', 'expected'), [
+    (90, 70, 105.92), (100, 10, 94.12), (85, 90, 101.78),
+    (41, 91, None), (79, 100, None), (80, 0, None),
+    (None, 70, None), (90, None, None), (90, 101, None),
+    (90, -1, None), (float('nan'), 50, None), ('bad', 50, None),
+])
+def test_locally_derived_heat_index(temperature, humidity, expected):
+    from caelus.metrics import calculate_heat_index
+
+    result = calculate_heat_index(temperature, humidity)
+    assert result is None if expected is None else result == pytest.approx(expected, abs=0.02)

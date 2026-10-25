@@ -1,0 +1,101 @@
+{
+  "open_meteo": {
+    "hourly": {
+      "time": [
+        "2026-10-26T06:00:00Z",
+        "2026-10-26T12:00:00Z",
+        "2026-10-26T18:00:00Z"
+      ],
+      "temperature_2m": [
+        20,
+        41,
+        90
+      ],
+      "relative_humidity_2m": [
+        70,
+        91,
+        70
+      ],
+      "wind_speed_10m": [
+        15,
+        0.2,
+        0
+      ]
+    }
+  },
+  "met_no": {
+    "properties": {
+      "timeseries": [
+        {
+          "time": "2026-10-26T06:00:00Z",
+          "data": {
+            "instant": {
+              "details": {
+                "air_temperature": -6.666666666666667,
+                "relative_humidity": 70,
+                "wind_speed": 6.7056
+              }
+            }
+          }
+        },
+        {
+          "time": "2026-10-26T12:00:00Z",
+          "data": {
+            "instant": {
+              "details": {
+                "air_temperature": 5.0,
+                "relative_humidity": 91,
+                "wind_speed": 0.089408
+              }
+            }
+          }
+        },
+        {
+          "time": "2026-10-26T18:00:00Z",
+          "data": {
+            "instant": {
+              "details": {
+                "air_temperature": 32.22222222222222,
+                "relative_humidity": 70,
+                "wind_speed": 0.0
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "us": {
+    "properties": {
+      "periods": [
+        {
+          "startTime": "2026-10-26T06:00:00Z",
+          "temperature": 20,
+          "temperatureUnit": "F",
+          "relativeHumidity": {
+            "value": 70
+          },
+          "windSpeed": "15 mph"
+        },
+        {
+          "startTime": "2026-10-26T12:00:00Z",
+          "temperature": 41,
+          "temperatureUnit": "F",
+          "relativeHumidity": {
+            "value": 91
+          },
+          "windSpeed": "0.2 mph"
+        },
+        {
+          "startTime": "2026-10-26T18:00:00Z",
+          "temperature": 90,
+          "temperatureUnit": "F",
+          "relativeHumidity": {
+            "value": 70
+          },
+          "windSpeed": "0 mph"
+        }
+      ]
+    }
+  }
+}

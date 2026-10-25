@@ -10,6 +10,7 @@ from caelus.units import convert_reading
 
 
 ADDITIONAL_READING_COLUMNS = {
+    "feels_like": "REAL",
     "dew_point": "REAL",
     "wind_chill": "REAL",
     "heat_index": "REAL",
@@ -105,8 +106,9 @@ class DataLogger:
                     rain_lifetime,
                     light_intensity,
                     indoor_pressure,
-                    indoor_absolute_pressure
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    indoor_absolute_pressure,
+                    feels_like
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     timestamp.isoformat(),
@@ -136,6 +138,7 @@ class DataLogger:
                     payload.get("light_intensity"),
                     payload.get("indoor_pressure"),
                     payload.get("indoor_absolute_pressure"),
+                    payload.get("feels_like"),
                 ),
             )
             connection.commit()

@@ -241,3 +241,62 @@ def test_overlapping_poll_requests_are_serialized() -> None:
         0.1,
         0.0,
     ]
+
+
+@pytest.mark.parametrize('modern', [False, True])
+def test_poll_persists_locally_derived_temperatures(tmp_path, modern):
+    from caelus.data_logger import DataLogger
+
+    poller = make_poller()
+    poller.data_logger = DataLogger(str(tmp_path / 'weather.db'))
+    if modern:
+        payload = {'common_list': [
+            {'id': '0x02', 'val': '20 F'},
+            {'id': '0x07', 'val': '70%'},
+            {'id': '0x0B', 'val': '15 mph'},
+            {'id': '0x04', 'val': '99 F'},
+        ]}
+    else:
+        payload = {'tempf': 20, 'hum': 70, 'windsp': 15}
+    poller.gateway.fetch = lambda: payload
+    reading = poller.poll_once()
+    latest = poller.data_logger.get_latest()
+    assert reading['feels_like'] == latest['feels_like'] == pytest.approx(5.89, abs=0.01)
+    assert reading['wind_chill'] == latest['wind_chill'] == pytest.approx(6.22, abs=0.01)
+    payload.clear()
+    payload.update({'tempf': 90, 'hum': 70, 'windsp': 0})
+    poller.poll_once()
+    latest = poller.data_logger.get_latest()
+    assert latest['feels_like'] == pytest.approx(102.75, abs=0.01)
+    assert latest['wind_chill'] is None
+
+
+def test_cool_humid_reading_records_apparent_temperature(tmp_path):
+    from caelus.data_logger import DataLogger
+
+    poller = make_poller()
+    poller.data_logger = DataLogger(str(tmp_path / 'weather.db'))
+    payload = {'tempf': 41, 'hum': 91, 'windsp': 0.2}
+    poller.gateway.fetch = lambda: payload
+    poller.poll_once()
+    latest = poller.data_logger.get_latest()
+    assert latest['feels_like'] == pytest.approx(38.40, abs=0.01)
+    assert latest['wind_chill'] is None
+    payload.pop('windsp')
+    poller.poll_once()
+    assert poller.data_logger.get_latest()['feels_like'] is None
+
+
+def test_poll_derives_and_persists_heat_index_without_gateway_value(tmp_path):
+    from caelus.data_logger import DataLogger
+
+    poller = make_poller()
+    poller.data_logger = DataLogger(str(tmp_path / 'weather.db'))
+    payload = {'tempf': 90, 'hum': 70, 'windsp': 0}
+    poller.gateway.fetch = lambda: payload
+    reading = poller.poll_once()
+    assert reading['heat_index'] == pytest.approx(105.92, abs=0.01)
+    assert poller.data_logger.get_latest()['heat_index'] == reading['heat_index']
+    payload['tempf'] = 41
+    poller.poll_once()
+    assert poller.data_logger.get_latest()['heat_index'] is None

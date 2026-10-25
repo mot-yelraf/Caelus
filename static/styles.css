@@ -320,6 +320,10 @@ a { color: inherit; }
 .reading-hero > div:last-child { min-width: 0; text-align: left; white-space: nowrap; }
 .reading-hero .temperature-number { font-size: clamp(4rem, 6vw, 6rem); }
 .reading-hero p { margin: 0.65rem 0 0; color: var(--muted); font-size: 0.72rem; }
+.derived-temperatures { display: flex; flex-wrap: wrap; gap: 0.5rem 1.25rem; margin: 1rem 0; white-space: normal; }
+.derived-temperatures div { min-width: 0; }
+.derived-temperatures dt { color: var(--muted); font-size: 0.65rem; }
+.derived-temperatures dd { margin: 0.2rem 0 0; font-size: 0.95rem; font-weight: 700; white-space: nowrap; }
 .weather-symbol.compact-symbol { position: relative; top: auto; left: auto; width: 6.5rem; height: 6rem; transform: none; }
 .compact-symbol .symbol-sun { width: 4.25rem; height: 4.25rem; }
 .compact-symbol .symbol-cloud { width: 5.5rem; height: 2.1rem; bottom: 0.5rem; }
@@ -350,6 +354,7 @@ a { color: inherit; }
 .hourly-page-button { min-width: 0; padding: 0; border: 0; border-radius: 0.5rem; background: rgba(255,255,255,.05); color: var(--muted); font-size: 0.72rem; line-height: 1; cursor: pointer; }
 .hourly-page-button:hover, .hourly-page-button:focus-visible { background: rgba(255,255,255,.12); color: var(--ink); outline: 1px solid var(--accent-2); }
 .hourly-page-status { margin: 0.2rem 1.4rem 0; color: var(--muted); font-size: 0.48rem; letter-spacing: 0.04em; text-align: center; }
+.forecast-metric-key { margin: 0.4rem 0; color: var(--muted); font-size: 0.6rem; text-align: right; }
 .forecast-hour { min-width: 0; text-align: center; padding: 0.3rem 0.2rem; border-left: 1px solid var(--line); }
 .forecast-hour:first-child { border-left: 0; }
 .forecast-hour time, .forecast-hour strong, .forecast-hour small, .forecast-hour > span { display: block; }

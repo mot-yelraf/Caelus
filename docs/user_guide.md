@@ -8,7 +8,7 @@ Caelus is a local weather dashboard and history service for an Ecowitt-compatibl
 
 This guide is for day-to-day users. You do not need to understand Python, FastAPI, or SQLite to operate Caelus.
 
-The dashboard overview and full-dashboard screenshots were updated from a running Caelus station on October 19, 2026, and show the centered title block and sensor heading. The remaining dashboard and Location, Station, and Data & Map screenshots were updated on September 30, 2026. Other screenshots, including the Mobile Operation graphics, were captured on September 9, 2026. The Location and Station screenshots use example coordinates and a documentation-only gateway address; enter your own values during setup. Your location, readings, gateway model, forecast, lunar view, and available metrics will differ.
+The dashboard overview screenshot was updated from a running Caelus station on October 25, 2026, and includes Feels Like, Wind Chill, and the compact forecast labels. The full-dashboard screenshot was captured on October 19, 2026, before those additions. The remaining dashboard and Location, Station, and Data & Map screenshots were updated on September 30, 2026. Other screenshots, including the Mobile Operation graphics, were captured on September 9, 2026. The Location and Station screenshots use example coordinates and a documentation-only gateway address; enter your own values during setup. Your location, readings, gateway model, forecast, lunar view, and available metrics will differ.
 
 ## Open Caelus
 
@@ -151,7 +151,14 @@ The overview shows the first sensor row; additional sensor rows continue below. 
 
 ### Current Readings
 
-The **Current readings** card shows the latest outdoor temperature and a compact summary of outdoor humidity, relative pressure, wind, gust, rain today, UV, and solar radiation. A dash means the gateway did not supply a usable value for that field.
+The **Current readings** card shows the latest outdoor temperature and a compact summary of outdoor humidity, relative pressure, wind, gust, rain today, UV, and solar radiation. A dash means a required reading is unavailable or the conditions are outside a derived metric’s applicable range.
+
+Below the outdoor temperature:
+
+- **Feels Like** estimates how the air feels using temperature, relative humidity, and wind, assuming shade. It can be cooler or warmer than the measured temperature.
+- **Wind Chill** estimates the cooling effect of wind in cold weather. It is shown only at temperatures of 50°F (10°C) or below with wind above 3 mph (about 4.8 km/h); otherwise it shows a dash.
+
+Both values are calculated locally and saved with each new station observation.
 
 Values are displayed in the unit system selected under **Settings > Appearance > Units**. Changing units changes presentation only; stored readings are not rewritten.
 
@@ -159,7 +166,9 @@ Values are displayed in the unit system selected under **Settings > Appearance >
 
 The compact forecast card shows today’s condition, temperature, humidity and wind ranges, precipitation chance, historical comparisons, a forecast synopsis when available, up to 24 hourly samples, and six future daily summaries. Use the arrow at the right of the hourly row to page through later hours.
 
-Each daily card shows the date, weather glyph, minimum–maximum temperature, minimum–maximum relative humidity (RH), precipitation chance, and minimum–maximum wind speed. Temperature and wind use your selected units. A dash means the provider did not supply that range. On mobile, the six cards wrap into two rows.
+Hourly forecast samples include **FL** (Feels Like) and **WC** (Wind Chill), calculated from the provider’s predicted conditions. Daily cards show their minimum–maximum ranges; Wind Chill ranges include only periods where the calculation applies. A legend above the hourly row explains the abbreviations.
+
+Each daily card also shows the date, weather glyph, minimum–maximum temperature, minimum–maximum relative humidity (RH), precipitation chance, and minimum–maximum wind speed. Temperature and wind use your selected units. A dash means required forecast data is missing or the calculation does not apply. On mobile, the six cards wrap into two rows.
 
 The provider label identifies the active forecast source. When a provider is temporarily unavailable, Caelus preserves and labels the last good cached forecast rather than replacing it with an empty result.
 
