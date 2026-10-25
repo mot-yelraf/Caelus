@@ -219,7 +219,7 @@ The separate server launcher remains available for unattended and LAN use.
 
 ### macOS
 
-With Python 3.10 or newer installed, run `install.sh` from the downloaded source
+With Python 3.11 or newer installed, run `install.sh` from the downloaded source
 directory. For example:
 
 ```bash
@@ -270,7 +270,7 @@ the desktop launcher.
 
 ### Windows 10/11
 
-Install Python 3.10 or newer from python.org with the Python launcher enabled.
+Install Python 3.11 or newer from python.org with the Python launcher enabled.
 Then open PowerShell and run the native installer, for example:
 
 ```powershell
@@ -356,18 +356,20 @@ python3 -m pip install -r requirements.txt
 python3 Caelus.py
 ```
 
-Dependency updates must continue to install and pass CI on Python 3.10 and
+Dependency updates must continue to install and pass CI on Python 3.11 and
 3.13. CI checks the installed dependency graph with `pip check` and audits
 runtime dependencies on both versions. Keep both quality-and-tests checks
 required in GitHub branch protection before merging dependency updates.
 
-Starlette 1.8+ and Pillow 13+ require Python 3.11, so Dependabot excludes those
-versions while Caelus supports Python 3.10. If an existing dependency PR pins
-an incompatible release, restore the compatible pin from `requirements.txt`
-(currently Starlette 1.7.0 and Pillow 12.3.0), or close that PR. Rerunning the
-same incompatible pin will not fix installation. Review these exclusions when
-raising the minimum Python version; review security alerts manually if a fix
-requires a newer interpreter.
+Pillow 13.0.0 supplies the image-processing security fixes and requires Python
+3.11 or newer. The old Python 3.10 compatibility ceilings for Pillow and
+Starlette have been removed from Dependabot. Existing Python 3.10 installations
+must upgrade Python before updating Caelus. Stop Caelus, rename its installed
+virtual environment directory (`/Users/<name>/Caelus/.venv` on macOS,
+`/home/<name>/Caelus/.venv` on Linux or Raspberry Pi, or
+`C:\Users\<name>\Caelus\.venv` on Windows) to `.venv-python310-backup`, then rerun the installer with
+Python 3.11 or newer to create a fresh environment. Preserve the installed
+`data/` directory; it contains settings and historical readings.
 
 Dependabot groups Python minor and patch version updates into one weekly PR;
 major version updates remain separate for review. New update PRs are expected

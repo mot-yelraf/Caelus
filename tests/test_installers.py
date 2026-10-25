@@ -6,7 +6,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from packaging.markers import default_environment
 from packaging.requirements import Requirement
 from packaging.version import Version
 
@@ -269,25 +268,33 @@ def test_development_requirements_pin_the_ci_toolchain() -> None:
         assert any(line.startswith(f"{package}==") for line in requirements)
 
 
-@pytest.mark.parametrize(
-    ("package", "first_incompatible_version"),
-    [("starlette", "1.8.0"), ("pillow", "13.0.0")],
-)
-def test_dependency_pins_preserve_python_310_support(
-    package: str, first_incompatible_version: str
-) -> None:
-    environment = {**default_environment(), "python_version": "3.10", "python_full_version": "3.10.0"}
-    active_pins = []
-    for line in (ROOT / "requirements.txt").read_text(encoding="utf-8").splitlines():
-        if not line.lower().startswith(package):
-            continue
-        requirement = Requirement(line)
-        if requirement.marker is None or requirement.marker.evaluate(environment):
-            active_pins.extend(
-                Version(spec.version) for spec in requirement.specifier if spec.operator == "=="
-            )
+def test_pillow_pin_includes_security_fixes() -> None:
+    requirements = [
+        Requirement(line) for line in (ROOT / "requirements.txt").read_text().splitlines()
+        if line.lower().startswith("pillow")
+    ]
+    assert len(requirements) == 1
+    pins = [Version(spec.version) for spec in requirements[0].specifier if spec.operator == "=="]
+    assert len(pins) == 1 and pins[0] >= Version("13.0.0")
 
-    assert len(active_pins) == 1, f"Python 3.10 must have an exact {package} pin"
-    assert active_pins[0] < Version(first_incompatible_version), (
-        f"{package} {first_incompatible_version}+ requires Python 3.11+"
+
+def test_unix_installer_rejects_python_310_before_writing_runtime(tmp_path) -> None:
+    fake_python = tmp_path / "python310"
+    fake_python.write_text(
+        f"#!{sys.executable}\nimport sys\nsys.version_info = (3, 10, 0)\nexec(sys.argv[2])\n"
     )
+    fake_python.chmod(0o755)
+    runtime = tmp_path / "runtime"
+    result = subprocess.run(
+        [str(ROOT / "install.sh")], capture_output=True, text=True,
+        env={**os.environ, "CAELUS_PYTHON": str(fake_python), "CAELUS_INSTALL_DIR": str(runtime)},
+    )
+    assert result.returncode != 0
+    assert "Python 3.11 or newer is required" in result.stderr
+    assert not runtime.exists()
+
+
+def test_windows_installer_requires_python_311() -> None:
+    installer = (ROOT / "install.ps1").read_text()
+    assert "sys.version_info >= (3, 11)" in installer
+    assert "Python 3.11 or newer is required" in installer

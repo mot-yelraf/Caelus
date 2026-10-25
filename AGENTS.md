@@ -106,7 +106,7 @@ project-specific conventions.
 - Keep logging lightweight and avoid noisy log churn in hot paths.
 - `caelus.app.create_app` owns application-state wiring. Shared settings,
   gateway, logger, poller, templates, and CSRF state live under `app.state`.
-- Python 3.10 or newer is required by the current type syntax.
+- Python 3.11 or newer is required by the supported dependency set (including Pillow 13).
 
 ## Configuration and Settings
 

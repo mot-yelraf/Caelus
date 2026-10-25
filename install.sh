@@ -12,9 +12,9 @@ fail() {
   exit 1
 }
 
-command -v "$PYTHON_BIN" >/dev/null 2>&1 || fail "Python 3.10 or newer was not found."
-"$PYTHON_BIN" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)' \
-  || fail "Python 3.10 or newer is required."
+command -v "$PYTHON_BIN" >/dev/null 2>&1 || fail "Python 3.11 or newer was not found."
+"$PYTHON_BIN" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' \
+  || fail "Python 3.11 or newer is required."
 
 remembered_install_dir=""
 if [ -f "$INSTALL_STATE_FILE" ]; then

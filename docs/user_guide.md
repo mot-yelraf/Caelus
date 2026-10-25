@@ -12,6 +12,8 @@ The dashboard overview screenshot was updated from a running Caelus station on O
 
 ## Open Caelus
 
+Caelus requires Python 3.11 or newer. If upgrading from Python 3.10, install a supported Python version and follow the [environment-upgrade steps in the README](../README.md#source-development) before updating Caelus.
+
 Start Caelus with the launcher created by the installer, then open one of these addresses:
 
 - On the Caelus computer: `http://127.0.0.1:8767`
