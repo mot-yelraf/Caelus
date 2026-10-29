@@ -1,0 +1,9 @@
+{
+  "ecowitt_metric": {"common_list": [
+    {"id": "0x02", "val": "20 C"}, {"id": "0x07", "val": "65%"},
+    {"id": "0x0B", "val": "0 m/s"}, {"id": "0x0A", "val": "0"},
+    {"id": "0x09", "val": "1013.2 hPa"}
+  ]},
+  "ecowitt_legacy": {"tempf": 68, "hum": 65, "windsp": 0, "winddir": 0, "baromin": 29.919},
+  "second_station": {"temperature": 68, "humidity": 65, "wind_speed": 0, "wind_dir": 0, "pressure": 29.919}
+}

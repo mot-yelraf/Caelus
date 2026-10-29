@@ -1,16 +1,65 @@
-# Caelus
+<p align="center">
+  <img src="docs/screenshots/caelus-brand.png" alt="Caelus · Living Weather" width="400">
+</p>
 
-Caelus is a lightweight Python-based weather dashboard for Ecowitt-compatible
-weather station gateways.
+Caelus is a lightweight Python-based weather dashboard for Ecowitt LAN gateways
+and AcuRite PC Connect consoles connected by USB to the same Raspberry Pi, Linux PC,
+Mac, or Windows PC running Caelus. Both can run simultaneously with separate station histories.
+
+Supported Ecowitt gateways and their compatible WS sensor arrays:
+
+| Gateway | Manufacturer-listed compatible WS sensor arrays |
+| --- | --- |
+| [GW1100](https://oss.ecowitt.net/uploads/20241218/GW1100%20Manual%20.pdf) | WS68, WS69, WS80, WS85, WS90 |
+| [GW1200](https://oss.ecowitt.net/uploads/20240924/GW1200%20Manual.pdf) | WS68, WS69, WS80, WS85, WS90 |
+| [GW2000](https://oss.ecowitt.net/uploads/20250318/GW2000.pdf) | WS68, WS69, WS80, WS85, WS90 |
+| [GW3000](https://oss.ecowitt.net/uploads/20260320/GW3000Manual.pdf) | WS68, WS69, WS80, WS85, WS90 |
+
+Gateway and sensor must use the same regional radio frequency and compatible
+firmware. Available measurements depend on the sensor model; when multiple
+arrays are paired, the gateway's sensor-priority rules select the primary station
+values Caelus receives. GW2000/GW3000 integration is verified with protocol-derived
+test fixtures; physical gateway validation is still needed.
+
+Supported AcuRite console families use the shared PC Connect live USB adapter:
+
+| Console family | Related display/model numbers | USB setup |
+| --- | --- | --- |
+| **01536-RX** | 01536, 06056 | USB mode 4 automatically |
+| **01025** | 01025 | Select USB / PC Connect mode **4** on the console |
+| **01035** | 01035 | Select USB / PC Connect mode **4** on the console |
+| **01036** | 01036, 01092, 06006 | Select USB / PC Connect mode **4** on the console |
+| **01525** | 01525 | Select USB / PC Connect mode **4** on the console |
+| **02032** | 02032, 02032C, 02033, 01093, 06037 | Select USB / PC Connect mode **4** on the console |
+
+Choose the console family in **Settings > Station > AcuRite USB console**.
+For families with a mode menu, set mode 4 on the physical console before enabling
+collection and recheck it after a console power loss. Caelus does not change USB
+mode or read the console archive. Model selection supplies setup instructions;
+pressure decoding follows the calibration data in each report. Coverage is verified
+with synthetic protocol fixtures; physical validation of these models is still needed.
+Model groupings follow [AcuRite's PC Connect display list](https://support.acurite.com/hc/en-us/articles/1260802952850-PC-Connect-Display-Unit),
+with mode guidance from [WeeWX's AcuRite hardware guide](https://weewx.com/docs/5.5/hardware/acurite/).
+
+For direct AcuRite USB setup and hardware validation, see the
+[AcuRite USB guide](docs/acurite_usb.md).
+
+For adding station families, see the [weather adapter guide](docs/weather_adapters.md).
 
 For illustrated setup and operating instructions, see the
 [Caelus User Guide](docs/user_guide.md).
 
+
 ## Features
 
 - FastAPI backend with server-rendered templates
-- Read-only Ecowitt GW1100-compatible LAN discovery and polling for paired
-  7-in-1 weather arrays
+- Separate Ecowitt and AcuRite station connections, dashboard selection, history,
+  graphs, and exports; both can collect at the same time
+- AcuRite PC Connect live USB reports on Raspberry Pi/Linux, macOS,
+  and Windows, with USB libraries included in the standard install, platform-specific
+  access setup, bounded sampling, RF freshness checks, and rolling-counter rain
+- Read-only Ecowitt GW1100, GW1200, GW2000, and GW3000 LAN HTTP discovery
+  and polling for primary weather measurements from paired sensors
 - Additively migrated SQLite weather history, including normalized temperature,
   humidity, pressure, wind, UV/solar, rain-rate, interval-rain, and cumulative
   rain metrics
@@ -169,8 +218,14 @@ IP-geolocation service.
 
 ## Ecowitt gateway setup
 
-1. Use the Ecowitt app or gateway interface to join the gateway to 2.4 GHz
-   Wi-Fi, pair the outdoor 7-in-1 array, and verify live readings.
+Caelus supports the shared local HTTP API on **GW1100, GW1200, GW2000,
+and GW3000** gateways. GW2000/GW3000 compatibility is verified with synthetic
+fixtures derived from Ecowitt's protocol documentation; physical gateway testing
+is still needed. See the [gateway compatibility details](docs/weather_adapters.md#ecowitt-gateway-compatibility).
+
+1. Connect the gateway to your LAN using its supported Wi-Fi or Ethernet
+   connection, pair the weather array or individual weather sensors in the
+   Ecowitt interface, and verify live readings.
 2. Give the gateway a stable LAN address, preferably with a DHCP reservation.
 3. In Caelus, open **Settings → Station**, enter the gateway base URL
    such as `http://192.168.1.100`, and choose **Find Sensors**.
@@ -181,12 +236,12 @@ Caelus calls only the gateway's read-only local HTTP endpoints. It does not
 configure Ecowitt cloud upload, custom-server push, MQTT, Nodus sensors, or
 switches. Disabling the gateway stops polling without deleting historical data.
 
-For a GW1100/GW1200 with a WS69 array, the Current readings footer shows
-**Station reporting** when the current sensor inventory has a signal, and
-**Station offline** when unavailable, disabled, or stale. Battery Status is
-**OK** (normal), **LOW** (low-battery flag), or **UNKNOWN** when missing,
-unrecognized, or unavailable. Inventory is refreshed on each poll; a failed
-inventory request does not discard weather readings. These health indicators
+The Current readings footer shows **Station reporting** for fresh usable weather
+observations from any supported gateway, and **Station offline** when unavailable,
+disabled, or stale. Per-sensor reporting uses the current inventory signal.
+Battery Status is **OK** or **LOW** for recognized WS69/WH65-style binary flags;
+it remains **UNKNOWN** for other battery encodings or unavailable inventory.
+Inventory is refreshed on each poll; a failed inventory request does not discard weather readings. These health indicators
 are runtime status and are not stored in the historical readings database.
 
 ## Standalone installation
@@ -243,6 +298,11 @@ default runtime database is `/Users/alice/Caelus/data/caelus.db`. To run only
 the server, use `/Users/alice/Caelus/run_caelus.sh`.
 
 ### Linux and Raspberry Pi OS Bookworm/Trixie
+
+The installer offers AcuRite USB system setup and requests administrator
+authorization for its libusb package and device-specific udev rule. Run it as your
+normal account. macOS and Windows use their native HID drivers through bindings
+included in the standard install; see the [USB setup guide](docs/acurite_usb.md).
 
 Install Python and venv support if needed:
 

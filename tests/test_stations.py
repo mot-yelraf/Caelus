@@ -1,0 +1,257 @@
+"""Keep simultaneous stations, settings and browser selections independent."""
+
+import asyncio
+from datetime import datetime, timezone
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+from fastapi.templating import Jinja2Templates
+
+from caelus.data_logger import DataLogger
+from caelus.routes import register_routes
+from caelus.settings import AppSettings
+from caelus.station import EcowittStationSetup
+from caelus.stations import build_stations, start_station, stop_station
+from test_acurite import FakeTransport
+
+
+@pytest.fixture
+def app(tmp_path, monkeypatch):
+    from threading import RLock
+
+    monkeypatch.setattr(AppSettings, "settings_path", tmp_path / "settings.json")
+    app = FastAPI()
+    app.state.settings = AppSettings(acurite_enabled=True, use_ip_location=False)
+    app.state.data_logger = DataLogger(str(tmp_path / "caelus.db"))
+    app.state.station_lock = RLock()
+    app.state.stations = build_stations(app, tmp_path)
+    ecowitt = app.state.stations["ecowitt"]
+    acurite = app.state.stations["acurite_usb"]
+    ecowitt.adapter.gateway.fetch = lambda: {"tempf": 90, "hum": 50, "windsp": 0}
+    acurite.adapter.transport = FakeTransport()
+    app.state.weather_adapter = ecowitt.adapter
+    app.state.gateway = ecowitt.adapter.gateway
+    app.state.station_setup = EcowittStationSetup(
+        app.state.settings, app.state.gateway, app.state.station_lock
+    )
+    app.state.poller = ecowitt.poller
+    app.state.csrf_token = "test-token"
+    app.state.templates = Jinja2Templates(
+        directory=str(Path(__file__).resolve().parents[1] / "templates")
+    )
+    register_routes(app)
+    ecowitt.poller.poll_once()
+    acurite.adapter.sample_once()
+    acurite.poller.poll_once()
+    return app
+
+
+def test_simultaneous_sources_keep_current_readings_exports_and_graphs_separate(app):
+    client = TestClient(app)
+    for key, expected in [("ecowitt", 90), ("acurite_usb", 68), ("ecowitt", 90)]:
+        assert (
+            client.get("/api/readings/current", params={"station": key}).json()[
+                "reading"
+            ]["temperature"]
+            == expected
+        )
+        exported = client.get(
+            "/export", params={"station": key, "format": "json"}
+        ).json()
+        assert len(exported) == 1 and exported[0]["temperature"] == expected
+        assert (
+            client.get("/api/metrics/24h", params={"station": key}).status_code == 200
+        )
+        assert (
+            client.get(
+                "/api/metrics/range", params={"station": key, "hours": 6}
+            ).status_code
+            == 200
+        )
+    assert app.state.stations["ecowitt"].data_logger.db_path.name == "caelus.db"
+    assert app.state.stations["acurite_usb"].data_logger.db_path.name == "acurite.db"
+    assert (
+        client.get("/api/station/status?station=acurite_usb").json()["station"][
+            "reporting"
+        ]
+        is True
+    )
+    assert (
+        client.get("/api/ecowitt/status?station=acurite_usb")
+        .json()["source_id"]
+        .startswith("ecowitt:")
+    )
+    assert client.get("/api/readings/current?station=missing").status_code == 404
+    assert client.get("/api/station/status?station=missing").status_code == 404
+    assert len(client.get("/api/stations").json()["stations"]) == 2
+
+
+def test_dashboard_selection_is_explicit_and_exports_stay_in_selected_station(app):
+    client = TestClient(app)
+    response = client.get("/?station=acurite_usb")
+    assert response.status_code == 200
+    assert 'data-station-key="acurite_usb"' in response.text
+    assert 'value="acurite_usb" selected' in response.text
+    assert "format=csv&amp;station=acurite_usb" in response.text
+    assert 'data-station-card="ecowitt"' in response.text
+    assert 'data-station-card="acurite_usb"' in response.text
+    assert 'data-station-key="ecowitt"' in client.get("/?station=ecowitt").text
+    # Two tabs never share a global active-station setting or browser cookie.
+    assert (
+        client.get("/api/readings/current?station=acurite_usb").json()["reading"][
+            "temperature"
+        ]
+        == 68
+    )
+
+
+def test_each_station_connection_saves_its_own_fields_atomically(app):
+    client = TestClient(app)
+    response = client.post(
+        "/api/stations/acurite_usb/settings",
+        json={
+            "csrf_token": "test-token",
+            "enabled": False,
+            "usb_serial": "console-1",
+            "poll_interval_seconds": 120,
+            "gateway_url": "http://ignored.local",
+        },
+    )
+    assert response.status_code == 200
+    assert app.state.settings.acurite_enabled is False
+    assert app.state.settings.acurite_poll_interval_seconds == 120
+    assert app.state.settings.gateway_enabled is True
+    assert app.state.settings.gateway_url == "http://192.168.1.100"
+    assert app.state.settings.poll_interval_seconds == 300
+    assert AppSettings.load().acurite_usb_serial == "console-1"
+    before = app.state.settings.__dict__.copy()
+    response = client.post(
+        "/api/stations/acurite_usb/settings",
+        json={
+            "csrf_token": "test-token",
+            "enabled": True,
+            "usb_serial": "changed",
+            "poll_interval_seconds": 0,
+        },
+    )
+    assert response.status_code == 422
+    assert app.state.settings.__dict__ == before
+    # Disabled stations retain their separate stored history.
+    assert (
+        client.get("/api/readings/current?station=acurite_usb").json()["reading"][
+            "temperature"
+        ]
+        == 68
+    )
+    response = client.post(
+        "/api/stations/ecowitt/settings",
+        json={
+            "csrf_token": "test-token",
+            "enabled": False,
+            "gateway_url": "http://192.0.2.1",
+            "poll_interval_seconds": 180,
+        },
+    )
+    assert response.status_code == 200
+    assert app.state.settings.poll_interval_seconds == 180
+    assert app.state.settings.acurite_poll_interval_seconds == 120
+    assert (
+        client.post(
+            "/api/stations/acurite_usb/settings", json={"enabled": True}
+        ).status_code
+        == 403
+    )
+
+
+def test_station_lifecycles_are_independent(app):
+    async def exercise():
+        runtimes = list(app.state.stations.values())
+        # Use fake transport for Ecowitt status as well as measurements.
+        app.state.settings.gateway_enabled = False
+        for runtime in runtimes:
+            await start_station(runtime)
+        try:
+            for runtime in runtimes:
+                assert (
+                    runtime.poller.task is not None and not runtime.poller.task.done()
+                )
+            assert runtimes[1].adapter.task is not None
+        finally:
+            for runtime in reversed(runtimes):
+                await asyncio.wait_for(stop_station(runtime), timeout=1)
+        assert all(runtime.poller.task.done() for runtime in runtimes)
+        assert runtimes[1].adapter.task.done()
+
+    asyncio.run(exercise())
+
+
+def test_health_check_tracks_requested_station(app):
+    class Task:
+        def __init__(self, done):
+            self.finished = done
+
+        def done(self):
+            return self.finished
+
+        def cancelled(self):
+            return False
+
+        def exception(self):
+            return None
+
+    app.state.stations["ecowitt"].poller.task = Task(False)
+    app.state.stations["acurite_usb"].poller.task = Task(True)
+    client = TestClient(app)
+    assert client.get("/healthz?station=ecowitt").status_code == 200
+    assert client.get("/healthz?station=acurite_usb").status_code == 503
+
+
+def test_existing_ecowitt_history_survives_station_wiring(tmp_path):
+    logger = DataLogger(str(tmp_path / "caelus.db"))
+    logger.log_reading(
+        datetime.now(timezone.utc).replace(tzinfo=None), {"temperature": 45}
+    )
+    app = SimpleNamespace(
+        state=SimpleNamespace(
+            settings=AppSettings(), data_logger=logger, station_lock=None
+        )
+    )
+    stations = build_stations(app, tmp_path)
+    assert stations["ecowitt"].data_logger.get_latest()["temperature"] == 45
+    assert stations["acurite_usb"].data_logger.get_latest() is None
+
+
+def test_all_station_cleanup_is_attempted_after_one_failure():
+    from caelus.stations import stop_stations
+
+    calls = []
+
+    class Poller:
+        async def stop(self):
+            calls.append("poller")
+
+    class Adapter:
+        async def stop(self):
+            calls.append("adapter")
+            raise OSError("cleanup failure")
+
+    class HealthyAdapter:
+        async def stop(self):
+            calls.append("healthy")
+
+    runtimes = [
+        SimpleNamespace(poller=Poller(), adapter=HealthyAdapter()),
+        SimpleNamespace(poller=Poller(), adapter=Adapter()),
+    ]
+
+    async def exercise():
+        with pytest.raises(BaseExceptionGroup):
+            await stop_stations(runtimes)
+
+    from builtins import BaseExceptionGroup
+
+    asyncio.run(exercise())
+    assert calls == ["poller", "adapter", "poller", "healthy"]

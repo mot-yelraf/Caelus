@@ -89,7 +89,7 @@ foreach ($Directory in $Directories) {
 }
 
 if ([System.IO.Path]::GetFullPath($SourceDir) -ne [System.IO.Path]::GetFullPath($InstallDir)) {
-    foreach ($File in @("Caelus.py", "requirements.txt", "README.md", "install.sh", "install.ps1", "run_caelus.sh", "run_caelus_gui.sh", "run_caelus.ps1", "run_caelus_gui.ps1", "run_caelus.cmd", "run_caelus_gui.cmd")) {
+    foreach ($File in @("Caelus.py", "requirements.txt", "requirements-acurite.txt", "README.md", "install.sh", "install.ps1", "run_caelus.sh", "run_caelus_gui.sh", "run_caelus.ps1", "run_caelus_gui.ps1", "run_caelus.cmd", "run_caelus_gui.cmd")) {
         Copy-Item (Join-Path $SourceDir $File) (Join-Path $InstallDir $File) -Force
     }
     Copy-Item (Join-Path $SourceDir "caelus\*.py") (Join-Path $InstallDir "caelus") -Force
@@ -111,6 +111,12 @@ if ($LASTEXITCODE -ne 0) {
 if ($LASTEXITCODE -ne 0) {
     throw "pywebview could not be imported after installation."
 }
+
+& $VenvPython -c "import hid; assert hasattr(hid.device, 'get_input_report')"
+if ($LASTEXITCODE -ne 0) {
+    throw "Native HID USB support could not be loaded. Reinstall the standard requirements."
+}
+Write-Host "AcuRite uses the native Windows HID driver; no USB driver replacement is required by this integration."
 
 # Native per-user shortcuts use the same GUI entrypoint as the command launcher.
 $ShortcutDirectories = @(

@@ -1,0 +1,2 @@
+# Compatibility alias: USB support is included in the standard dependencies.
+-r requirements.txt

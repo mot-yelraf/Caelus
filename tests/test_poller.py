@@ -8,6 +8,9 @@ from types import SimpleNamespace
 import pytest
 
 from caelus.gateway import map_gateway_reading
+from caelus.adapters import EcowittAdapter
+from caelus.rain import counter_identity
+from caelus.observations import RainPolicy
 from caelus.poller import GatewayPoller
 
 
@@ -43,6 +46,7 @@ def make_poller(interval: float = 0.01) -> GatewayPoller:
         gateway=FakeGateway(),
         data_logger=FakeDataLogger(),
     )
+    state.weather_adapter = EcowittAdapter(state.settings, state.gateway)
     return GatewayPoller(SimpleNamespace(state=state))
 
 
@@ -124,6 +128,7 @@ def test_fresh_process_recovery_persists_normalized_readings(monkeypatch, tmp_pa
         settings=settings, gateway=module.EcowittGateway(settings, session=Session),
         data_logger=data_logger,
     )
+    state.weather_adapter = EcowittAdapter(settings, state.gateway)
     poller = GatewayPoller(SimpleNamespace(state=state))
     assert poller.poll_once() is None
     assert poller.poll_once() is None
@@ -215,6 +220,7 @@ def test_overlapping_poll_requests_are_serialized() -> None:
     poller.data_logger.previous = {
         "timestamp": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
         "rain_total": 1.0,
+        "rain_counter_id": counter_identity("ecowitt::", RainPolicy(kind="daily", channel_id="traditional")),
     }
     entered = threading.Event()
     release = threading.Event()

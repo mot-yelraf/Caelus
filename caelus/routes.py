@@ -2,9 +2,10 @@ import asyncio
 import json
 import logging
 import secrets
-from dataclasses import fields, replace
+from dataclasses import asdict, fields, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Dict
 from zoneinfo import ZoneInfo
 
@@ -12,10 +13,13 @@ from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
 from caelus import __version__
+from caelus.acurite_models import CONSOLE_PROFILES, console_profile
 from caelus.astronomy import astronomy_context
 from caelus.data_logger import DataLogger
 from caelus.forecast import build_decisions, normalize_forecast_provider
 from caelus.gateway import EcowittGatewayError
+from caelus.station import EcowittStationSetup, save_settings_changes
+from caelus.observations import METRIC_UNITS
 from caelus.location import resolve_ip_location
 from caelus.metrics import build_24_hour_metric_cards, metric_display_options
 from caelus.settings import (
@@ -95,6 +99,17 @@ def reading_for_display(
 
 
 def register_routes(app: FastAPI) -> None:
+    def station_runtime(request: Request, key: str | None = None):
+        """Resolve station selection per request, never through mutable global UI state."""
+        stations = getattr(app.state, "stations", {})
+        if stations:
+            selected = key or request.query_params.get("station", app.state.settings.weather_adapter)
+            if selected not in stations:
+                raise HTTPException(status_code=404, detail="Unknown weather station")
+            return stations[selected]
+        return SimpleNamespace(key="", name="Weather station", data_logger=app.state.data_logger,
+                               poller=app.state.poller, adapter=getattr(app.state, "weather_adapter", None))
+
     def theme_manager() -> ThemeManager:
         manager = getattr(app.state, "theme_manager", None)
         if not isinstance(manager, ThemeManager):
@@ -142,7 +157,8 @@ def register_routes(app: FastAPI) -> None:
     @app.get("/", response_class=HTMLResponse)
     async def dashboard(request: Request) -> Any:
         settings: AppSettings = app.state.settings
-        data_logger: DataLogger = app.state.data_logger
+        runtime = station_runtime(request)
+        data_logger: DataLogger = runtime.data_logger
         latest = reading_for_display(
             await asyncio.to_thread(data_logger.get_latest),
             settings.unit_system,
@@ -171,7 +187,13 @@ def register_routes(app: FastAPI) -> None:
                 "version": __version__,
                 "settings": settings,
                 "latest": latest,
-                "station": (await ecowitt_status()).get("station", {}),
+                "station": (await ecowitt_status(request)).get("station", {}),
+                "active_station": runtime.key,
+                "active_station_name": runtime.name,
+                "station_interval": runtime.poller.settings.poll_interval_seconds if hasattr(runtime.poller, "settings") else settings.poll_interval_seconds,
+                "acurite_profiles": CONSOLE_PROFILES,
+                "acurite_profile": console_profile(settings.acurite_model),
+                "available_stations": [{"key": item.key, "name": item.name} for item in getattr(app.state, "stations", {}).values()],
                 "latest_observation_time": format_observation_time(
                     latest.get("timestamp"), settings.timezone
                 ),
@@ -184,7 +206,7 @@ def register_routes(app: FastAPI) -> None:
                 "decisions": build_decisions(forecast),
                 "display_units": {
                     field: display_unit_for(field, settings.unit_system, settings.pressure_unit)
-                    for field in ("temperature", "feels_like", "wind_chill", "pressure", "wind_speed", "wind_gust", "rain_total")
+                    for field in ("temperature", "feels_like", "wind_chill", "pressure", "indoor_absolute_pressure", "wind_speed", "wind_gust", "rain_total")
                 },
                 "metric_display_options": metric_display_options(),
                 "custom_themes": manager.list_themes(),
@@ -258,8 +280,8 @@ def register_routes(app: FastAPI) -> None:
         return JSONResponse({"ok": True, "fallback": "garden" if selected_collection == theme_id else None})
 
     @app.get("/healthz")
-    async def healthz() -> Response:
-        task = app.state.poller.task
+    async def healthz(request: Request) -> Response:
+        task = station_runtime(request).poller.task
         if task is None or task.done():
             detail = "poller is not running"
             if task is not None and task.cancelled():
@@ -365,9 +387,11 @@ def register_routes(app: FastAPI) -> None:
         except (json.JSONDecodeError, TypeError, ValueError) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-        for item in fields(AppSettings):
-            setattr(settings, item.name, getattr(candidate, item.name))
-        await asyncio.to_thread(settings.save)
+        changes = {item.name: getattr(candidate, item.name) for item in fields(AppSettings)
+                   if getattr(settings, item.name) != getattr(candidate, item.name)}
+        await asyncio.to_thread(
+            save_settings_changes, settings, changes, getattr(app.state, "station_lock", None)
+        )
         if settings_pane != "all":
             return JSONResponse({"ok": True, "pane": settings_pane})
         return RedirectResponse(url="/", status_code=303)
@@ -399,11 +423,83 @@ def register_routes(app: FastAPI) -> None:
             raise HTTPException(status_code=403, detail="invalid CSRF token")
         return payload
 
+    def station_setup() -> EcowittStationSetup:
+        setup = getattr(app.state, "station_setup", None)
+        if setup is None and not hasattr(app.state, "weather_adapter"):
+            gateway = getattr(app.state, "gateway", None)
+            if gateway is not None:
+                setup = EcowittStationSetup(app.state.settings, gateway)
+        if setup is None:
+            raise HTTPException(status_code=409, detail="This adapter does not support Ecowitt setup")
+        return setup
+
+    @app.get("/api/stations")
+    async def list_stations() -> Dict[str, Any]:
+        """List independent local sources and their in-memory health."""
+        return {"stations": [{"key": item.key, "name": item.name, "status": item.adapter.status()}
+                             for item in getattr(app.state, "stations", {}).values()]}
+
+    @app.post("/api/stations/{key}/settings")
+    async def configure_station(key: str, request: Request) -> Response:
+        """Validate and save only one connection's fields; both stations may stay enabled."""
+        payload = await ecowitt_json(request)
+        if key not in getattr(app.state, "stations", {}):
+            raise HTTPException(status_code=404, detail="Unknown weather station")
+        runtime = station_runtime(request, key)
+        settings = app.state.settings
+        try:
+            enabled = AppSettings._validate_value("gateway_enabled" if key == "ecowitt" else "acurite_enabled", payload.get("enabled"))
+            interval_field = "poll_interval_seconds" if key == "ecowitt" else "acurite_poll_interval_seconds"
+            interval = payload.get("poll_interval_seconds")
+            if isinstance(interval, bool) or not isinstance(interval, int) or not 60 <= interval <= 3600:
+                raise ValueError("History interval must be a whole number between 60 and 3600 seconds")
+            if key == "ecowitt":
+                url_value = payload.get("gateway_url", settings.gateway_url)
+                if not isinstance(url_value, str):
+                    raise ValueError("Gateway URL must be text")
+                url = validate_gateway_url(url_value)
+                if enabled:
+                    discovery = await asyncio.to_thread(station_setup().discover, url, for_save=True)
+                    await asyncio.to_thread(station_setup().save, discovery, interval)
+                else:
+                    await asyncio.to_thread(save_settings_changes, settings,
+                                            {"gateway_enabled": False, "gateway_url": url, interval_field: interval},
+                                            app.state.station_lock)
+            else:
+                model = AppSettings._validate_value("acurite_model", payload.get("model", settings.acurite_model))
+                serial = AppSettings._validate_value("acurite_usb_serial", payload.get("usb_serial", ""))
+                if len(serial) > 128 or any(ord(char) < 32 for char in serial):
+                    raise ValueError("Invalid USB serial number")
+                await asyncio.to_thread(save_settings_changes, settings,
+                                        {"acurite_enabled": enabled, "acurite_model": model, "acurite_usb_serial": serial.strip(), interval_field: interval},
+                                        app.state.station_lock)
+        except (TypeError, ValueError, EcowittGatewayError) as exc:
+            logger.warning("Station configuration failed", exc_info=True)
+            message = "Could not validate the Ecowitt gateway. Check its address and connection." if isinstance(exc, EcowittGatewayError) else str(exc)
+            raise HTTPException(status_code=422, detail=message) from exc
+        runtime.poller.reset_schedule()
+        initial_reading = await asyncio.to_thread(runtime.poller.poll_once) if enabled else None
+        return JSONResponse({"ok": True, "enabled": enabled, "poll_interval_seconds": interval,
+                             "initial_reading_stored": initial_reading is not None})
+
+    @app.get("/api/station/capabilities")
+    async def station_capabilities(request: Request) -> Dict[str, Any]:
+        """Describe normalized measurement channels independently of discovery."""
+        adapter = station_runtime(request).adapter
+        channels = adapter.capabilities() if adapter is not None else ()
+        keys = {key for channel in channels for key in channel.metrics}
+        return {"channels": [asdict(channel) for channel in channels],
+                "units": {key: METRIC_UNITS[key] for key in keys if key in METRIC_UNITS}}
+
+    @app.get("/api/station/status")
     @app.get("/api/ecowitt/status")
-    async def ecowitt_status() -> Dict[str, Any]:
+    async def ecowitt_status(request: Request) -> Dict[str, Any]:
+        adapter = station_runtime(request, "ecowitt" if request.url.path == "/api/ecowitt/status" else None).adapter
+        if adapter is not None:
+            return adapter.status()
         gateway = getattr(app.state, "gateway", None)
         if gateway is None:
-            return {"enabled": False, "state": "unavailable", "label": "Gateway service unavailable"}
+            return {"enabled": False, "state": "unavailable", "label": "Station service unavailable"}
         return gateway.status()
 
     @app.post("/api/ecowitt/discover")
@@ -411,7 +507,7 @@ def register_routes(app: FastAPI) -> None:
         payload = await ecowitt_json(request)
         try:
             result = await asyncio.to_thread(
-                app.state.gateway.discover, payload.get("gateway_url")
+                station_setup().discover, payload.get("gateway_url")
             )
         except EcowittGatewayError:
             logger.warning("Ecowitt discovery failed", exc_info=True)
@@ -437,11 +533,8 @@ def register_routes(app: FastAPI) -> None:
                 status_code=422,
             )
         try:
-            discover_for_save = getattr(
-                app.state.gateway, "discover_for_save", app.state.gateway.discover
-            )
             discovery = await asyncio.to_thread(
-                discover_for_save, payload.get("gateway_url")
+                station_setup().discover, payload.get("gateway_url"), for_save=True
             )
         except EcowittGatewayError:
             logger.warning("Ecowitt gateway validation before saving failed", exc_info=True)
@@ -450,21 +543,10 @@ def register_routes(app: FastAPI) -> None:
                 status_code=400,
             )
 
-        settings: AppSettings = app.state.settings
-        candidate = replace(settings)
-        candidate.gateway_enabled = True
-        candidate.gateway_url = discovery["gateway_url"]
-        candidate.gateway_id = discovery["gateway_id"]
-        candidate.gateway_model = discovery["gateway_model"]
-        candidate.gateway_inventory = discovery["inventory"]
-        candidate.gateway_rain_source = discovery["rain_source"]
-        candidate.gateway_rain_reset_hour = discovery["rain_reset_hour"]
-        candidate.poll_interval_seconds = interval
-        for item in fields(AppSettings):
-            setattr(settings, item.name, getattr(candidate, item.name))
-        await asyncio.to_thread(settings.save)
-        initial_reading = await asyncio.to_thread(app.state.poller.poll_once)
-        reset_schedule = getattr(app.state.poller, "reset_schedule", None)
+        await asyncio.to_thread(station_setup().save, discovery, interval)
+        ecowitt_poller = station_runtime(request, "ecowitt").poller
+        initial_reading = await asyncio.to_thread(ecowitt_poller.poll_once)
+        reset_schedule = getattr(ecowitt_poller, "reset_schedule", None)
         if callable(reset_schedule):
             reset_schedule()
         return JSONResponse(
@@ -478,11 +560,7 @@ def register_routes(app: FastAPI) -> None:
     @app.post("/api/ecowitt/disable")
     async def ecowitt_disable(request: Request) -> Response:
         await ecowitt_json(request)
-        app.state.settings.gateway_enabled = False
-        await asyncio.to_thread(app.state.settings.save)
-        app.state.gateway.last_status.update(
-            state="disabled", label="Ecowitt polling disabled", last_error=""
-        )
+        await asyncio.to_thread(station_setup().disable)
         return JSONResponse({"ok": True, "enabled": False})
 
     @app.get("/api/astronomy")
@@ -490,11 +568,11 @@ def register_routes(app: FastAPI) -> None:
         return await asyncio.to_thread(astronomy_context, app.state.settings)
 
     @app.get("/api/readings/current")
-    async def get_current_reading() -> Dict[str, Any]:
-        """Return the latest stored Ecowitt reading for dashboard refreshes."""
+    async def get_current_reading(request: Request) -> Dict[str, Any]:
+        """Return the selected station's latest stored observation."""
         settings: AppSettings = app.state.settings
         latest = reading_for_display(
-            await asyncio.to_thread(app.state.data_logger.get_latest),
+            await asyncio.to_thread(station_runtime(request).data_logger.get_latest),
             settings.unit_system,
             settings.pressure_unit,
         )
@@ -503,19 +581,19 @@ def register_routes(app: FastAPI) -> None:
             "latest_observation_time": format_observation_time(
                 latest.get("timestamp"), settings.timezone
             ),
-            "poll_interval_seconds": settings.poll_interval_seconds,
+            "poll_interval_seconds": getattr(station_runtime(request).poller, "settings", settings).poll_interval_seconds,
             "display_units": {
                 field: display_unit_for(field, settings.unit_system, settings.pressure_unit)
-                for field in ("temperature", "feels_like", "wind_chill", "pressure", "wind_speed", "wind_gust", "rain_total")
+                for field in ("temperature", "feels_like", "wind_chill", "pressure", "indoor_absolute_pressure", "wind_speed", "wind_gust", "rain_total")
             },
         }
 
     @app.get("/api/metrics/24h")
-    async def get_24_hour_metrics() -> Dict[str, Any]:
-        """Return valid Ecowitt metric series and statistics for the last day."""
+    async def get_24_hour_metrics(request: Request) -> Dict[str, Any]:
+        """Return the selected station's metric series and statistics for the last day."""
         observed_at = datetime.now(timezone.utc)
         rows = await asyncio.to_thread(
-            app.state.data_logger.get_readings_since,
+            station_runtime(request).data_logger.get_readings_since,
             observed_at - timedelta(hours=24),
         )
         return {
@@ -531,13 +609,13 @@ def register_routes(app: FastAPI) -> None:
         }
 
     @app.get("/api/metrics/range")
-    async def get_metric_range(hours: int = 24) -> Dict[str, Any]:
+    async def get_metric_range(request: Request, hours: int = 24) -> Dict[str, Any]:
         """Return display-ready metric series for a supported graph window."""
         if hours not in GRAPH_RANGE_HOURS:
             raise HTTPException(status_code=422, detail="unsupported graph range")
         observed_at = datetime.now(timezone.utc)
         rows = await asyncio.to_thread(
-            app.state.data_logger.get_readings_since,
+            station_runtime(request).data_logger.get_readings_since,
             observed_at - timedelta(hours=hours),
         )
         return {
@@ -566,9 +644,10 @@ def register_routes(app: FastAPI) -> None:
         return await asyncio.to_thread(forecast_service.get, app.state.settings, force=force)
 
     @app.get("/export")
-    async def export_data(format: str = "csv") -> Response:
+    async def export_data(request: Request, format: str = "csv") -> Response:
         settings: AppSettings = app.state.settings
-        data_logger: DataLogger = app.state.data_logger
+        runtime = station_runtime(request)
+        data_logger: DataLogger = runtime.data_logger
         if format not in ALLOWED_EXPORT_FORMATS:
             raise HTTPException(status_code=422, detail="unsupported export format")
         payload = await asyncio.to_thread(
@@ -582,11 +661,11 @@ def register_routes(app: FastAPI) -> None:
         return Response(payload, media_type=content_type)
 
     @app.post("/poll")
-    async def poll_gateway(csrf_token: str = Form("")) -> Dict[str, Any]:
+    async def poll_gateway(request: Request, csrf_token: str = Form("")) -> Dict[str, Any]:
         """Poll the gateway only after validating the browser mutation token."""
         if not secrets.compare_digest(csrf_token, app.state.csrf_token):
             raise HTTPException(status_code=403, detail="invalid CSRF token")
-        reading = await asyncio.to_thread(app.state.poller.poll_once)
+        reading = await asyncio.to_thread(station_runtime(request).poller.poll_once)
         if reading is None:
             return {"status": "error", "message": "gateway fetch failed"}
         return {"status": "ok", "reading": reading}

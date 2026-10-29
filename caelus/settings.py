@@ -76,6 +76,11 @@ def build_windy_iframe_url(value: str, latitude: float, longitude: float) -> str
 class AppSettings:
     settings_path: ClassVar[Path] = Path(__file__).resolve().parent.parent / "data" / "settings.json"
     _save_lock: ClassVar[threading.Lock] = threading.Lock()
+    weather_adapter: str = "ecowitt"
+    acurite_enabled: bool = False
+    acurite_model: str = "01536"
+    acurite_usb_serial: str = ""
+    acurite_poll_interval_seconds: int = 60
     gateway_enabled: bool = True
     gateway_url: str = "http://192.168.1.100"
     gateway_id: str = ""
@@ -134,6 +139,17 @@ class AppSettings:
 
     @staticmethod
     def _validate_value(name: str, value: Any) -> Any:
+        if name == "acurite_model":
+            from caelus.acurite_models import console_profile
+            return console_profile(value).key
+        if name == "acurite_usb_serial":
+            if not isinstance(value, str) or len(value) > 128 or any(ord(char) < 32 for char in value):
+                raise ValueError("invalid USB serial number")
+            return value.strip()
+        if name == "weather_adapter":
+            if value not in {"ecowitt", "acurite_usb"}:
+                raise ValueError("unsupported weather adapter")
+            return value
         if name == "gateway_url":
             return validate_gateway_url(str(value))
         if name == "windy_iframe_url":
@@ -165,10 +181,10 @@ class AppSettings:
             if value not in ALLOWED_FORECAST_PROVIDERS:
                 raise ValueError("unsupported weather forecast provider")
             return value
-        if name in {"poll_interval_seconds", "retention_days", "gateway_rain_reset_hour"}:
+        if name in {"poll_interval_seconds", "retention_days", "gateway_rain_reset_hour", "acurite_poll_interval_seconds"}:
             if isinstance(value, bool) or not isinstance(value, int):
                 raise TypeError("must be an integer")
-            if name == "poll_interval_seconds":
+            if name in {"poll_interval_seconds", "acurite_poll_interval_seconds"}:
                 return min(max(60, value), 3600)
             if name == "gateway_rain_reset_hour":
                 return min(max(0, value), 23)
@@ -181,13 +197,13 @@ class AppSettings:
             if not -limit <= numeric <= limit:
                 raise ValueError(f"must be between {-limit} and {limit}")
             return numeric
-        if name in {"use_ip_location", "gateway_enabled"}:
+        if name in {"use_ip_location", "gateway_enabled", "acurite_enabled"}:
             if not isinstance(value, bool):
                 raise TypeError("must be a boolean")
             return value
         if name in {
             "location_name", "location_source", "location_provider", "gateway_id",
-            "gateway_model",
+            "gateway_model", "acurite_usb_serial",
             "unit_system", "pressure_unit",
         }:
             if not isinstance(value, str):

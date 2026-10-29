@@ -39,11 +39,28 @@ project-specific conventions.
 
 ## Project Context
 
-- Caelus is currently a lightweight FastAPI weather dashboard and persistence
-  service for Ecowitt-compatible gateways.
+- Caelus is a lightweight FastAPI weather dashboard and persistence service for
+  Ecowitt LAN gateways and AcuRite PC Connect USB consoles on Raspberry Pi/Linux, macOS, and Windows.
+- Ecowitt and AcuRite run independently through `caelus/stations.py`, with separate
+  histories (`caelus.db` and `acurite.db`). Never merge their readings or use mutable
+  global station selection; carry the station key through every data/export request.
+- PyUSB is included in the standard dependencies, with platform-marked HIDAPI on
+  macOS/Windows. Linux installer system setup requests sudo/pkexec authorization
+  only for the dedicated libusb/udev helper. Keep the runtime user-owned; never
+  replace macOS/Windows HID drivers. Native HID reads run in a bounded worker.
+  Keep bounded R1/R2 acquisition and sampler
+  lifecycle in `caelus/acurite.py`; never read the console archive or issue reset/mode
+  commands. Preserve per-field freshness, RF-loss invalidation, and rolling-counter
+  provenance. Physical model/platform validation is still required.
+- Console profiles in `caelus/acurite_models.py` cover 01536-RX and mode-4
+  01025/01035/01036/01525/02032 families. Keep the default 01536 profile and alias
+  normalization compatible with older settings. Profiles describe configured
+  hardware; shared USB IDs do not identify the model. Never infer pressure
+  calibration from the selected profile or send console mode-setting commands.
 - Supported runtime targets are Raspberry Pi, macOS, Windows, and Linux.
-- Initial hardware support is Ecowitt GW1100; future Ecowitt gateway support may
-  be added.
+- Ecowitt GW1100, GW1200, GW2000, and GW3000 share the local HTTP adapter.
+  GW2000/GW3000 coverage is protocol-fixture based, not physical-device validated.
+  Keep gateway compatibility separate from support for extra sensor channels.
 - Implemented behavior includes current gateway readings, SQLite persistence,
   scheduled polling, CSV/JSON export, scene themes, a calculated lunar phase
   display, Astral sunrise/sunset calculations, selectable weather forecasts,
@@ -169,8 +186,14 @@ project-specific conventions.
 - Preserve normalized metric names because they are database columns and UI
   contracts. In particular, distinguish `None` from legitimate zero values;
   `0.0` wind speed and `0` degrees are valid readings.
-- `GatewayPoller.poll_once` owns fetch, normalization, persistence, and pruning.
-  Do not duplicate that workflow in routes.
+- `GatewayPoller.poll_once` owns adapter acquisition, shared calculations, persistence,
+  and pruning. Adapters own vendor normalization and return `Observation` values;
+  do not introduce vendor parsing into the poller or duplicate its workflow in routes.
+- `WeatherAdapter` and canonical storage units live in `caelus/observations.py`.
+  Select adapters explicitly in `caelus/adapters.py`; keep optional device setup
+  separate from the acquisition contract. See `docs/weather_adapters.md`.
+- Rain baselines include source/channel/policy identity. Preserve provenance across
+  restart, reset the baseline on source changes, and retain supplied interval rain.
 - Gateway HTTP requests and SQLite work are synchronous. Run polling through
   `asyncio.to_thread` when called from async code.
 - Keep `GatewayPoller.start` idempotent, allow `stop` to wake the loop promptly,

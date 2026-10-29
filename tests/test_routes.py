@@ -211,6 +211,7 @@ def test_current_reading_api_uses_configured_refresh_interval() -> None:
             "feels_like": "°F",
             "wind_chill": "°F",
             "pressure": "inHg",
+            "indoor_absolute_pressure": "inHg",
             "wind_speed": "mph",
             "wind_gust": "mph",
             "rain_total": "in",
@@ -238,8 +239,8 @@ def test_dashboard_refresh_timers_follow_station_and_forecast_contract() -> None
     root = Path(__file__).resolve().parents[1]
     script = (root / "static" / "dashboard.js").read_text(encoding="utf-8")
 
-    assert 'fetch("/api/readings/current", {cache: "no-store"})' in script
-    assert 'fetch("/api/ecowitt/status", {cache: "no-store"})' in script
+    assert 'fetch(stationUrl("/api/readings/current"), {cache: "no-store"})' in script
+    assert 'fetch(stationUrl("/api/station/status"), {cache: "no-store"})' in script
     assert 'label.textContent = online ? "Online"' in script
     assert "window.setInterval(refreshEcowittDashboard, safeSeconds * 1000)" in script
     assert 'fetch("/api/forecast?force=true", {cache: "no-store"})' in script
@@ -535,6 +536,9 @@ def test_ecowitt_discovery_save_status_and_disable_routes(tmp_path, monkeypatch)
                 "live_metric_count": 12,
             }
 
+        def disable(self):
+            self.last_status.update(state="disabled")
+
         def status(self):
             return {
                 **self.last_status,
@@ -784,7 +788,7 @@ def test_map_interaction_gate_and_metric_graph_contract() -> None:
     assert 'windyGuard.addEventListener("click"' in script
     assert 'windyInteraction.addEventListener("mouseleave"' in script
     assert 'event.key === "Escape"' in script
-    assert 'fetch("/api/metrics/24h"' in script
+    assert 'fetch(stationUrl("/api/metrics/24h")' in script
     assert "function drawMetricGraph(" in script
     assert "const height = 230;" in script
     assert ".weather-metric-graph { display: block; width: 100%; height: 230px;" in css

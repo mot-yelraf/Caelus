@@ -832,3 +832,27 @@ dialog, .glass-card, .metric-loading { border-radius: 1rem; }
 .station-state.is-live { color: #279c48; }
 .station-state .status-dot { background: currentColor; box-shadow: 0 0 0 5px color-mix(in srgb, currentColor 12%, transparent); }
 .station-state.is-live .status-dot { background: #279c48; box-shadow: 0 0 0 5px rgba(39, 156, 72, 0.12); }
+
+/* Independent source setup shares the settings pane's scrolling and palette. */
+.station-connection { padding: 0; margin-bottom: 1rem; border: 1px solid var(--surface-border); border-radius: 0.85rem; background: var(--surface-light); }
+.station-connection > summary { display: flex; align-items: center; gap: 0.8rem; padding: 1.1rem; cursor: pointer; list-style: none; border-radius: 0.85rem; }
+.station-connection > summary::-webkit-details-marker { display: none; }
+.station-connection > summary::before { content: "›"; color: var(--surface-accent); font-size: 1.6rem; line-height: 1; }
+.station-connection[open] > summary::before { transform: rotate(90deg); }
+.station-connection[open] > summary { border-bottom: 1px solid var(--surface-border); border-radius: 0.85rem 0.85rem 0 0; }
+.station-connection > summary:focus-visible { outline: 2px solid var(--surface-accent); outline-offset: -3px; }
+.station-connection > summary strong { display: block; color: var(--surface-ink); font-size: 1rem; }
+.station-connection > summary small { display: block; margin-top: 0.3rem; color: var(--surface-muted); font-size: 0.8rem; }
+.station-connection-content { padding: 1rem 1.1rem 1.1rem; }
+.station-enable-row { display: flex; justify-content: flex-end; }
+.station-connection p { color: var(--surface-muted); font-size: 0.8rem; line-height: 1.55; }
+.station-enable { display: flex; align-items: center; gap: 0.45rem; white-space: nowrap; color: var(--surface-ink); font-size: 0.8rem; }
+.station-enable input { accent-color: var(--surface-accent); }
+.connection-status { padding: 0.55rem 0.7rem; border-left: 3px solid var(--surface-accent); background: var(--surface-tint); overflow-wrap: anywhere; }
+.connection-status.is-error { border-left-color: #b54738; }
+.station-picker { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.6rem; color: var(--muted); font-size: 0.8rem; }
+.station-picker select { max-width: 100%; padding: 0.3rem 0.55rem; border: 1px solid var(--line); border-radius: 0.5rem; background: var(--surface-light); color: var(--surface-ink); }
+@media (max-width: 480px) {
+  .station-connection > summary { padding: 0.85rem; }
+  .station-connection-content { padding: 0.85rem; }
+}

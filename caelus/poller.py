@@ -1,28 +1,31 @@
 import asyncio
 import logging
 import threading
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI
 
-from caelus.gateway import map_gateway_reading
+from caelus.observations import RainPolicy
+from caelus.rain import add_rain_increment, process_rain, add_recorded_daily_rain
 from caelus.metrics import calculate_feels_like, calculate_heat_index, calculate_wind_chill
 
 logger = logging.getLogger(__name__)
 
 
 class GatewayPoller:
+    """Schedule normalized primary-station acquisition and shared persistence work."""
+
     def __init__(self, app: FastAPI) -> None:
         self.app = app
         self.settings = app.state.settings
-        self.gateway = app.state.gateway
+        self.gateway = getattr(app.state, "gateway", None)
+        self.adapter = app.state.weather_adapter
         self.data_logger = app.state.data_logger
         self.task: asyncio.Task[Any] | None = None
         self.stop_event = asyncio.Event()
         self.schedule_event = asyncio.Event()
-        self._poll_lock = threading.Lock()
+        self._poll_lock = getattr(app.state, "station_lock", None) or threading.RLock()
 
     async def start(self) -> None:
         if self.task is not None and not self.task.done():
@@ -61,27 +64,36 @@ class GatewayPoller:
         self.schedule_event.set()
 
     def poll_once(self) -> dict[str, Any] | None:
-        """Fetch, persist, and return one normalized gateway reading."""
+        """Acquire, enrich, persist, and return one normalized adapter observation."""
         with self._poll_lock:
-            reading = self.gateway.fetch()
-            if not reading:
+            observation = self.adapter.read()
+            if observation is None:
                 return None
-
-            mapped = map_gateway_reading(
-                reading,
-                rain_source=getattr(self.settings, "gateway_rain_source", "traditional"),
-            )
-            if not mapped:
+            mapped = dict(observation.measurements)
+            if not any(value is not None for value in mapped.values()):
                 return None
             mapped["feels_like"] = calculate_feels_like(
                 mapped.get("temperature"), mapped.get("humidity"), mapped.get("wind_speed")
             )
             mapped["heat_index"] = calculate_heat_index(mapped.get("temperature"), mapped.get("humidity"))
             mapped["wind_chill"] = calculate_wind_chill(mapped.get("temperature"), mapped.get("wind_speed"))
-            timestamp = datetime.now(timezone.utc).replace(tzinfo=None)
+            timestamp = observation.observed_at.replace(tzinfo=None)
             latest_reader = getattr(self.data_logger, "get_latest", None)
             latest = latest_reader() if callable(latest_reader) else None
-            self._add_rain_increment(mapped, latest, timestamp)
+            counter_id = process_rain(observation, latest)
+            add_recorded_daily_rain(observation, latest)
+            if "rain_total" in observation.measurements:
+                mapped["rain_total"] = observation.measurements["rain_total"]
+            if observation.measurements.get("rain_increment") is not None:
+                mapped["rain_increment"] = observation.measurements["rain_increment"]
+            mapped.update(
+                source_id=observation.source_id,
+                observed_at=observation.observed_at.isoformat(),
+                received_at=observation.received_at.isoformat(),
+                rain_counter_id=counter_id,
+                rain_counter_value=observation.rain_counter,
+                rain_counter_at=observation.rain_counter_at.isoformat() if observation.rain_counter_at else None,
+            )
             self.data_logger.log_reading(timestamp, mapped)
             self.data_logger.prune_readings(self.settings.retention_days)
             return mapped
@@ -92,37 +104,8 @@ class GatewayPoller:
         previous: dict[str, Any] | None,
         timestamp: datetime,
     ) -> None:
-        """Calculate interval rain without treating a daily counter as rainfall."""
-        current = reading.get("rain_total")
-        prior = previous.get("rain_total") if previous else None
-        if current is None or prior is None:
-            return
-        try:
-            current_total = float(current)
-            prior_total = float(prior)
-        except (TypeError, ValueError):
-            return
-        crossed_reset = False
-        try:
-            prior_time = datetime.fromisoformat(str(previous.get("timestamp")))
-            if prior_time.tzinfo is None:
-                prior_time = prior_time.replace(tzinfo=timezone.utc)
-            current_time = timestamp.replace(tzinfo=timezone.utc)
-            local_timezone = ZoneInfo(getattr(self.settings, "timezone", "UTC"))
-            prior_local = prior_time.astimezone(local_timezone)
-            current_local = current_time.astimezone(local_timezone)
-            reset_hour = int(getattr(self.settings, "gateway_rain_reset_hour", 0))
-            reset = prior_local.replace(
-                hour=max(0, min(23, reset_hour)), minute=0, second=0, microsecond=0
-            )
-            if reset <= prior_local:
-                reset += timedelta(days=1)
-            crossed_reset = reset <= current_local
-        except (TypeError, ValueError):
-            pass
-        if crossed_reset:
-            reading["rain_increment"] = round(current_total, 3)
-        elif current_total >= prior_total:
-            reading["rain_increment"] = round(current_total - prior_total, 3)
-        else:
-            reading["rain_increment"] = 0.0
+        """Compatibility entrypoint for daily rain processing; acquisition uses its policy."""
+        add_rain_increment(reading, previous, timestamp, RainPolicy(
+            kind="daily", timezone=getattr(self.settings, "timezone", "UTC"),
+            reset_hour=getattr(self.settings, "gateway_rain_reset_hour", 0),
+        ))

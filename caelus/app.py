@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import secrets
+import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import FastAPI
@@ -9,7 +10,10 @@ from fastapi.templating import Jinja2Templates
 from caelus.settings import AppSettings
 from caelus.theme_manager import ThemeManager
 from caelus.data_logger import DataLogger
-from caelus.gateway import EcowittGateway
+from caelus.adapters import EcowittAdapter
+from caelus.observations import WeatherAdapter
+from caelus.station import EcowittStationSetup
+from caelus.stations import build_stations, start_station, stop_stations
 from caelus.forecast import ForecastService
 from caelus.weather_climate import WeatherClimateService
 from caelus.location import resolve_ip_location
@@ -32,12 +36,22 @@ async def _initialize_optional_services(app: FastAPI) -> None:
         logger.exception("Startup weather climate failed; later requests will retry")
 
 
-def create_app() -> FastAPI:
+def create_app(*, weather_adapter: WeatherAdapter | None = None) -> FastAPI:
+    """Wire shared services, optionally injecting a normalized weather adapter."""
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        await app.state.poller.start()
+        started = []
         initialization = None
         try:
+            if getattr(app.state, "stations", None):
+                for runtime in app.state.stations.values():
+                    # The alias remains replaceable by embedders and lifecycle tests.
+                    if runtime.key == app.state.settings.weather_adapter:
+                        runtime.poller = app.state.poller
+                    await start_station(runtime)
+                    started.append(runtime)
+            else:
+                await app.state.poller.start()
             # Resolve coordinates before serving settings mutations or warming
             # location-dependent services. Provider requests already have timeouts.
             if app.state.settings.use_ip_location:
@@ -56,7 +70,10 @@ def create_app() -> FastAPI:
                 try:
                     await app.state.weather_climate_service.close()
                 finally:
-                    await app.state.poller.stop()
+                    if started:
+                        await stop_stations(started)
+                    else:
+                        await app.state.poller.stop()
 
     app = FastAPI(title="Caelus", lifespan=lifespan)
     app.state.templates = Jinja2Templates(directory=str(BASE_DIR.parent / "templates"))
@@ -65,8 +82,24 @@ def create_app() -> FastAPI:
     app.state.db_path = BASE_DIR.parent / "data" / "caelus.db"
     app.state.db_path.parent.mkdir(parents=True, exist_ok=True)
     app.state.data_logger = DataLogger(str(app.state.db_path))
-    app.state.gateway = EcowittGateway(app.state.settings)
-    app.state.poller = GatewayPoller(app)
+    app.state.station_lock = threading.RLock()
+    app.state.stations = {}
+    app.state.station_setup = None
+    if weather_adapter is None:
+        app.state.stations = build_stations(app, BASE_DIR.parent / "data")
+        selected = app.state.stations[app.state.settings.weather_adapter]
+        app.state.weather_adapter = selected.adapter
+        app.state.data_logger = selected.data_logger
+        app.state.poller = selected.poller
+        ecowitt = app.state.stations["ecowitt"].adapter
+        app.state.gateway = ecowitt.gateway
+        app.state.station_setup = EcowittStationSetup(app.state.settings, ecowitt.gateway, app.state.station_lock)
+    else:
+        app.state.weather_adapter = weather_adapter
+        if isinstance(weather_adapter, EcowittAdapter):
+            app.state.gateway = weather_adapter.gateway
+            app.state.station_setup = EcowittStationSetup(app.state.settings, weather_adapter.gateway, app.state.station_lock)
+        app.state.poller = GatewayPoller(app)
     app.state.forecast_service = ForecastService(BASE_DIR.parent / "data" / "forecast.json")
     app.state.weather_climate_service = WeatherClimateService(BASE_DIR.parent / "data" / "weather_climate.json")
     app.state.csrf_token = secrets.token_urlsafe(32)

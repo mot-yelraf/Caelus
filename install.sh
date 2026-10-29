@@ -86,6 +86,50 @@ resolve_selected_install_dir() {
   esac
 }
 
+configure_acurite_usb() {
+  usb_setup_mode="${CAELUS_SETUP_ACURITE_USB:-auto}"
+  case "$usb_setup_mode" in auto|yes|no) ;; *) printf 'CAELUS_SETUP_ACURITE_USB must be auto, yes, or no.\n' >&2; return 1 ;; esac
+  [ "$usb_setup_mode" != "no" ] || return 0
+  usb_account="${CAELUS_USB_USER:-${SUDO_USER:-$(id -un)}}"
+  usb_group="$(id -gn "$usb_account")" || return 1
+  usb_question="Set up AcuRite USB access for $usb_account (group $usb_group)? This may install libusb and adds a rule only for USB device 24c0:0003. Administrator authentication will be requested."
+  if [ "$usb_setup_mode" = "auto" ]; then
+    if [ -t 0 ]; then
+      printf '%s [y/N] ' "$usb_question"
+      IFS= read -r usb_answer || usb_answer=no
+      case "$usb_answer" in y|Y|yes|YES) ;; *) printf 'AcuRite USB system setup skipped.\n'; return 0 ;; esac
+    elif [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ] && command -v zenity >/dev/null 2>&1; then
+      zenity --question --title="AcuRite USB access" --text="$usb_question" || return 0
+    elif [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ] && command -v kdialog >/dev/null 2>&1; then
+      kdialog --yesno "$usb_question" --title "AcuRite USB access" || return 0
+    else
+      printf 'AcuRite USB system setup skipped in noninteractive mode. Set CAELUS_SETUP_ACURITE_USB=yes to request it.\n'
+      return 0
+    fi
+  fi
+  usb_needs_libusb=0
+  "$INSTALL_DIR/.venv/bin/python" -c 'from usb.backend.libusb1 import get_backend; raise SystemExit(0 if get_backend() else 1)' || usb_needs_libusb=1
+  usb_helper="$INSTALL_DIR/scripts/configure_acurite_usb.sh"
+  if [ "$(id -u)" -eq 0 ]; then
+    /bin/sh "$usb_helper" "$usb_group" "$usb_needs_libusb" || return 1
+  elif [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ] && command -v pkexec >/dev/null 2>&1; then
+    pkexec /bin/sh "$usb_helper" "$usb_group" "$usb_needs_libusb" || return 1
+  elif command -v sudo >/dev/null 2>&1; then
+    if [ -t 0 ]; then
+      sudo /bin/sh "$usb_helper" "$usb_group" "$usb_needs_libusb" || return 1
+    else
+      sudo -n /bin/sh "$usb_helper" "$usb_group" "$usb_needs_libusb" || return 1
+    fi
+  else
+    printf 'sudo or pkexec is needed to configure AcuRite USB system access.\n' >&2
+    return 1
+  fi
+  "$INSTALL_DIR/.venv/bin/python" -c 'from usb.backend.libusb1 import get_backend; raise SystemExit(0 if get_backend() else 1)' || {
+    printf 'libusb is still unavailable. Review the system package installation.\n' >&2
+    return 1
+  }
+}
+
 if [ "${CAELUS_INSTALL_DIR+x}" = "x" ]; then
   INSTALL_DIR="$CAELUS_INSTALL_DIR"
 else
@@ -125,13 +169,15 @@ case "$INSTALL_DIR" in
 esac
 
 mkdir -p "$INSTALL_DIR/caelus" "$INSTALL_DIR/static" \
-  "$INSTALL_DIR/templates" "$INSTALL_DIR/data"
+  "$INSTALL_DIR/templates" "$INSTALL_DIR/data" "$INSTALL_DIR/scripts"
 
 if [ "$SOURCE_DIR" != "$INSTALL_DIR" ]; then
   cp "$SOURCE_DIR/Caelus.py" "$INSTALL_DIR/Caelus.py"
   cp "$SOURCE_DIR/requirements.txt" "$INSTALL_DIR/requirements.txt"
+  cp "$SOURCE_DIR/requirements-acurite.txt" "$INSTALL_DIR/requirements-acurite.txt"
   cp "$SOURCE_DIR/README.md" "$INSTALL_DIR/README.md"
   cp "$SOURCE_DIR/install.sh" "$INSTALL_DIR/install.sh"
+  cp "$SOURCE_DIR/scripts/configure_acurite_usb.sh" "$INSTALL_DIR/scripts/configure_acurite_usb.sh"
   cp "$SOURCE_DIR/install.ps1" "$INSTALL_DIR/install.ps1"
   cp "$SOURCE_DIR/run_caelus.sh" "$INSTALL_DIR/run_caelus.sh"
   cp "$SOURCE_DIR/run_caelus_gui.sh" "$INSTALL_DIR/run_caelus_gui.sh"
@@ -158,6 +204,17 @@ fi
   -r "$INSTALL_DIR/requirements.txt"
 "$INSTALL_DIR/.venv/bin/python" -c 'import webview' \
   || fail "pywebview could not be imported after installation."
+
+case "$(uname -s)" in
+  Linux)
+    configure_acurite_usb || printf 'AcuRite USB system setup was not completed. Rerun the installer to retry; the application installation continues.\n' >&2
+    ;;
+  Darwin)
+    "$INSTALL_DIR/.venv/bin/python" -c 'import hid; assert hasattr(hid.device, "get_input_report")' \
+      || fail "Native HID USB support could not be loaded. Reinstall the standard requirements."
+    printf 'AcuRite uses the native macOS HID driver; no Linux USB permission rule is needed.\n'
+    ;;
+esac
 
 if [ "$(uname -s)" = "Linux" ]; then
   "$INSTALL_DIR/.venv/bin/python" -c \
