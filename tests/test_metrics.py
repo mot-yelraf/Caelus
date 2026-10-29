@@ -333,3 +333,20 @@ def test_locally_derived_heat_index(temperature, humidity, expected):
 
     result = calculate_heat_index(temperature, humidity)
     assert result is None if expected is None else result == pytest.approx(expected, abs=0.02)
+
+
+@pytest.mark.parametrize('absolute,altitude', [
+    (None, 1000), (25, None), (0, 1000), (-1, 1000),
+    (float('nan'), 1000), (25, float('inf')), (25, 9001), (25, -501), (0.3 / 33.8638866667 + 1e-12, -500),
+])
+def test_barometric_pressure_unavailable_for_invalid_inputs(absolute, altitude):
+    from caelus.metrics import calculate_barometric_pressure
+    assert calculate_barometric_pressure(absolute, altitude) is None
+
+
+def test_barometric_pressure_at_and_below_sea_level():
+    from caelus.metrics import calculate_barometric_pressure
+    # NWS formula applies a 0.3 mb sensor correction at sea level.
+    sea_level = calculate_barometric_pressure(29.92, 0)
+    assert sea_level == pytest.approx(29.92 - 0.3 / 33.8638866667)
+    assert calculate_barometric_pressure(29.92, -430) < sea_level

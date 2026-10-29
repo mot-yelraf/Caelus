@@ -81,6 +81,14 @@ class AppSettings:
     acurite_model: str = "01536"
     acurite_usb_serial: str = ""
     acurite_poll_interval_seconds: int = 60
+    wmr100_enabled: bool = False
+    wmr100_model: str = "WMR100"
+    wmr100_usb_serial: str = ""
+    wmr100_poll_interval_seconds: int = 60
+    davis_enabled: bool = False
+    davis_port: str = ""
+    davis_baud_rate: int = 19200
+    davis_poll_interval_seconds: int = 60
     gateway_enabled: bool = True
     gateway_url: str = "http://192.168.1.100"
     gateway_id: str = ""
@@ -92,6 +100,7 @@ class AppSettings:
     location_name: str = ""
     latitude: float = 0.0
     longitude: float = 0.0
+    altitude_m: float | None = None
     use_ip_location: bool = True
     timezone: str = "UTC"
     location_source: str = ""
@@ -139,15 +148,26 @@ class AppSettings:
 
     @staticmethod
     def _validate_value(name: str, value: Any) -> Any:
+        if name == "davis_port":
+            from caelus.davis import validate_port
+            return validate_port(value)
+        if name == "davis_baud_rate":
+            from caelus.davis import BAUD_RATES
+            if isinstance(value, bool) or not isinstance(value, int) or value not in BAUD_RATES:
+                raise ValueError("Unsupported Davis baud rate")
+            return value
+        if name == "wmr100_model":
+            from caelus.wmr100 import normalize_model
+            return normalize_model(value)
         if name == "acurite_model":
             from caelus.acurite_models import console_profile
             return console_profile(value).key
-        if name == "acurite_usb_serial":
+        if name in {"acurite_usb_serial", "wmr100_usb_serial"}:
             if not isinstance(value, str) or len(value) > 128 or any(ord(char) < 32 for char in value):
                 raise ValueError("invalid USB serial number")
             return value.strip()
         if name == "weather_adapter":
-            if value not in {"ecowitt", "acurite_usb"}:
+            if value not in {"ecowitt", "acurite_usb", "wmr100_usb", "davis_vue"}:
                 raise ValueError("unsupported weather adapter")
             return value
         if name == "gateway_url":
@@ -181,14 +201,22 @@ class AppSettings:
             if value not in ALLOWED_FORECAST_PROVIDERS:
                 raise ValueError("unsupported weather forecast provider")
             return value
-        if name in {"poll_interval_seconds", "retention_days", "gateway_rain_reset_hour", "acurite_poll_interval_seconds"}:
+        if name in {"poll_interval_seconds", "retention_days", "gateway_rain_reset_hour", "acurite_poll_interval_seconds", "wmr100_poll_interval_seconds", "davis_poll_interval_seconds"}:
             if isinstance(value, bool) or not isinstance(value, int):
                 raise TypeError("must be an integer")
-            if name in {"poll_interval_seconds", "acurite_poll_interval_seconds"}:
+            if name in {"poll_interval_seconds", "acurite_poll_interval_seconds", "wmr100_poll_interval_seconds", "davis_poll_interval_seconds"}:
                 return min(max(60, value), 3600)
             if name == "gateway_rain_reset_hour":
                 return min(max(0, value), 23)
             return min(max(30, value), 366)
+        if name == "altitude_m":
+            if value is None:
+                return None
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise TypeError("altitude must be numeric")
+            if not -500 <= value <= 9000:
+                raise ValueError("altitude must be between -500 and 9000 meters")
+            return float(value)
         if name in {"latitude", "longitude"}:
             if isinstance(value, bool) or not isinstance(value, (int, float)):
                 raise TypeError("must be numeric")
@@ -197,7 +225,7 @@ class AppSettings:
             if not -limit <= numeric <= limit:
                 raise ValueError(f"must be between {-limit} and {limit}")
             return numeric
-        if name in {"use_ip_location", "gateway_enabled", "acurite_enabled"}:
+        if name in {"use_ip_location", "gateway_enabled", "acurite_enabled", "wmr100_enabled", "davis_enabled"}:
             if not isinstance(value, bool):
                 raise TypeError("must be a boolean")
             return value

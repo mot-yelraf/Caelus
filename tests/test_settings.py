@@ -136,3 +136,21 @@ def test_ecowitt_configuration_round_trips_sensor_inventory(tmp_path, monkeypatc
     assert restored.gateway_rain_reset_hour == 9
     assert restored.poll_interval_seconds == 120
     assert not settings_path.with_suffix(".json.tmp").exists()
+
+
+@pytest.mark.parametrize('altitude', [None, -430, 0, 1500.5, 9000])
+def test_altitude_settings_round_trip(altitude, tmp_path, monkeypatch):
+    monkeypatch.setattr(AppSettings, 'settings_path', tmp_path / 'settings.json')
+    settings = AppSettings(altitude_m=altitude)
+    settings.save()
+    assert AppSettings.load().altitude_m == altitude
+
+
+@pytest.mark.parametrize('altitude', [True, '1500', -501, 9001, float('nan'), float('inf')])
+def test_invalid_altitude_does_not_reset_other_settings(altitude, tmp_path, monkeypatch, caplog):
+    monkeypatch.setattr(AppSettings, 'settings_path', tmp_path / 'settings.json')
+    AppSettings.settings_path.write_text(json.dumps({'altitude_m': altitude, 'latitude': 40}))
+    settings = AppSettings.load()
+    assert settings.altitude_m is None
+    assert settings.latitude == 40
+    assert 'Ignoring invalid setting altitude_m' in caplog.text

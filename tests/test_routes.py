@@ -78,6 +78,7 @@ def test_dashboard_displays_zero_values() -> None:
     assert response.status_code == 200
     assert 'data-reading-field="temperature">0.0</span>' in response.text
     assert "0.0 mph" in response.text
+    assert 'class="weather-badge"' not in response.text
 
 
 def test_favicon_serves_caelus_icon() -> None:
@@ -1036,6 +1037,21 @@ def test_weather_climate_endpoint_returns_snapshot_without_http_cache():
     assert TestClient(app).get('/api/weather-climate').json() == {'status': 'unavailable'}
 
 
+def test_station_selector_is_in_current_readings_footer():
+    from caelus.stations import StationRuntime
+
+    app = make_app()
+    app.state.stations = {
+        "ecowitt": StationRuntime("ecowitt", "Ecowitt", None, app.state.data_logger, app.state.poller),
+    }
+    response = TestClient(app).get("/")
+    footer = response.text.split('<footer class="readings-footer"', 1)[1].split('</footer>', 1)[0]
+    assert 'data-station-picker' in footer
+    assert 'value="ecowitt" selected' in footer
+    assert 'data-station-state' not in footer
+    assert response.text.count('data-station-picker') == 1
+
+
 def test_current_readings_footer_uses_runtime_station_health():
     from caelus.gateway import EcowittGateway
     from datetime import datetime, timezone
@@ -1111,3 +1127,66 @@ def test_forecast_thermal_values_use_compact_labels_and_selected_units(unit_syst
         assert '>FL -14°C</small>' in html
         assert '>FL -14–4°C</small>' in html
         assert '>WC -14°C</small>' in html
+
+
+@pytest.mark.parametrize('altitude,unit,expected', [('5000', 'ft', 1524), ('1500', 'm', 1500), ('0', 'm', 0), ('', 'ft', None)])
+def test_location_altitude_save_and_clear(altitude, unit, expected, tmp_path, monkeypatch):
+    monkeypatch.setattr(AppSettings, 'settings_path', tmp_path / 'settings.json')
+    app = make_app()
+    app.state.settings.altitude_m = 100
+    client = TestClient(app)
+    response = client.post('/settings', data={
+        'csrf_token': 'test-token', 'settings_pane': 'location',
+        'altitude': altitude, 'altitude_unit': unit,
+    })
+    assert response.status_code == 200
+    assert app.state.settings.altitude_m == expected
+    assert AppSettings.load().altitude_m == expected
+
+
+@pytest.mark.parametrize('altitude,unit', [('nan', 'm'), ('inf', 'm'), ('9001', 'm'), ('-501', 'm'), ('abc', 'ft'), ('100', 'km')])
+def test_invalid_altitude_location_save_is_atomic(altitude, unit, tmp_path, monkeypatch):
+    monkeypatch.setattr(AppSettings, 'settings_path', tmp_path / 'settings.json')
+    app = make_app()
+    response = TestClient(app).post('/settings', data={
+        'csrf_token': 'test-token', 'settings_pane': 'location', 'location_name': 'Changed',
+        'altitude': altitude, 'altitude_unit': unit,
+    })
+    assert response.status_code == 422
+    assert app.state.settings.location_name == ''
+    assert app.state.settings.altitude_m is None
+    assert not AppSettings.settings_path.exists()
+
+
+def test_altitude_is_owned_by_location_pane(tmp_path, monkeypatch):
+    monkeypatch.setattr(AppSettings, 'settings_path', tmp_path / 'settings.json')
+    app = make_app()
+    app.state.settings.altitude_m = 1524
+    client = TestClient(app)
+    assert client.post('/settings', data={
+        'csrf_token': 'test-token', 'settings_pane': 'forecast', 'altitude': 'invalid',
+    }).status_code == 200
+    assert client.post('/settings', data={
+        'csrf_token': 'test-token', 'settings_pane': 'location', 'location_name': 'New name',
+    }).status_code == 200
+    assert app.state.settings.altitude_m == 1524
+    assert 'name="altitude" value="5000.0"' in client.get('/').text
+    app.state.settings.unit_system = 'metric'
+    assert 'name="altitude" value="1524"' in client.get('/').text
+
+
+def test_acurite_current_pressure_uses_adjusted_value_when_altitude_configured():
+    from caelus.stations import StationRuntime
+
+    app = make_app()
+    app.state.settings.altitude_m = 1524
+    app.state.stations = {
+        'acurite_usb': StationRuntime('acurite_usb', 'AcuRite', None, app.state.data_logger, app.state.poller),
+    }
+    app.state.data_logger.get_latest = lambda: {'pressure': 30.0, 'indoor_absolute_pressure': 24.8}
+    client = TestClient(app)
+    response = client.get('/?station=acurite_usb')
+    assert 'Barometric pressure</span><strong data-reading-field="pressure"' in response.text
+    assert client.get('/api/readings/current?station=acurite_usb').json()['reading']['pressure'] == 30.0
+    app.state.settings.altitude_m = None
+    assert 'Absolute pressure</span><strong data-reading-field="indoor_absolute_pressure"' in client.get('/?station=acurite_usb').text

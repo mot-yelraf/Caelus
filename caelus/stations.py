@@ -18,11 +18,11 @@ class StationSettings:
 
     @property
     def poll_interval_seconds(self) -> int:
-        return (
-            self.settings.acurite_poll_interval_seconds
-            if self.key == "acurite_usb"
-            else self.settings.poll_interval_seconds
-        )
+        if self.key == "davis_vue":
+            return self.settings.davis_poll_interval_seconds
+        if self.key in {"acurite_usb", "wmr100_usb"}:
+            return getattr(self.settings, f"{self.key.removesuffix('_usb')}_poll_interval_seconds")
+        return self.settings.poll_interval_seconds
 
     def __getattr__(self, name):
         return getattr(self.settings, name)
@@ -40,16 +40,18 @@ class StationRuntime:
 
 
 def build_stations(app, data_dir) -> dict[str, StationRuntime]:
-    """Preserve the original Ecowitt database and allocate a separate AcuRite history."""
+    """Preserve the original Ecowitt database and allocate independent USB station histories."""
     settings = app.state.settings
     stations = {}
     for key, name, logger in (
         ("ecowitt", "Ecowitt", app.state.data_logger),
         (
             "acurite_usb",
-            "AcuRite USB",
+            "AcuRite",
             DataLogger(str(data_dir / "acurite.db")),
         ),
+        ("wmr100_usb", "Oregon Scientific", DataLogger(str(data_dir / "wmr100.db"))),
+        ("davis_vue", "Davis Vantage Vue", DataLogger(str(data_dir / "davis.db"))),
     ):
         adapter = create_weather_adapter(settings, kind=key)
         state = SimpleNamespace(

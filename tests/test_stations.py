@@ -86,7 +86,7 @@ def test_simultaneous_sources_keep_current_readings_exports_and_graphs_separate(
     )
     assert client.get("/api/readings/current?station=missing").status_code == 404
     assert client.get("/api/station/status?station=missing").status_code == 404
-    assert len(client.get("/api/stations").json()["stations"]) == 2
+    assert len(client.get("/api/stations").json()["stations"]) == 4
 
 
 def test_dashboard_selection_is_explicit_and_exports_stay_in_selected_station(app):
@@ -255,3 +255,85 @@ def test_all_station_cleanup_is_attempted_after_one_failure():
 
     asyncio.run(exercise())
     assert calls == ["poller", "adapter", "poller", "healthy"]
+
+
+def test_wmr100_settings_current_exports_and_independent_history(app):
+    from test_wmr100 import FakeTransport as WmrTransport
+    settings = app.state.settings
+    runtime = app.state.stations["wmr100_usb"]
+    client = TestClient(app)
+    assert client.post("/api/stations/wmr100_usb/settings", json={"enabled": True}).status_code == 403
+    before = settings.__dict__.copy()
+    invalid = client.post("/api/stations/wmr100_usb/settings", json={
+        "csrf_token": "test-token", "enabled": True, "model": "WMR200",
+        "poll_interval_seconds": 60})
+    assert invalid.status_code == 422 and settings.__dict__ == before
+    response = client.post("/api/stations/wmr100_usb/settings", json={
+        "csrf_token": "test-token", "enabled": True, "model": "wmr100n",
+        "usb_serial": "oregon", "poll_interval_seconds": 120,
+        "acurite_enabled": False})
+    assert response.status_code == 200
+    assert settings.wmr100_model == "WMR100N" and settings.acurite_enabled
+    assert settings.wmr100_poll_interval_seconds == runtime.poller.settings.poll_interval_seconds == 120
+    assert AppSettings.load().wmr100_enabled
+    runtime.adapter.transport = WmrTransport()
+    runtime.adapter.sample_once()
+    runtime.poller.poll_once()
+    assert runtime.data_logger.db_path.name == "wmr100.db"
+    assert client.get("/api/readings/current?station=wmr100_usb").json()["reading"]["temperature"] == 58.1
+    assert client.get("/export?format=json&station=wmr100_usb").json()[0]["temperature"] == 58.1
+    assert client.get("/api/readings/current?station=ecowitt").json()["reading"]["temperature"] == 90
+    assert client.get("/api/readings/current?station=acurite_usb").json()["reading"]["temperature"] == 68
+    html = client.get("/?station=wmr100_usb").text
+    assert 'data-station-card="wmr100_usb"' in html and 'value="wmr100_usb" selected' in html
+    assert "Recorded rain today" in html
+    assert client.get("/api/station/capabilities?station=wmr100_usb").json()["units"]["wind_gust"] == "mph"
+    response = client.post("/api/stations/wmr100_usb/settings", json={
+        "csrf_token": "test-token", "enabled": False, "poll_interval_seconds": 120})
+    assert response.status_code == 200
+    assert runtime.adapter.read() is None
+    assert runtime.data_logger.get_latest()["temperature"] == 58.1
+
+
+def test_davis_settings_history_exports_and_atomic_validation(app):
+    from dataclasses import replace
+    from test_davis import FakeTransport as DavisTransport, snapshot
+    client = TestClient(app)
+    runtime = app.state.stations["davis_vue"]
+    settings = app.state.settings
+    assert client.post("/api/stations/davis_vue/settings", json={"enabled": True}).status_code == 403
+    before = settings.__dict__.copy()
+    for changes in ({"port": ""}, {"port": "socket://host:22222"}, {"port": "/dev/test-vue", "baud_rate": 115200},
+                    {"port": "/dev/test-vue", "baud_rate": True}):
+        reply = client.post("/api/stations/davis_vue/settings", json={
+            "csrf_token": "test-token", "enabled": True, "poll_interval_seconds": 120, **changes})
+        assert reply.status_code == 422 and settings.__dict__ == before
+    response = client.post("/api/stations/davis_vue/settings", json={
+        "csrf_token": "test-token", "enabled": True, "port": "/dev/test-vue", "baud_rate": 19200,
+        "poll_interval_seconds": 120, "acurite_enabled": False})
+    assert response.status_code == 200
+    assert settings.davis_enabled and settings.acurite_enabled
+    assert runtime.poller.settings.poll_interval_seconds == 120
+    restored = AppSettings.load()
+    assert restored.davis_port == "/dev/test-vue" and restored.davis_baud_rate == 19200
+    assert restored.davis_poll_interval_seconds == 120
+    runtime.adapter.transport = DavisTransport()
+    runtime.adapter.sample_once()
+    runtime.adapter.transport.current = replace(snapshot(102), values={**snapshot().values, "temperature": 64.2})
+    runtime.adapter.sample_once()
+    runtime.poller.poll_once()
+    assert runtime.data_logger.db_path.name == "davis.db"
+    assert client.get("/api/readings/current?station=davis_vue").json()["reading"]["temperature"] == 64.2
+    assert client.get("/export?format=json&station=davis_vue").json()[0]["temperature"] == 64.2
+    assert client.get("/api/station/status?station=davis_vue").json()["observation_fresh"]
+    assert client.get("/api/station/capabilities?station=davis_vue").json()["units"]["wind_gust"] == "mph"
+    html = client.get("/?station=davis_vue").text
+    assert 'data-station-card="davis_vue"' in html and 'value="davis_vue" selected' in html
+    assert 'format=csv&amp;station=davis_vue' in html
+    assert client.get("/api/readings/current?station=ecowitt").json()["reading"]["temperature"] == 90
+    assert client.get("/api/readings/current?station=acurite_usb").json()["reading"]["temperature"] == 68
+    response = client.post("/api/stations/davis_vue/settings", json={
+        "csrf_token": "test-token", "enabled": False, "poll_interval_seconds": 120})
+    assert response.status_code == 200 and not settings.davis_enabled
+    assert runtime.adapter.read() is None
+    assert runtime.data_logger.get_latest()["temperature"] == 64.2

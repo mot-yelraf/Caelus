@@ -69,7 +69,7 @@ def test_helper_limits_permissions_to_acurite_and_reloads_udev(tmp_path):
     assert result.returncode == 0, result.stderr
     assert (
         rule.read_text()
-        == 'SUBSYSTEM=="usb", ATTR{{idVendor}}=="24c0", ATTR{{idProduct}}=="0003", GROUP="weather", MODE="0660"\n'.replace(
+        == 'SUBSYSTEM=="usb", ATTR{{idVendor}}=="24c0", ATTR{{idProduct}}=="0003", GROUP="weather", MODE="0660"\nSUBSYSTEM=="usb", ATTR{{idVendor}}=="0fde", ATTR{{idProduct}}=="ca01", GROUP="weather", MODE="0660"\n'.replace(
             "{{", "{"
         ).replace("}}", "}")
     )
