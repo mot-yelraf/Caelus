@@ -4,6 +4,17 @@
   if (!dialog || !form) return;
 
   const body = document.body;
+  const stationKey = body.dataset.stationKey || "";
+  function stationUrl(path) {
+    if (!stationKey) return path;
+    return `${path}${path.includes("?") ? "&" : "?"}station=${encodeURIComponent(stationKey)}`;
+  }
+  document.querySelector("[data-station-picker]")?.addEventListener("change", (event) => {
+    const url = new URL(window.location.href);
+    url.searchParams.set("station", event.target.value);
+    window.location.assign(url);
+  });
+
   document.querySelector("[data-refresh-dashboard]")?.addEventListener("click", (event) => {
     event.preventDefault();
     window.location.reload();
@@ -456,6 +467,8 @@
   });
   form.addEventListener("invalid", (event) => {
     event.preventDefault();
+    const connection = event.target.closest("details.station-connection");
+    if (connection) connection.open = true;
     const pane = event.target.closest("[data-pane]");
     if (pane) activatePane(pane.dataset.pane, false);
     if (settingsStatus) {
@@ -581,31 +594,70 @@
     }
   });
 
-  ecowittSaveButton?.addEventListener("click", async () => {
-    if (!ecowittDiscovery) return;
-    ecowittSaveButton.disabled = true;
-    if (ecowittStatus) showToast(ecowittStatus, "Validating and saving the gateway…");
+  const acuriteModel = form.querySelector("[data-acurite-model]");
+  function syncAcuriteModeHelp() {
+    const help = form.querySelector("[data-acurite-mode-help]");
+    if (help && acuriteModel) help.textContent = acuriteModel.selectedOptions[0]?.dataset.usbModeHelp || "";
+  }
+  acuriteModel?.addEventListener("change", syncAcuriteModeHelp);
+  queueMicrotask(syncAcuriteModeHelp);
+
+  async function saveStation(key, button) {
+    const card = form.querySelector(`[data-station-card="${key}"]`);
+    if (!card) return;
+    const enabled = card.querySelector('input[type="checkbox"]').checked;
+    const controls = Array.from(card.querySelectorAll("input, select"));
+    const invalid = controls.find((control) => !control.checkValidity());
+    if (invalid) { invalid.focus(); return; }
+    const payload = key === "ecowitt" ? {
+      enabled, gateway_url: ecowittUrl.value, poll_interval_seconds: Number(ecowittInterval.value),
+    } : {
+      enabled, model: acuriteModel.value,
+      usb_serial: card.querySelector('[name="acurite_usb_serial"]').value,
+      poll_interval_seconds: Number(card.querySelector('[name="acurite_poll_interval_seconds"]').value),
+    };
+    button.disabled = true;
+    showToast(settingsStatus, "Saving station connection…");
     try {
-      const result = await ecowittRequest("/api/ecowitt/save", {
-        gateway_url: ecowittUrl.value,
-        poll_interval_seconds: Number(ecowittInterval.value),
-      });
-      ecowittDiscovery = result;
-      if (ecowittSummary) ecowittSummary.textContent = result.gateway_model || "Ecowitt polling enabled";
-      renderEcowittInventory(result.inventory);
-      if (ecowittStatus) {
-        showToast(ecowittStatus, result.initial_reading_stored
-          ? `${result.gateway_model} saved; the first reading was stored.`
-          : `${result.gateway_model} saved, but its first reading could not be retrieved.`, !result.initial_reading_stored);
+      await ecowittRequest(`/api/stations/${key}/settings`, payload);
+      if (key === "ecowitt" && ecowittSummary) {
+        ecowittSummary.textContent = enabled ? ecowittDiscovery?.gateway_model || "Ecowitt polling enabled" : "Ecowitt polling disabled";
       }
-      setDashboardRefreshInterval(Number(result.poll_interval_seconds));
-      await refreshEcowittDashboard();
+      showToast(settingsStatus, `${key === "ecowitt" ? "Ecowitt" : "AcuRite"} saved. ${enabled ? "Waiting for fresh readings." : "Acquisition disabled; history retained."}`);
+      await refreshStationConnections();
+      if (key === stationKey) {
+        setDashboardRefreshInterval(payload.poll_interval_seconds);
+        await refreshEcowittDashboard();
+      }
     } catch (error) {
-      if (ecowittStatus) showToast(ecowittStatus, error.message || "Gateway could not be saved.", true);
+      showToast(settingsStatus, error.message || "Station could not be saved.", true);
     } finally {
-      ecowittSaveButton.disabled = false;
+      button.disabled = false;
     }
+  }
+  ecowittSaveButton?.addEventListener("click", () => saveStation("ecowitt", ecowittSaveButton));
+  form.querySelectorAll("[data-station-save]").forEach((button) => {
+    button.addEventListener("click", () => saveStation(button.dataset.stationSave, button));
   });
+  async function refreshStationConnections() {
+    try {
+      const response = await fetch("/api/stations", {cache: "no-store"});
+      if (!response.ok) throw new Error("Station status unavailable");
+      const payload = await response.json();
+      (payload.stations || []).forEach((item) => {
+        const target = form.querySelector(`[data-source-status="${item.key}"]`);
+        if (!target) return;
+        const status = item.status;
+        target.textContent = !status.enabled ? "Disabled · history retained" : status.last_error ||
+          (status.observation_fresh ? "Receiving fresh observations" : status.connected ? "Connected · waiting for outdoor sensors" : "Waiting for connection");
+        target.classList.toggle("is-error", Boolean(status.enabled && status.last_error));
+      });
+    } catch (_error) {
+      form.querySelectorAll("[data-source-status]").forEach((item) => { item.textContent = "Connection status unavailable"; });
+    }
+  }
+  refreshStationConnections();
+  window.setInterval(() => { if (dialog.open) refreshStationConnections(); }, 5000);
 
   document.querySelectorAll("[data-hourly-carousel]").forEach((carousel) => {
     const hours = Array.from(carousel.querySelectorAll("[data-hourly-index]"));
@@ -1306,7 +1358,7 @@
       graphStageMessage.textContent = "Loading graph data…";
     }
     try {
-      const response = await fetch(`/api/metrics/range?hours=${selectedGraphHours}`, {cache: "no-store"});
+      const response = await fetch(stationUrl(`/api/metrics/range?hours=${selectedGraphHours}`), {cache: "no-store"});
       if (!response.ok) throw new Error("Graph data is unavailable.");
       const payload = await response.json();
       if (requestSequence !== fullGraphRequestSequence) return;
@@ -1948,7 +2000,7 @@
     const expansionToggle = section?.querySelector("[data-toggle-weather-metrics]");
     if (!section || !grid) return;
     try {
-      const response = await fetch("/api/metrics/24h", {cache: "no-store"});
+      const response = await fetch(stationUrl("/api/metrics/24h"), {cache: "no-store"});
       if (!response.ok) throw new Error("history unavailable");
       const payload = await response.json();
       const metrics = Array.isArray(payload.metrics) ? payload.metrics : [];
@@ -1956,7 +2008,7 @@
       if (!metrics.length) {
         const empty = document.createElement("p");
         empty.className = "metric-loading";
-        empty.textContent = "No valid Ecowitt readings have been stored in the last 24 hours.";
+        empty.textContent = "No valid sensor readings have been stored in the last 24 hours.";
         grid.append(empty);
         return;
       }
@@ -2038,7 +2090,7 @@
 
   async function refreshSensorOnlineStatus() {
     try {
-      const response = await fetch("/api/ecowitt/status", {cache: "no-store"});
+      const response = await fetch(stationUrl("/api/station/status"), {cache: "no-store"});
       if (!response.ok) throw new Error("gateway status unavailable");
       renderSensorOnlineStatus(await response.json());
     } catch (_error) {
@@ -2073,7 +2125,7 @@
   async function refreshEcowittDashboard() {
     if (document.hidden) return;
     try {
-      const response = await fetch("/api/readings/current", {cache: "no-store"});
+      const response = await fetch(stationUrl("/api/readings/current"), {cache: "no-store"});
       if (!response.ok) throw new Error("current reading unavailable");
       const payload = await response.json();
       Object.entries(payload.display_units || {}).forEach(([field, unit]) => {

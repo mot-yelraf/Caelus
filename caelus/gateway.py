@@ -13,6 +13,7 @@ from urllib.parse import urlencode, urlsplit, urlunsplit
 import requests
 from requests.exceptions import RequestException
 
+from caelus.observations import validate_measurements
 from caelus.settings import AppSettings
 from caelus.gateway_recovery import request_in_fresh_process
 
@@ -20,6 +21,7 @@ REQUEST_TIMEOUT_SECONDS = 5
 DISCOVERY_CACHE_SECONDS = 60
 MAX_RESPONSE_BYTES = 512 * 1024
 RECOVERY_FAILURE_THRESHOLD = 3
+SUPPORTED_GATEWAY_MODELS = ("GW1100", "GW1200", "GW2000", "GW3000")
 logger = logging.getLogger(__name__)
 _NUMBER_RE = re.compile(r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)")
 _INVALID_SENSOR_IDS = {"FFFFFFFF", "FFFFFFFE"}
@@ -53,6 +55,18 @@ def normalize_gateway_base_url(value: Any) -> str:
     if ":" in host and not host.startswith("["):
         host = f"[{host}]"
     return urlunsplit(("http", f"{host}:{port}" if port else host, "", "", ""))
+
+
+def gateway_family(version: Any) -> str:
+    """Identify fixture-supported HTTP gateway families, including regional suffixes."""
+    match = re.search(r"\b(GW\d{4})(?:[A-Z])?(?=_|\b)", str(version or "").upper())
+    return match.group(1) if match and match.group(1) in SUPPORTED_GATEWAY_MODELS else ""
+
+
+def gateway_version_label(version: Any) -> str:
+    """Remove the protocol's optional Version prefix without losing firmware details."""
+    label = re.sub(r"^\s*Version\s*:\s*", "", str(version or ""), flags=re.IGNORECASE).strip()
+    return label or "Ecowitt Gateway"
 
 
 def _number(value: Any) -> float | None:
@@ -96,6 +110,8 @@ def _pressure_inhg(value: float, unit: str) -> float | None:
         return value
     if unit in {"hpa", "mbar", "mb"}:
         return value / 33.8638866667
+    if unit == "mmhg":
+        return value / 25.4
     if unit == "pa":
         return value / 3386.38866667
     return None
@@ -141,6 +157,7 @@ def _put_temperature(
 
 def _parse_common(payload: dict[str, Any], output: dict[str, Any]) -> None:
     names = {
+        "0x01": "indoor_temperature",
         "0x02": "temperature",
         "0x03": "dew_point",
         "0x04": "wind_chill",
@@ -157,8 +174,8 @@ def _parse_common(payload: dict[str, Any], output: dict[str, Any]) -> None:
         unit = _unit(item, raw)
         if item_id in names:
             _put_temperature(output, names[item_id], item, raw)
-        elif item_id == "0x07":
-            output["humidity"] = round(value, 1)
+        elif item_id in {"0x06", "0x07"}:
+            output["indoor_humidity" if item_id == "0x06" else "humidity"] = round(value, 1)
         elif item_id in {"0x08", "0x09"}:
             converted = _pressure_inhg(value, unit)
             if converted is not None:
@@ -224,11 +241,13 @@ def _parse_gateway_indoor(payload: dict[str, Any], output: dict[str, Any]) -> No
 def normalize_ecowitt_livedata(
     payload: dict[str, Any], *, rain_source: str = "traditional"
 ) -> dict[str, Any]:
-    """Normalize a GW1100 live-data response into Caelus metric names."""
+    """Normalize the shared Ecowitt HTTP live-data protocol into Caelus metrics."""
     if not isinstance(payload, dict):
         return {}
     output: dict[str, Any] = {}
     _parse_common(payload, output)
+    if rain_source == "traditional":
+        _parse_rain(payload.get("common_list"), output)
     rain_items = None if rain_source == "none" else payload.get(
         "piezoRain" if rain_source == "piezo" else "rain"
     )
@@ -327,7 +346,7 @@ def map_gateway_reading(reading: Dict[str, Any], *, rain_source: str = "traditio
     wind_speed = reading.get("windsp")
     if wind_speed is None:
         wind_speed = reading.get("windspeed")
-    return {
+    return validate_measurements({
         "wind_speed": wind_speed,
         "wind_dir": _optional_int(reading.get("winddir")),
         "wind_gust": reading.get("windgust"),
@@ -340,7 +359,7 @@ def map_gateway_reading(reading: Dict[str, Any], *, rain_source: str = "traditio
         "pressure": reading.get("baromin"),
         "indoor_temperature": reading.get("tempinf"),
         "indoor_humidity": reading.get("hum_in"),
-    }
+    })
 
 
 class EcowittGateway:
@@ -423,17 +442,15 @@ class EcowittGateway:
         if platform and platform != "ecowitt":
             raise EcowittGatewayError("The device does not identify itself as an Ecowitt gateway.")
         inventory = normalize_sensor_inventory([page1, page2])
-        live_sections = {key for key, value in live.items() if isinstance(value, list) and value}
         for sensor in inventory:
-            sensor["reporting"] = bool(
-                live_sections.intersection({"common_list", "rain", "piezoRain", "wh25"})
-            )
+            sensor["reporting"] = sensor["signal"] > 0
         rain_source = rain_source_from_totals(rain_totals)
         result = {
             "ok": True,
             "gateway_url": base_url,
             "gateway_id": normalized_gateway_id(network.get("mac")),
-            "gateway_model": str(version.get("version", "") or "Ecowitt Gateway").strip(),
+            "gateway_model": gateway_version_label(version.get("version")),
+            "gateway_family": gateway_family(version.get("version")),
             "inventory": inventory,
             "rain_source": rain_source,
             "rain_reset_hour": rain_reset_hour_from_totals(rain_totals),
@@ -463,6 +480,10 @@ class EcowittGateway:
                 return deepcopy(discovery)
         return self.discover(base_url)
 
+    def disable(self) -> None:
+        """Clear runtime health when acquisition is disabled by the setup service."""
+        self.last_status.update(state="disabled", label="Ecowitt polling disabled", last_error="")
+
     def status(self) -> dict[str, Any]:
         """Return runtime status with fixed messages instead of private diagnostics."""
         public_status = dict(self.last_status)
@@ -483,14 +504,15 @@ class EcowittGateway:
             "gateway_url": self.settings.gateway_url,
             "gateway_id": self.settings.gateway_id,
             "gateway_model": self.settings.gateway_model,
+            "gateway_family": gateway_family(self.settings.gateway_model),
             "inventory": self.last_status.get("inventory", self.settings.gateway_inventory),
             "station": ws69_status(
-                self.last_status.get("inventory", []), online=self._station_online()
+                self.last_status.get("inventory", []), online=self.observation_is_fresh()
             ),
             "poll_interval_seconds": self.settings.poll_interval_seconds,
         }
 
-    def _station_online(self) -> bool:
+    def observation_is_fresh(self) -> bool:
         """Reject disabled, failed, and stale gateway observations."""
         if not self.settings.gateway_enabled or self.last_status.get("state") != "online":
             return False

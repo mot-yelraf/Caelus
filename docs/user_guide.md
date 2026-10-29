@@ -4,11 +4,11 @@
 
 # Caelus User Guide
 
-Caelus is a local weather dashboard and history service for an Ecowitt-compatible gateway. It combines current station readings, forecasts, 24-hour metric cards, longer-range graphs, a regional Windy radar map, and observer-local Sun and Moon information in one browser view.
+Caelus is a local weather dashboard and history service for Ecowitt LAN gateways and AcuRite PC Connect USB consoles. It combines current station readings, forecasts, 24-hour metric cards, longer-range graphs, a regional Windy radar map, and observer-local Sun and Moon information in one browser view.
 
 This guide is for day-to-day users. You do not need to understand Python, FastAPI, or SQLite to operate Caelus.
 
-The dashboard overview screenshot was updated from a running Caelus station on October 25, 2026, and includes Feels Like, Wind Chill, and the compact forecast labels. The full-dashboard screenshot was captured on October 19, 2026, before those additions. The remaining dashboard and Location, Station, and Data & Map screenshots were updated on September 30, 2026. Other screenshots, including the Mobile Operation graphics, were captured on September 9, 2026. The Location and Station screenshots use example coordinates and a documentation-only gateway address; enter your own values during setup. Your location, readings, gateway model, forecast, lunar view, and available metrics will differ.
+The dashboard overview screenshot was updated from a running Caelus station on October 25, 2026, and includes Feels Like, Wind Chill, and the compact forecast labels. The full-dashboard screenshot was captured on October 19, 2026, before those additions. Other dashboard screenshots, plus the Location and Data & Map settings screenshots, were updated on September 30, 2026. The Station screenshots were updated on October 28, 2026, using the current interface with controlled example data; they do not represent a live hardware validation. Other screenshots, including the Mobile Operation graphics, were captured on September 9, 2026. The Location and Station screenshots use example coordinates and a documentation-only gateway address; enter your own values during setup. Your location, readings, gateway model, forecast, lunar view, and available metrics will differ.
 
 ## Open Caelus
 
@@ -21,29 +21,64 @@ Start Caelus with the launcher created by the installer, then open one of these 
 
 The usual installed launchers are `/Users/<name>/Caelus/run_caelus.sh` on macOS, `/home/<name>/Caelus/run_caelus.sh` on Linux or Raspberry Pi, and `C:\Users\<name>\Caelus\run_caelus.cmd` on Windows.
 
-The top of the dashboard shows the station name, the time of the last stored observation, and station status. **Station reporting** means Caelus is receiving usable observations. **Gateway standing by** means no current reading is available yet.
+The top of the dashboard shows the station name, the time of the last stored observation, and station status. **Station reporting** means Caelus is receiving usable observations. **Station offline** means the selected station is unavailable, disabled, or no longer reporting fresh observations.
+
+## Station selection
+
+The station selector above current readings chooses **Ecowitt** or **AcuRite USB**. Each station has separate current readings, graphs, and exports.
+Both connections may run simultaneously. Location, forecast, appearance, and
+retention settings are shared. Each browser tab keeps its station in the URL.
+
+**Settings > Station** contains independently expandable connection sections.
+Select either station heading to expand or collapse its controls; both start
+collapsed, and both can remain open at the same time. Each section has its own
+enable control, connection status, history interval, and Save button. AcuRite
+connects by USB to the same Raspberry Pi, Linux PC, Mac, or Windows PC running
+Caelus; see the
+[AcuRite setup and validation guide](acurite_usb.md).
 
 ## Quickstart Station Setup
 
-Before configuring Caelus, use the Ecowitt app or gateway interface to:
+Open **Settings > Station** and expand the connection you want to configure.
+You can enable either station or both; their readings and histories stay separate.
 
-1. Join the gateway to 2.4 GHz Wi-Fi.
-2. Pair the outdoor weather array.
-3. Confirm that the gateway displays live readings.
-4. Give the gateway a stable LAN address, preferably with a DHCP reservation in the router.
+![Station settings with the Ecowitt and AcuRite sections collapsed](screenshots/settings-station.png)
 
-Then configure Caelus:
+### Ecowitt gateway
 
-1. Select **Settings**, then **Station**.
-2. Enter the gateway base URL, such as `http://192.168.1.100`.
-3. Select **Find Sensors**.
-4. Review the reported gateway version and sensor inventory.
-5. Set the retrieval interval from 60 to 3600 seconds.
-6. Select **Save Gateway**.
+Caelus supports GW1100, GW1200, GW2000, and GW3000 primary weather readings.
+See the [gateway compatibility details](weather_adapters.md#ecowitt-gateway-compatibility)
+for measurement coverage and validation status.
 
-![Station settings](screenshots/settings-station.png)
+1. Connect the gateway to your LAN using its supported Wi-Fi or Ethernet
+   connection. Pair the weather array or individual weather sensors using
+   Ecowitt's interface, and confirm live readings there first.
+2. Give the gateway a stable LAN address, preferably with a DHCP reservation.
+3. Expand **Ecowitt gateway** in Station settings and select **Enabled**.
+4. Enter the gateway's HTTP base URL, such as `http://192.168.1.100`.
+5. Select **Find Sensors** to review the gateway model and paired inventory.
+6. Set **History interval** from 60 to 3600 seconds, then select **Save Gateway**.
 
-Caelus uses read-only Ecowitt LAN endpoints. It does not configure Ecowitt cloud upload, custom-server push, MQTT, Nodus sensors, or switches.
+### AcuRite USB console
+
+1. Connect a supported AcuRite PC Connect console by USB to the computer running Caelus, and confirm
+   the console receives its outdoor array.
+2. Complete the platform-specific USB setup described in the
+   [AcuRite USB guide](acurite_usb.md). Standard installers include the Python
+   USB libraries; Linux additionally offers administrator-authorized device access.
+3. Expand **AcuRite USB console**, choose **Console model**, and follow its mode-4
+   instructions. For 01025, 01035, 01036, 01525, and 02032 families, select USB or
+   PC Connect mode **4** on the console. The 01536-RX uses mode 4 automatically.
+   Then select **Enabled**.
+4. Leave **USB serial number** blank when one matching console is connected.
+   Use an actual serial descriptor to select among multiple matching consoles.
+5. Set **History interval** from 60 to 3600 seconds, then select **Save AcuRite**.
+6. Check the connection status. Allow a USB sampling cycle and a history interval
+   for the first saved observation, then choose **AcuRite USB** above current
+   readings on the dashboard.
+
+To stop collecting from either connection, clear its **Enabled** checkbox and
+select that section's Save button. Its existing history remains available.
 
 ## Settings
 
@@ -53,16 +88,58 @@ The dialog supports mouse, touch, and keyboard navigation. Closing without savin
 
 ### Station
 
-![Station settings](screenshots/settings-station.png)
+The **Ecowitt gateway** and **AcuRite USB console** headings independently expand
+or collapse their controls. Use a mouse or touch, or focus a heading and press
+Enter or Space. Both sections start collapsed. Scroll within the pane to reach lower controls.
+Expanding a section does not
+enable collection; changes take effect when you select that section's Save button.
 
-- **Gateway base URL** must be an absolute `http://` or `https://` address without embedded credentials or a fragment.
-- **Data retrieval interval** accepts 60 to 3600 seconds.
+#### Ecowitt gateway controls
+
+![Ecowitt gateway settings expanded, with AcuRite collapsed](screenshots/settings-station-ecowitt.png)
+
+- **Enabled** starts or stops Ecowitt collection when saved.
+- **Gateway base URL** is the local HTTP base address, without a path, query,
+  embedded credentials, or fragment. The screenshot uses the example address
+  `http://192.0.2.42`; enter your gateway's actual LAN address.
+- **History interval** accepts 60 to 3600 seconds for this station's polling
+  and saved observations.
 - **Find Sensors** queries the gateway and displays its model and paired inventory.
-- **Save Gateway** saves a successful discovery and enables polling.
+- **Save Gateway** validates and saves an enabled connection, then attempts its
+  first observation. You can save directly; Find Sensors lets you review the
+  discovery first. A disabled connection can be saved without contacting the gateway.
 
-**Find Sensors** and **Save Gateway** are below the discovered sensor list, aligned to the right. **Save Gateway** becomes available after a successful discovery.
+Caelus reads Ecowitt's LAN endpoints. Pair sensors and configure the gateway
+through Ecowitt's own interface. Caelus does not configure cloud upload,
+custom-server push, MQTT, irrigation, or switches.
 
-Both scheduled and manual polls use the same normalization and persistence workflow. A failed fetch does not erase the last stored observation.
+#### AcuRite USB controls
+
+![AcuRite USB controls expanded in the scrollable Station pane](screenshots/settings-station-acurite.png)
+
+- **Enabled** starts or stops AcuRite collection when saved.
+- **Console model** selects the supported console family and displays its USB
+  mode instructions. Set mode 4 on the console for families with a mode menu,
+  and recheck it after a console power loss.
+- **USB serial number (optional)** selects a particular console. Leave it blank
+  for automatic selection when only one matching device is connected.
+- **History interval** accepts 60 to 3600 seconds for saved observations. Outdoor
+  USB reports are sampled every 18 seconds independently of this interval.
+- **Save AcuRite** saves only this connection's settings. The status line reports
+  whether collection is disabled, waiting for a connection or outdoor sensors,
+  receiving fresh observations, or encountering an access/decoding problem.
+
+The console must be attached to the
+computer running Caelus. Console pressure is displayed as **Absolute pressure**.
+**Recorded rain today** counts recorded intervals and can have gaps before the
+first baseline or during outages. Live indoor humidity and wind gusts are
+unavailable. See the [USB setup and console validation guide](acurite_usb.md)
+for platform permissions, decoding limits, and report capture.
+
+Both connections can run at the same time. Saving one does not submit unsaved
+changes in the other. A failed fetch does not erase the station's last stored
+observation; check its status and observation time for freshness. Each station's
+current readings, graphs, and downloads follow the dashboard's station selector.
 
 ### Location
 

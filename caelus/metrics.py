@@ -1,4 +1,4 @@
-"""Build display-ready 24-hour metric histories from Ecowitt readings."""
+"""Build display-ready 24-hour metric histories from normalized station readings."""
 
 import math
 from dataclasses import dataclass
@@ -43,8 +43,8 @@ WEATHER_METRICS = (
     MetricSpec("rain_lifetime", "Lifetime rain", "", 2),
     MetricSpec("indoor_temperature", "Indoor temperature", ""),
     MetricSpec("indoor_humidity", "Indoor humidity", "%", 0),
-    MetricSpec("indoor_pressure", "Gateway relative pressure", ""),
-    MetricSpec("indoor_absolute_pressure", "Gateway absolute pressure", ""),
+    MetricSpec("indoor_pressure", "Indoor relative pressure", ""),
+    MetricSpec("indoor_absolute_pressure", "Indoor absolute pressure", ""),
 )
 
 PINNED_METRIC_KEYS = ("temperature", "humidity", "wind_dir", "rain_total")

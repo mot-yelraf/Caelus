@@ -4,12 +4,18 @@ import sqlite3
 from contextlib import closing
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from caelus.units import convert_reading
 
 
 ADDITIONAL_READING_COLUMNS = {
+    "source_id": "TEXT",
+    "observed_at": "TEXT",
+    "received_at": "TEXT",
+    "rain_counter_id": "TEXT",
+    "rain_counter_value": "REAL",
+    "rain_counter_at": "TEXT",
     "feels_like": "REAL",
     "dew_point": "REAL",
     "wind_chill": "REAL",
@@ -75,6 +81,7 @@ class DataLogger:
             connection.commit()
 
     def log_reading(self, timestamp: datetime, payload: Dict[str, Any]) -> None:
+        """Store a primary-station sample with optional source and receipt metadata."""
         with closing(sqlite3.connect(self.db_path)) as connection:
             cursor = connection.cursor()
             cursor.execute(
@@ -107,8 +114,9 @@ class DataLogger:
                     light_intensity,
                     indoor_pressure,
                     indoor_absolute_pressure,
-                    feels_like
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    feels_like,
+                    source_id, observed_at, received_at, rain_counter_id, rain_counter_value, rain_counter_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     timestamp.isoformat(),
@@ -139,11 +147,18 @@ class DataLogger:
                     payload.get("indoor_pressure"),
                     payload.get("indoor_absolute_pressure"),
                     payload.get("feels_like"),
+                    payload.get("source_id"),
+                    payload.get("observed_at"),
+                    payload.get("received_at"),
+                    payload.get("rain_counter_id"),
+                    payload.get("rain_counter_value"),
+                    payload.get("rain_counter_at"),
                 ),
             )
             connection.commit()
 
-    def get_latest(self) -> Optional[Dict[str, Optional[float]]]:
+    def get_latest(self) -> dict[str, Any] | None:
+        """Return the latest sample, including nullable provenance on historical rows."""
         with closing(sqlite3.connect(self.db_path)) as connection:
             cursor = connection.cursor()
             cursor.execute(

@@ -249,6 +249,7 @@ def verify_dashboard(page: Page, base_url: str) -> None:
     expect(page.locator('[data-pane="location"]')).to_be_visible()
     station_tab = page.locator('[data-settings-pane="station"]')
     station_tab.click()
+    page.locator('[data-station-card="ecowitt"] > summary').click()
     page.locator("#ecowittGatewayUrl").fill("http://192.0.2.42")
     station_tab.focus()
     station_tab.press("ArrowUp")
@@ -351,6 +352,73 @@ def verify_severe_weather(page: Page) -> None:
     expect(notification).to_be_hidden()
 
 
+def verify_station_connections(page: Page, base_url: str) -> None:
+    """Save both source cards, verify responsive scrolling and independent tab selection."""
+    page.route("https://embed.windy.com/**", lambda route: route.abort())
+    page.goto(f"{base_url}/?station=ecowitt", wait_until="domcontentloaded")
+    page.locator("[data-open-settings]").first.click()
+    page.locator('[data-settings-pane="station"]').click()
+    ecowitt = page.locator('[data-station-card="ecowitt"]')
+    acurite = page.locator('[data-station-card="acurite_usb"]')
+    expect(ecowitt.locator('[name="gateway_enabled"]')).to_be_hidden()
+    expect(acurite.locator('[name="acurite_enabled"]')).to_be_hidden()
+    page.locator("#settingsDialog").screenshot(path=RESULTS / "station-connections-collapsed.png")
+    acurite.locator("summary").focus()
+    acurite.locator("summary").press("Enter")
+    expect(acurite.locator('[name="acurite_enabled"]')).to_be_visible()
+    expect(ecowitt.locator('[name="gateway_enabled"]')).to_be_hidden()
+    ecowitt.locator("summary").click()
+    expect(ecowitt.locator('[name="gateway_enabled"]')).to_be_visible()
+    acurite.locator("summary").press("Space")
+    expect(acurite.locator('[name="acurite_enabled"]')).to_be_hidden()
+    expect(ecowitt.locator('[name="gateway_enabled"]')).to_be_visible()
+    acurite.locator("summary").click()
+    model = acurite.locator('[name="acurite_model"]')
+    expect(acurite.locator('[data-acurite-mode-help]')).to_contain_text("automatically")
+    model.select_option("01035")
+    expect(acurite.locator('[data-acurite-mode-help]')).to_contain_text("USB MODE or PC CONNECT MODE 4")
+    acurite.locator('[name="acurite_enabled"]').check()
+    acurite.locator('[name="acurite_poll_interval_seconds"]').fill("90")
+    acurite.locator('[data-station-save="acurite_usb"]').click()
+    expect(page.locator("[data-settings-status]")).to_contain_text("AcuRite saved")
+    assert page.request.get(f"{base_url}/api/station/status?station=acurite_usb").status == 200
+    page.reload(wait_until="domcontentloaded")
+    page.locator("[data-open-settings]").first.click()
+    page.locator('[data-settings-pane="station"]').click()
+    acurite.locator("summary").click()
+    expect(model).to_have_value("01035")
+    expect(acurite.locator('[data-acurite-mode-help]')).to_contain_text("USB MODE or PC CONNECT MODE 4")
+    ecowitt.locator("summary").click()
+    ecowitt.locator('[name="gateway_enabled"]').check()
+    ecowitt.locator('[name="gateway_url"]').fill("http://192.0.2.1")
+    ecowitt.locator("[data-ecowitt-discover]").click()
+    expect(page.locator("[data-settings-status]")).to_contain_text("registered sensor")
+    ecowitt.locator("[data-ecowitt-save]").click()
+    expect(page.locator("[data-settings-status]")).to_contain_text("Ecowitt saved")
+    sources = page.request.get(f"{base_url}/api/stations").json()["stations"]
+    assert all(item["status"]["enabled"] for item in sources)
+    for width in (1440, 390):
+        page.set_viewport_size({"width": width, "height": 1000})
+        acurite.scroll_into_view_if_needed()
+        expect(acurite.locator("[data-station-save]")).to_be_visible()
+        pane = page.locator('[data-pane="station"]')
+        assert pane.evaluate("node => node.scrollWidth <= node.clientWidth")
+        page.locator("#settingsDialog").screenshot(path=RESULTS / f"station-connections-{width}.png")
+    page.locator("[data-close-settings]").first.click()
+    page.locator("[data-station-picker]").select_option("acurite_usb")
+    page.wait_for_url("**/?station=acurite_usb")
+    expect(page.locator('[data-reading-field="temperature"]')).to_have_text("55.0")
+    expect(page.locator('a[href="/export?format=csv&station=acurite_usb"]')).to_have_count(1)
+    other = page.context.new_page()
+    other.route("https://embed.windy.com/**", lambda route: route.abort())
+    other.goto(f"{base_url}/?station=ecowitt", wait_until="domcontentloaded")
+    expect(other.locator('[data-reading-field="temperature"]')).to_have_text("72.5")
+    page.reload(wait_until="domcontentloaded")
+    expect(page.locator('[data-reading-field="temperature"]')).to_have_text("55.0")
+    other.close()
+    page.close()
+
+
 def run_browser_check(base_url: str) -> None:
     """Launch Chromium and retain diagnostics for failed checks."""
     with sync_playwright() as playwright:
@@ -362,6 +430,7 @@ def run_browser_check(base_url: str) -> None:
             verify_dashboard(page, base_url)
             verify_severe_weather(page)
             verify_station_footer(context.new_page(), base_url)
+            verify_station_connections(context.new_page(), base_url)
         except Exception:
             page.screenshot(path=RESULTS / "failure.png", full_page=True)
             context.tracing.stop(path=RESULTS / "trace.zip")
@@ -376,10 +445,11 @@ def verify_station_footer(page: Page, base_url: str) -> None:
     """Exercise battery and reporting refreshes at desktop and phone widths."""
     status = {"enabled": True, "state": "online", "station": {"reporting": True, "battery_status": "OK"}}
     page.route("https://embed.windy.com/**", lambda route: route.abort())
-    page.route("**/api/ecowitt/status", lambda route: route.fulfill(json=status))
-    page.clock.install()
+    page.route("**/api/station/status*", lambda route: route.fulfill(json=status))
+    # Keep the footer exercise away from the independent hourly forecast reload.
+    page.clock.install(time=datetime(2026, 10, 28, 12, 5, tzinfo=timezone.utc))
     page.goto(base_url, wait_until="domcontentloaded")
-    page.route("**/api/readings/current", lambda route: route.fulfill(json={
+    page.route("**/api/readings/current*", lambda route: route.fulfill(json={
         "reading": {"temperature": 20, "feels_like": 20, "wind_chill": 6.2},
         "display_units": {"temperature": "°F", "feels_like": "°F", "wind_chill": "°F"},
         "poll_interval_seconds": 300,

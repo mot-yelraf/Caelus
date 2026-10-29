@@ -3,6 +3,7 @@
 import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from threading import RLock
 
 import uvicorn
 from fastapi import FastAPI
@@ -10,6 +11,9 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from caelus.routes import register_routes
+from caelus.observations import ChannelCapability
+from caelus.station import EcowittStationSetup
+from caelus.stations import StationRuntime, StationSettings
 from caelus.settings import AppSettings
 from caelus.theme_manager import ThemeManager
 
@@ -22,12 +26,16 @@ AppSettings.settings_path = Path(TEMP_DATA.name) / "settings.json"
 class BrowserTestLogger:
     """Provide stable readings without creating or querying SQLite state."""
 
+    def __init__(self, temperature=72.5):
+        self.temperature = temperature
+
     def get_latest(self):
         return {
             "timestamp": "2026-08-19T18:00:00",
-            "temperature": 72.5,
+            "temperature": self.temperature,
             "humidity": 48,
             "pressure": 1013.2,
+            "indoor_absolute_pressure": 29.9,
             "wind_speed": 3.5,
             "wind_gust": 7.0,
             "wind_dir": 225,
@@ -84,11 +92,38 @@ class BrowserTestTask:
 class BrowserTestPoller:
     task = BrowserTestTask()
 
+    def __init__(self, settings, key):
+        self.settings = StationSettings(settings, key)
+
     def poll_once(self):
         return None
 
     def reset_schedule(self):
         return None
+
+
+class BrowserTestAdapter:
+    def __init__(self, settings, key):
+        self.settings, self.key = settings, key
+
+    def read(self):
+        return None
+
+    def capabilities(self):
+        return (ChannelCapability("primary", ("temperature",)),)
+
+    def status(self):
+        enabled = self.settings.gateway_enabled if self.key == "ecowitt" else self.settings.acurite_enabled
+        return {"source_id": self.key, "enabled": enabled, "connected": enabled,
+                "state": "online" if enabled else "disabled", "observation_fresh": enabled,
+                "station": {"reporting": enabled, "battery_status": "UNKNOWN"}, "sensors": []}
+
+
+class BrowserTestGateway:
+    def discover(self, url):
+        return {"ok": True, "gateway_url": url, "gateway_id": "ecowitt-test",
+                "gateway_model": "GW3000 test fixture", "inventory": [], "rain_source": "traditional",
+                "rain_reset_hour": 0, "live_metric_count": 1}
 
 
 app = FastAPI(title="Caelus browser verification")
@@ -103,7 +138,17 @@ app.state.settings = AppSettings(
     timezone="America/Denver",
 )
 app.state.data_logger = BrowserTestLogger()
-app.state.poller = BrowserTestPoller()
+app.state.poller = BrowserTestPoller(app.state.settings, "ecowitt")
+app.state.station_lock = RLock()
+app.state.stations = {
+    key: StationRuntime(key, name, BrowserTestAdapter(app.state.settings, key), logger, poller)
+    for key, name, logger, poller in (
+        ("ecowitt", "Ecowitt", app.state.data_logger, app.state.poller),
+        ("acurite_usb", "AcuRite USB", BrowserTestLogger(55.0), BrowserTestPoller(app.state.settings, "acurite_usb")),
+    )
+}
+app.state.weather_adapter = app.state.stations["ecowitt"].adapter
+app.state.station_setup = EcowittStationSetup(app.state.settings, BrowserTestGateway(), app.state.station_lock)
 app.state.forecast_service = BrowserTestForecast()
 app.state.csrf_token = "playwright-test-token"
 app.mount("/static", StaticFiles(directory=str(ROOT / "static")), name="static")

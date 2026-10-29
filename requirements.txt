@@ -10,3 +10,5 @@ skyfield==1.55
 skyfield-data==5.0.0
 pywebview==6.2.1
 Pillow==13.0.0
+pyusb==1.3.1
+hidapi==0.15.0; sys_platform == "darwin" or sys_platform == "win32"

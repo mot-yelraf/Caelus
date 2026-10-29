@@ -227,7 +227,7 @@ def test_wind_direction_card_includes_paired_wind_speed_history_and_stats() -> N
     ]
 
 
-def test_gateway_pressure_cards_display_hpa_without_changing_stored_units() -> None:
+def test_indoor_pressure_cards_display_hpa_without_changing_stored_units() -> None:
     cards = build_24_hour_metric_cards(
         [
             {
@@ -241,10 +241,10 @@ def test_gateway_pressure_cards_display_hpa_without_changing_stored_units() -> N
 
     relative = by_key["indoor_pressure"]
     absolute = by_key["indoor_absolute_pressure"]
-    assert relative["label"] == "Gateway relative pressure"
+    assert relative["label"] == "Indoor relative pressure"
     assert relative["unit"] == "hPa"
     assert relative["current"] == 1006.0
-    assert absolute["label"] == "Gateway absolute pressure"
+    assert absolute["label"] == "Indoor absolute pressure"
     assert absolute["unit"] == "hPa"
     assert absolute["current"] == 823.5
 
