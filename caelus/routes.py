@@ -14,6 +14,8 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 
 from caelus import __version__
 from caelus.acurite_models import CONSOLE_PROFILES, console_profile
+from caelus.wmr100 import MODELS as WMR100_MODELS
+from caelus.davis import BAUD_RATES as DAVIS_BAUD_RATES
 from caelus.astronomy import astronomy_context
 from caelus.data_logger import DataLogger
 from caelus.forecast import build_decisions, normalize_forecast_provider
@@ -192,6 +194,8 @@ def register_routes(app: FastAPI) -> None:
                 "active_station_name": runtime.name,
                 "station_interval": runtime.poller.settings.poll_interval_seconds if hasattr(runtime.poller, "settings") else settings.poll_interval_seconds,
                 "acurite_profiles": CONSOLE_PROFILES,
+                "wmr100_models": WMR100_MODELS,
+                "davis_baud_rates": DAVIS_BAUD_RATES,
                 "acurite_profile": console_profile(settings.acurite_model),
                 "available_stations": [{"key": item.key, "name": item.name} for item in getattr(app.state, "stations", {}).values()],
                 "latest_observation_time": format_observation_time(
@@ -302,6 +306,8 @@ def register_routes(app: FastAPI) -> None:
         location_name: str | None = Form(None),
         latitude: float | None = Form(None),
         longitude: float | None = Form(None),
+        altitude: str | None = Form(None),
+        altitude_unit: str | None = Form(None),
         use_ip_location: bool | None = Form(None),
         timezone_name: str | None = Form(None),
         forecast_provider: str | None = Form(None),
@@ -340,6 +346,13 @@ def register_routes(app: FastAPI) -> None:
                     raise ValueError("latitude must be between -90 and 90")
                 if not -180 <= next_longitude <= 180:
                     raise ValueError("longitude must be between -180 and 180")
+                if altitude is not None or altitude_unit is not None:
+                    if altitude_unit not in {None, "m", "ft"}:
+                        raise ValueError("altitude unit must be m or ft")
+                    altitude_m = float(altitude) if altitude and altitude.strip() else None
+                    if altitude_m is not None and altitude_unit == "ft":
+                        altitude_m *= 0.3048
+                    candidate.altitude_m = AppSettings._validate_value("altitude_m", altitude_m)
                 previous_coordinates = (candidate.latitude, candidate.longitude)
                 candidate.location_name = candidate.location_name if location_name is None else location_name
                 candidate.latitude = next_latitude
@@ -441,15 +454,17 @@ def register_routes(app: FastAPI) -> None:
 
     @app.post("/api/stations/{key}/settings")
     async def configure_station(key: str, request: Request) -> Response:
-        """Validate and save only one connection's fields; both stations may stay enabled."""
+        """Validate and save only one connection's fields; stations may stay enabled."""
         payload = await ecowitt_json(request)
         if key not in getattr(app.state, "stations", {}):
             raise HTTPException(status_code=404, detail="Unknown weather station")
         runtime = station_runtime(request, key)
         settings = app.state.settings
         try:
-            enabled = AppSettings._validate_value("gateway_enabled" if key == "ecowitt" else "acurite_enabled", payload.get("enabled"))
-            interval_field = "poll_interval_seconds" if key == "ecowitt" else "acurite_poll_interval_seconds"
+            prefix = "davis" if key == "davis_vue" else key.removesuffix("_usb")
+            enabled_field = "gateway_enabled" if key == "ecowitt" else f"{prefix}_enabled"
+            enabled = AppSettings._validate_value(enabled_field, payload.get("enabled"))
+            interval_field = "poll_interval_seconds" if key == "ecowitt" else f"{prefix}_poll_interval_seconds"
             interval = payload.get("poll_interval_seconds")
             if isinstance(interval, bool) or not isinstance(interval, int) or not 60 <= interval <= 3600:
                 raise ValueError("History interval must be a whole number between 60 and 3600 seconds")
@@ -465,18 +480,30 @@ def register_routes(app: FastAPI) -> None:
                     await asyncio.to_thread(save_settings_changes, settings,
                                             {"gateway_enabled": False, "gateway_url": url, interval_field: interval},
                                             app.state.station_lock)
+            elif key == "davis_vue":
+                port = AppSettings._validate_value("davis_port", payload.get("port", settings.davis_port))
+                baud = AppSettings._validate_value("davis_baud_rate", payload.get("baud_rate", settings.davis_baud_rate))
+                if enabled and not port:
+                    raise ValueError("Set the Davis datalogger serial port before enabling acquisition")
+                await asyncio.to_thread(save_settings_changes, settings,
+                                        {enabled_field: enabled, "davis_port": port, "davis_baud_rate": baud, interval_field: interval},
+                                        app.state.station_lock)
             else:
-                model = AppSettings._validate_value("acurite_model", payload.get("model", settings.acurite_model))
-                serial = AppSettings._validate_value("acurite_usb_serial", payload.get("usb_serial", ""))
+                model_field = f"{prefix}_model"
+                model = AppSettings._validate_value(model_field, payload.get("model", getattr(settings, model_field)))
+                serial_field = f"{prefix}_usb_serial"
+                serial = AppSettings._validate_value(serial_field, payload.get("usb_serial", ""))
                 if len(serial) > 128 or any(ord(char) < 32 for char in serial):
                     raise ValueError("Invalid USB serial number")
                 await asyncio.to_thread(save_settings_changes, settings,
-                                        {"acurite_enabled": enabled, "acurite_model": model, "acurite_usb_serial": serial.strip(), interval_field: interval},
+                                        {enabled_field: enabled, model_field: model, serial_field: serial.strip(), interval_field: interval},
                                         app.state.station_lock)
         except (TypeError, ValueError, EcowittGatewayError) as exc:
             logger.warning("Station configuration failed", exc_info=True)
             message = "Could not validate the Ecowitt gateway. Check its address and connection." if isinstance(exc, EcowittGatewayError) else str(exc)
             raise HTTPException(status_code=422, detail=message) from exc
+        if key in {"wmr100_usb", "davis_vue"}:
+            await asyncio.to_thread(runtime.adapter.reset)
         runtime.poller.reset_schedule()
         initial_reading = await asyncio.to_thread(runtime.poller.poll_once) if enabled else None
         return JSONResponse({"ok": True, "enabled": enabled, "poll_interval_seconds": interval,

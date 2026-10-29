@@ -247,6 +247,22 @@ def verify_dashboard(page: Page, base_url: str) -> None:
     assert "v0." not in page.locator(".site-header").inner_text()
     expect(page.locator('[data-settings-pane]').first).to_have_text("Location")
     expect(page.locator('[data-pane="location"]')).to_be_visible()
+    for width in (1440, 390, 320):
+        page.set_viewport_size({"width": width, "height": 1200})
+        fields = page.locator(".location-fields").evaluate("""node =>
+            ['#locationLatitude', '#locationLongitude', '#locationAltitude'].map(selector =>
+                node.querySelector(selector).getBoundingClientRect().toJSON())
+        """)
+        if width == 1440:
+            assert max(field["y"] for field in fields) - min(field["y"] for field in fields) < 1
+            assert fields[0]["x"] < fields[1]["x"] < fields[2]["x"]
+            assert max(field["width"] for field in fields) - min(field["width"] for field in fields) < 1
+        else:
+            assert fields[0]["y"] < fields[1]["y"] < fields[2]["y"]
+        pane = page.locator('[data-pane="location"]')
+        assert pane.evaluate("node => node.scrollWidth <= node.clientWidth")
+        settings.screenshot(path=RESULTS / f"location-settings-{width}.png")
+    page.set_viewport_size({"width": 1440, "height": 1200})
     station_tab = page.locator('[data-settings-pane="station"]')
     station_tab.click()
     page.locator('[data-station-card="ecowitt"] > summary').click()
@@ -256,8 +272,12 @@ def verify_dashboard(page: Page, base_url: str) -> None:
     assert page.locator('[data-pane="location"]').is_visible()
     # Saving re-renders the dashboard and keeps other panes' drafts intact.
     page.locator("#locationName").fill("Updated station")
+    page.locator("#locationAltitude").fill("5000")
     page.locator('[data-save-pane="location"]').click()
     expect(page.locator("#station-title")).to_have_text("Updated station")
+    expect(page.locator("#locationAltitude")).to_have_value("5000")
+    expect(page.locator("#locationAltitude")).to_have_attribute("value", "5000.0")
+    expect(page.locator('[name="altitude_unit"]')).to_have_value("ft")
     expect(page.locator('[data-pane="location"]')).to_be_visible()
     expect(page.locator("#ecowittGatewayUrl")).to_have_value("http://192.0.2.42")
     toast = page.locator("[data-settings-status]")
@@ -281,6 +301,9 @@ def verify_dashboard(page: Page, base_url: str) -> None:
     expect(toast).to_have_class("settings-status is-error")
     expect(toast).to_be_visible()
     expect(page.locator("#station-title")).to_have_text("Updated station")
+    expect(page.locator("#locationAltitude")).to_have_value("5000")
+    expect(page.locator("#locationAltitude")).to_have_attribute("value", "5000.0")
+    expect(page.locator('[name="altitude_unit"]')).to_have_value("ft")
     page.locator("[data-close-settings]").first.click()
     assert not settings.evaluate("dialog => dialog.open")
 
@@ -353,7 +376,7 @@ def verify_severe_weather(page: Page) -> None:
 
 
 def verify_station_connections(page: Page, base_url: str) -> None:
-    """Save both source cards, verify responsive scrolling and independent tab selection."""
+    """Save each source card, verify responsive scrolling and independent tab selection."""
     page.route("https://embed.windy.com/**", lambda route: route.abort())
     page.goto(f"{base_url}/?station=ecowitt", wait_until="domcontentloaded")
     page.locator("[data-open-settings]").first.click()
@@ -395,12 +418,27 @@ def verify_station_connections(page: Page, base_url: str) -> None:
     expect(page.locator("[data-settings-status]")).to_contain_text("registered sensor")
     ecowitt.locator("[data-ecowitt-save]").click()
     expect(page.locator("[data-settings-status]")).to_contain_text("Ecowitt saved")
+    oregon = page.locator('[data-station-card="wmr100_usb"]')
+    oregon.locator("summary").click()
+    oregon.locator('[name="wmr100_enabled"]').check()
+    oregon.locator('[name="wmr100_model"]').select_option("WMR100N")
+    oregon.locator('[name="wmr100_poll_interval_seconds"]').fill("120")
+    oregon.locator('[data-station-save="wmr100_usb"]').click()
+    expect(page.locator("[data-settings-status]")).to_contain_text("Oregon Scientific saved")
+    davis = page.locator('[data-station-card="davis_vue"]')
+    davis.locator("summary").click()
+    davis.locator('[name="davis_port"]').fill("/dev/test-vue")
+    davis.locator('[name="davis_baud_rate"]').select_option("9600")
+    davis.locator('[name="davis_poll_interval_seconds"]').fill("180")
+    davis.locator('[name="davis_enabled"]').check()
+    davis.locator('[data-station-save="davis_vue"]').click()
+    expect(page.locator("[data-settings-status]")).to_contain_text("Davis Vantage Vue saved")
     sources = page.request.get(f"{base_url}/api/stations").json()["stations"]
     assert all(item["status"]["enabled"] for item in sources)
     for width in (1440, 390):
         page.set_viewport_size({"width": width, "height": 1000})
-        acurite.scroll_into_view_if_needed()
-        expect(acurite.locator("[data-station-save]")).to_be_visible()
+        davis.scroll_into_view_if_needed()
+        expect(davis.locator("[data-station-save]")).to_be_visible()
         pane = page.locator('[data-pane="station"]')
         assert pane.evaluate("node => node.scrollWidth <= node.clientWidth")
         page.locator("#settingsDialog").screenshot(path=RESULTS / f"station-connections-{width}.png")
@@ -415,6 +453,26 @@ def verify_station_connections(page: Page, base_url: str) -> None:
     expect(other.locator('[data-reading-field="temperature"]')).to_have_text("72.5")
     page.reload(wait_until="domcontentloaded")
     expect(page.locator('[data-reading-field="temperature"]')).to_have_text("55.0")
+    page.locator("[data-station-picker]").select_option("wmr100_usb")
+    page.wait_for_url("**/?station=wmr100_usb")
+    expect(page.locator('[data-reading-field="temperature"]')).to_have_text("58.1")
+    expect(page.locator('a[href="/export?format=csv&station=wmr100_usb"]')).to_have_count(1)
+    page.locator("[data-open-settings]").first.click()
+    page.locator('[data-settings-pane="station"]').click()
+    oregon.locator("summary").click()
+    expect(oregon.locator('[name="wmr100_model"]')).to_have_value("WMR100N")
+    expect(oregon.locator('[name="wmr100_poll_interval_seconds"]')).to_have_value("120")
+    page.locator("[data-close-settings]").first.click()
+    page.locator("[data-station-picker]").select_option("davis_vue")
+    page.wait_for_url("**/?station=davis_vue")
+    expect(page.locator('[data-reading-field="temperature"]')).to_have_text("64.2")
+    expect(page.locator('a[href="/export?format=csv&station=davis_vue"]')).to_have_count(1)
+    page.locator("[data-open-settings]").first.click()
+    page.locator('[data-settings-pane="station"]').click()
+    davis.locator("summary").click()
+    expect(davis.locator('[name="davis_port"]')).to_have_value("/dev/test-vue")
+    expect(davis.locator('[name="davis_baud_rate"]')).to_have_value("9600")
+    expect(davis.locator('[name="davis_poll_interval_seconds"]')).to_have_value("180")
     other.close()
     page.close()
 
@@ -458,6 +516,9 @@ def verify_station_footer(page: Page, base_url: str) -> None:
     expect(page.locator('[data-reading-field="feels_like"]')).to_have_text("20 °F")
     expect(page.locator('[data-reading-field="wind_chill"]')).to_have_text("6.2 °F")
     footer = page.locator(".readings-footer")
+    expect(footer.locator("[data-station-picker]")).to_be_visible()
+    expect(footer.locator("[data-station-state]")).to_have_count(0)
+    expect(page.locator(".station-intro [data-station-picker]")).to_have_count(0)
     expect(footer.locator("[data-battery-status]")).to_have_attribute("aria-label", "Battery Status OK")
     expect(footer.locator("[data-battery-status]")).to_have_text("Battery Status")
     expect(footer.locator(".battery-icon")).to_have_css("color", "rgb(39, 156, 72)")
@@ -479,7 +540,7 @@ def verify_station_footer(page: Page, base_url: str) -> None:
         expect(footer.locator("[data-battery-status]")).to_have_text("Battery Status")
         colors = {"OK": "rgb(39, 156, 72)", "LOW": "rgb(211, 47, 47)", "UNKNOWN": "rgb(128, 128, 128)"}
         expect(footer.locator(".battery-icon")).to_have_css("color", colors[battery])
-        indicator = footer.locator("[data-station-state]")
+        indicator = page.locator(".station-intro [data-station-state]")
         if reporting:
             expect(indicator).to_have_css("color", colors["OK"])
             expect(indicator.locator(".status-dot")).to_have_css("background-color", colors["OK"])
@@ -488,7 +549,6 @@ def verify_station_footer(page: Page, base_url: str) -> None:
             expected = indicator.evaluate("(el, color) => { const node = document.createElement('span'); node.style.color = color; el.append(node); const value = getComputedStyle(node).color; node.remove(); return value; }", muted)
             expect(indicator).to_have_css("color", expected)
             expect(indicator.locator(".status-dot")).to_have_css("background-color", expected)
-        expect(footer.locator("[data-station-state-label]")).to_have_text("Station reporting" if reporting else "Station offline")
         expect(page.locator(".station-intro [data-station-state-label]")).to_have_text("Station reporting" if reporting else "Station offline")
 
 

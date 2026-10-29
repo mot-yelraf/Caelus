@@ -306,3 +306,31 @@ def test_poll_derives_and_persists_heat_index_without_gateway_value(tmp_path):
     payload['tempf'] = 41
     poller.poll_once()
     assert poller.data_logger.get_latest()['heat_index'] is None
+
+
+@pytest.mark.parametrize('source,altitude,absolute', [
+    ('acurite:console:sensor', 1524, 24.8),
+    ('acurite:console:sensor', None, 24.8),
+    ('acurite:console:sensor', 1524, None),
+    ('ecowitt:gateway', 1524, 24.8),
+])
+def test_altitude_pressure_correction_is_acurite_only(source, altitude, absolute):
+    from caelus.observations import Observation
+
+    poller = make_poller()
+    poller.settings.altitude_m = altitude
+    now = datetime.now(timezone.utc)
+    observation = Observation(source, now, now, {
+        'temperature': 60, 'indoor_absolute_pressure': absolute,
+        **({'pressure': 29.9} if source.startswith('ecowitt:') else {}),
+    })
+    poller.adapter = SimpleNamespace(read=lambda: observation)
+    result = poller.poll_once()
+    assert result['indoor_absolute_pressure'] == absolute
+    if source.startswith('ecowitt:'):
+        assert result['pressure'] == 29.9
+    elif altitude is None or absolute is None:
+        assert result['pressure'] is None
+    else:
+        assert result['pressure'] == pytest.approx(29.802, abs=0.001)
+    assert poller.data_logger.readings[0][1]['pressure'] == result['pressure']

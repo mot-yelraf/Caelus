@@ -4,7 +4,7 @@
 
 # Caelus User Guide
 
-Caelus is a local weather dashboard and history service for Ecowitt LAN gateways and AcuRite PC Connect USB consoles. It combines current station readings, forecasts, 24-hour metric cards, longer-range graphs, a regional Windy radar map, and observer-local Sun and Moon information in one browser view.
+Caelus is a local weather dashboard and history service for Ecowitt LAN gateways, AcuRite PC Connect USB consoles, Oregon Scientific WMR100-family USB consoles, and Davis Vantage Vue consoles with local dataloggers. It combines current station readings, forecasts, 24-hour metric cards, longer-range graphs, a regional Windy radar map, and observer-local Sun and Moon information in one browser view.
 
 This guide is for day-to-day users. You do not need to understand Python, FastAPI, or SQLite to operate Caelus.
 
@@ -25,22 +25,24 @@ The top of the dashboard shows the station name, the time of the last stored obs
 
 ## Station selection
 
-The station selector above current readings chooses **Ecowitt** or **AcuRite USB**. Each station has separate current readings, graphs, and exports.
-Both connections may run simultaneously. Location, forecast, appearance, and
+The station selector chooses **Ecowitt**, **AcuRite**, **Oregon Scientific**, or **Davis Vantage Vue**. Each station has separate current readings, graphs, and exports.
+Connections may run simultaneously. Location, forecast, appearance, and
 retention settings are shared. Each browser tab keeps its station in the URL.
 
 **Settings > Station** contains independently expandable connection sections.
-Select either station heading to expand or collapse its controls; both start
-collapsed, and both can remain open at the same time. Each section has its own
+Select a station heading to expand or collapse its controls; sections start
+collapsed, and several can remain open at the same time. Each section has its own
 enable control, connection status, history interval, and Save button. AcuRite
 connects by USB to the same Raspberry Pi, Linux PC, Mac, or Windows PC running
 Caelus; see the
 [AcuRite setup and validation guide](acurite_usb.md).
+For Oregon Scientific models, see the [WMR100-family setup guide](wmr100_usb.md).
 
 ## Quickstart Station Setup
 
 Open **Settings > Station** and expand the connection you want to configure.
-You can enable either station or both; their readings and histories stay separate.
+You can enable several stations; their readings and histories stay separate.
+The Station screenshots below predate the Oregon Scientific and Davis sections.
 
 ![Station settings with the Ecowitt and AcuRite sections collapsed](screenshots/settings-station.png)
 
@@ -74,10 +76,49 @@ for measurement coverage and validation status.
    Use an actual serial descriptor to select among multiple matching consoles.
 5. Set **History interval** from 60 to 3600 seconds, then select **Save AcuRite**.
 6. Check the connection status. Allow a USB sampling cycle and a history interval
-   for the first saved observation, then choose **AcuRite USB** above current
+   for the first saved observation, then choose **AcuRite** in the station selector above current
    readings on the dashboard.
 
-To stop collecting from either connection, clear its **Enabled** checkbox and
+### Davis Vantage Vue with USB datalogger
+
+1. Confirm that a compatible USB datalogger is installed in the legacy Vue
+   console, then connect it to the computer running Caelus. Rerun Caelus's normal
+   installer after upgrading so the serial communication dependency is installed.
+   Close WeatherLink, WeeWX, and other software reading the same console.
+2. Find the datalogger's **virtual serial port**: for example, `/dev/ttyUSB0` on
+   Raspberry Pi OS/Linux, `/dev/cu.usbserial-123` on macOS, or `COM3` in Windows
+   Device Manager. Use the actual port assigned to your logger. On Linux, prefer
+   its full `/dev/serial/by-id/` device path when available, since numbered ports
+   can change after reconnecting.
+3. If the USB logger does not expose a serial port, it may be in Davis's
+   direct-USB mode. Follow [Davis's WeatherLink setup guide](https://www.weatherlink.com/static/software/weatherlink_software_getting_started_guide_pc_2018_11_28.pdf)
+   to use **CP210X to Serial Converter** from the WeatherLink program group and
+   restore COM-port emulation. Install the manufacturer's virtual-serial driver
+   if required. Caelus does not switch logger modes or replace OS drivers.
+4. Open **Settings > Station > Davis Vantage Vue**. Enter **Datalogger serial
+   port**, set **Baud rate** to match the console (normally **19200**), and select
+   **Enabled**. Set **History interval** from 60 to 3600 seconds, then select
+   **Save Davis Vantage Vue**.
+5. Configure one enabled Vue outdoor sensor array (ISS) on the console and confirm
+   it receives live weather. Leave the console's setup and number-entry screens.
+   Under Caelus's **Location** settings, match **Timezone** to the console so daily
+   rainfall resets agree. Caelus reads the console's rain-collector size automatically.
+6. Check the connection status and choose **Davis Vantage Vue** in the station
+   selector. Allow two live samples to confirm advancing radio reception, then
+   a history interval for the first saved outdoor observation. A connected
+   datalogger can still be waiting for fresh outdoor readings.
+
+On Linux, the account running Caelus needs access to the serial device. The
+installer's AcuRite/Oregon USB permission setup does not grant Davis serial-port
+access. Use your distribution's normal serial-device permissions; keep Caelus
+running under your regular account.
+
+Vue support has been checked with protocol fixtures and simulated serial
+sessions; physical console/logger/platform validation remains outstanding.
+See the [Davis Vue guide](davis_vue.md) for measurements, limitations, serial
+dataloggers, and hardware validation.
+
+To stop collecting from any connection, clear its **Enabled** checkbox and
 select that section's Save button. Its existing history remains available.
 
 ## Settings
@@ -88,9 +129,9 @@ The dialog supports mouse, touch, and keyboard navigation. Closing without savin
 
 ### Station
 
-The **Ecowitt gateway** and **AcuRite USB console** headings independently expand
+The station connection headings independently expand
 or collapse their controls. Use a mouse or touch, or focus a heading and press
-Enter or Space. Both sections start collapsed. Scroll within the pane to reach lower controls.
+Enter or Space. Sections start collapsed. Scroll within the pane to reach lower controls.
 Expanding a section does not
 enable collection; changes take effect when you select that section's Save button.
 
@@ -136,8 +177,27 @@ first baseline or during outages. Live indoor humidity and wind gusts are
 unavailable. See the [USB setup and console validation guide](acurite_usb.md)
 for platform permissions, decoding limits, and report capture.
 
-Both connections can run at the same time. Saving one does not submit unsaved
-changes in the other. A failed fetch does not erase the station's last stored
+#### Davis Vantage Vue controls
+
+- **Enabled** starts or stops Vue collection when saved.
+- **Datalogger serial port** identifies the local port for your USB virtual-serial
+  or serial datalogger. It is required when enabling collection.
+- **Baud rate** must match the console; the default is **19200**.
+- **History interval** accepts 60 to 3600 seconds for saved observations. Live
+  sampling runs independently of this interval.
+- **Save Davis Vantage Vue** saves only this connection's settings. Check its
+  status line for connection and device-access errors.
+
+The Vue supplies indoor/outdoor temperature and humidity, wind speed/direction,
+the console's 10-minute wind gust, relative and absolute pressure, rain rate,
+and daily, monthly, yearly, and storm rain. **Rain today** is the console's daily
+total. Its units follow the configured collector size; Caelus does not change
+console calibration, clock, pairing, or archive settings. Outdoor fields expire
+after 120 seconds without radio reception progress, even if the console still
+answers. Indoor readings and pressure can remain available during an RF outage.
+
+Connections can run at the same time. Saving one does not submit unsaved
+changes in another. A failed fetch does not erase the station's last stored
 observation; check its status and observation time for freshness. Each station's
 current readings, graphs, and downloads follow the dashboard's station selector.
 
@@ -376,6 +436,24 @@ If Caelus was installed elsewhere, use the absolute launcher path for that insta
 5. Select **Save Gateway** after a successful discovery.
 
 If the gateway received a new DHCP address, update the URL and create a DHCP reservation to prevent another change.
+
+### The Davis USB Logger Does Not Connect
+
+1. Confirm that the datalogger appears as a serial port on the Caelus computer.
+   If it does not, check its cable, virtual-serial driver, and COM-port emulation
+   mode using the [Davis USB setup steps](#davis-vantage-vue-with-usb-datalogger).
+2. Verify **Datalogger serial port** and **Baud rate** in **Settings > Station >
+   Davis Vantage Vue**. Reconnecting USB can change a numbered port name.
+3. Close other console readers and confirm your Caelus account can access the
+   serial port. Leave the console's setup screens, then save the connection again.
+4. If connected but waiting for outdoor readings, confirm the Vue receives its
+   outdoor array and has one enabled Vue ISS transmitter. Allow two samples for
+   radio reception progress and a history interval for a saved outdoor reading.
+
+The last stored reading remains visible during an outage; check station status
+and observation time. For an installation at `/home/pi/Caelus`, Davis history is
+kept separately in `/home/pi/Caelus/data/davis.db`. Substitute your actual absolute
+installation path when locating files.
 
 ### Forecast, Sun, Moon, or Map Information Is Wrong
 

@@ -609,12 +609,17 @@
     const controls = Array.from(card.querySelectorAll("input, select"));
     const invalid = controls.find((control) => !control.checkValidity());
     if (invalid) { invalid.focus(); return; }
+    const prefix = key.replace(/_usb$/, "");
     const payload = key === "ecowitt" ? {
       enabled, gateway_url: ecowittUrl.value, poll_interval_seconds: Number(ecowittInterval.value),
+    } : key === "davis_vue" ? {
+      enabled, port: card.querySelector('[name="davis_port"]').value,
+      baud_rate: Number(card.querySelector('[name="davis_baud_rate"]').value),
+      poll_interval_seconds: Number(card.querySelector('[name="davis_poll_interval_seconds"]').value),
     } : {
-      enabled, model: acuriteModel.value,
-      usb_serial: card.querySelector('[name="acurite_usb_serial"]').value,
-      poll_interval_seconds: Number(card.querySelector('[name="acurite_poll_interval_seconds"]').value),
+      enabled, model: card.querySelector(`[name="${prefix}_model"]`).value,
+      usb_serial: card.querySelector(`[name="${prefix}_usb_serial"]`).value,
+      poll_interval_seconds: Number(card.querySelector(`[name="${prefix}_poll_interval_seconds"]`).value),
     };
     button.disabled = true;
     showToast(settingsStatus, "Saving station connection…");
@@ -623,7 +628,7 @@
       if (key === "ecowitt" && ecowittSummary) {
         ecowittSummary.textContent = enabled ? ecowittDiscovery?.gateway_model || "Ecowitt polling enabled" : "Ecowitt polling disabled";
       }
-      showToast(settingsStatus, `${key === "ecowitt" ? "Ecowitt" : "AcuRite"} saved. ${enabled ? "Waiting for fresh readings." : "Acquisition disabled; history retained."}`);
+      showToast(settingsStatus, `${key === "ecowitt" ? "Ecowitt" : key === "wmr100_usb" ? "Oregon Scientific" : key === "davis_vue" ? "Davis Vantage Vue" : "AcuRite"} saved. ${enabled ? "Waiting for fresh readings." : "Acquisition disabled; history retained."}`);
       await refreshStationConnections();
       if (key === stationKey) {
         setDashboardRefreshInterval(payload.poll_interval_seconds);

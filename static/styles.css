@@ -169,7 +169,6 @@ a { color: inherit; }
 .card-heading { display: flex; align-items: start; justify-content: space-between; gap: 1rem; }
 .card-heading h2, .moon-card h2, .data-card h2 { margin: 0; font: 500 1.34rem Georgia, serif; letter-spacing: -0.02em; }
 .card-heading.compact h2 { font-size: 1.15rem; }
-.weather-badge { padding: 0.38rem 0.56rem; border: 1px solid color-mix(in srgb, var(--accent) 42%, transparent); color: var(--accent); font-size: 0.63rem; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; }
 .card-icon { color: var(--accent-2); font-size: 1.5rem; }
 
 .temperature-stage { min-height: 22rem; display: grid; place-items: center; align-content: center; position: relative; }
@@ -551,6 +550,8 @@ a { color: inherit; }
 .pane-heading h3 { margin: 0; color: var(--surface-ink); font: 600 1.28rem Georgia, serif; }
 .pane-heading p { margin: 0.25rem 0 0; color: var(--surface-muted); font-size: 0.78rem; }
 .field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.location-fields { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.location-help { grid-column: 1 / -1; color: var(--surface-muted); }
 .appearance-units { grid-template-columns: minmax(0, 1fr); max-width: 32rem; }
 .appearance-sections { display: grid; gap: 0.7rem; }
 .appearance-section { border: 1px solid var(--surface-border); background: var(--surface-light); }
@@ -820,7 +821,7 @@ dialog, .glass-card, .metric-loading { border-radius: 1rem; }
 /* Current station health, aligned with the readings card's metric grid. */
 .readings-panel { display: flex; flex-direction: column; }
 .readings-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1rem; margin-top: auto; padding: 1rem 0.45rem 0; color: var(--muted); font-size: 0.72rem; }
-.battery-status { display: inline-flex; align-items: center; gap: 0.5rem; }
+.battery-status { display: inline-flex; align-items: center; gap: 0.5rem; margin-left: auto; }
 .battery-icon { width: 1.8rem; height: 1.1rem; color: #808080; }
 .battery-outline { fill: none; stroke: currentColor; stroke-width: 2; }
 .battery-fill { fill: currentColor; }
@@ -850,8 +851,8 @@ dialog, .glass-card, .metric-loading { border-radius: 1rem; }
 .station-enable input { accent-color: var(--surface-accent); }
 .connection-status { padding: 0.55rem 0.7rem; border-left: 3px solid var(--surface-accent); background: var(--surface-tint); overflow-wrap: anywhere; }
 .connection-status.is-error { border-left-color: #b54738; }
-.station-picker { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.6rem; color: var(--muted); font-size: 0.8rem; }
-.station-picker select { max-width: 100%; padding: 0.3rem 0.55rem; border: 1px solid var(--line); border-radius: 0.5rem; background: var(--surface-light); color: var(--surface-ink); }
+.station-picker { display: flex; align-items: center; gap: 0.5rem; min-width: 0; color: var(--muted); font-size: 0.8rem; }
+.station-picker select { min-width: 0; max-width: 100%; padding: 0.3rem 0.55rem; border: 1px solid var(--line); border-radius: 0.5rem; background: var(--surface-light); color: var(--surface-ink); }
 @media (max-width: 480px) {
   .station-connection > summary { padding: 0.85rem; }
   .station-connection-content { padding: 0.85rem; }

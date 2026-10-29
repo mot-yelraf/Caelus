@@ -112,8 +112,11 @@ class BrowserTestAdapter:
     def capabilities(self):
         return (ChannelCapability("primary", ("temperature",)),)
 
+    def reset(self):
+        return None
+
     def status(self):
-        enabled = self.settings.gateway_enabled if self.key == "ecowitt" else self.settings.acurite_enabled
+        enabled = self.settings.gateway_enabled if self.key == "ecowitt" else getattr(self.settings, f"{'davis' if self.key == 'davis_vue' else self.key.removesuffix('_usb')}_enabled")
         return {"source_id": self.key, "enabled": enabled, "connected": enabled,
                 "state": "online" if enabled else "disabled", "observation_fresh": enabled,
                 "station": {"reporting": enabled, "battery_status": "UNKNOWN"}, "sensors": []}
@@ -144,7 +147,9 @@ app.state.stations = {
     key: StationRuntime(key, name, BrowserTestAdapter(app.state.settings, key), logger, poller)
     for key, name, logger, poller in (
         ("ecowitt", "Ecowitt", app.state.data_logger, app.state.poller),
-        ("acurite_usb", "AcuRite USB", BrowserTestLogger(55.0), BrowserTestPoller(app.state.settings, "acurite_usb")),
+        ("acurite_usb", "AcuRite", BrowserTestLogger(55.0), BrowserTestPoller(app.state.settings, "acurite_usb")),
+        ("wmr100_usb", "Oregon Scientific", BrowserTestLogger(58.1), BrowserTestPoller(app.state.settings, "wmr100_usb")),
+        ("davis_vue", "Davis Vantage Vue", BrowserTestLogger(64.2), BrowserTestPoller(app.state.settings, "davis_vue")),
     )
 }
 app.state.weather_adapter = app.state.stations["ecowitt"].adapter

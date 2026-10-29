@@ -3,8 +3,8 @@
 </p>
 
 Caelus is a lightweight Python-based weather dashboard for Ecowitt LAN gateways
-and AcuRite PC Connect consoles connected by USB to the same Raspberry Pi, Linux PC,
-Mac, or Windows PC running Caelus. Both can run simultaneously with separate station histories.
+and AcuRite PC Connect, Oregon Scientific WMR100-family, or Davis Vantage Vue consoles connected locally to the same Raspberry Pi, Linux PC,
+Mac, or Windows PC running Caelus. Stations can run simultaneously with separate histories.
 
 Supported Ecowitt gateways and their compatible WS sensor arrays:
 
@@ -41,8 +41,32 @@ with synthetic protocol fixtures; physical validation of these models is still n
 Model groupings follow [AcuRite's PC Connect display list](https://support.acurite.com/hc/en-us/articles/1260802952850-PC-Connect-Display-Unit),
 with mode guidance from [WeeWX's AcuRite hardware guide](https://weewx.com/docs/5.5/hardware/acurite/).
 
+Set the AcuRite console's **Station altitude** in **Settings > Location** (feet
+with Imperial units, meters with Metric). New readings retain absolute pressure
+and store an altitude-adjusted barometric pressure estimate using the
+[NWS altimeter-setting formula](https://www.weather.gov/media/epz/wxcalc/altimeterSetting.pdf).
+This uses a standard atmosphere, rather than a temperature-based sea-level
+pressure reduction. Leave altitude blank for absolute pressure only. Historical
+rows remain unchanged; the adjusted value appears after the next successful poll.
+Ecowitt's gateway-supplied pressure is unchanged.
+
 For direct AcuRite USB setup and hardware validation, see the
 [AcuRite USB guide](docs/acurite_usb.md).
+
+Oregon Scientific USB acquisition targets **WMR100/N, WMR88/A, WMR180/A, and
+WMRS200**. Configure it under **Settings > Station > Oregon Scientific USB
+console**. It collects primary indoor/outdoor temperature and RH, wind, rain,
+pressure, and optional UV in a separate history. WMR200, WMR300, and WMR89 are
+excluded. Coverage is protocol-fixture based; physical model/platform validation
+is still required. See the [Oregon Scientific USB guide](docs/wmr100_usb.md).
+
+Davis **Vantage Vue** acquisition uses an installed USB virtual-serial or serial
+datalogger. Configure its local serial port and baud rate under **Settings >
+Station > Davis Vantage Vue**. It keeps a separate history and reads live weather,
+collector configuration, and radio diagnostics without modifying the console.
+Coverage is fixture-based; physical console/logger/platform validation remains
+outstanding. See the [Davis Vue setup guide](docs/davis_vue.md), including the
+USB logger's required virtual-serial mode.
 
 For adding station families, see the [weather adapter guide](docs/weather_adapters.md).
 
@@ -53,8 +77,8 @@ For illustrated setup and operating instructions, see the
 ## Features
 
 - FastAPI backend with server-rendered templates
-- Separate Ecowitt and AcuRite station connections, dashboard selection, history,
-  graphs, and exports; both can collect at the same time
+- Separate Ecowitt, AcuRite, Oregon Scientific, and Davis Vue station connections, dashboard selection, history,
+  graphs, and exports; all can collect at the same time
 - AcuRite PC Connect live USB reports on Raspberry Pi/Linux, macOS,
   and Windows, with USB libraries included in the standard install, platform-specific
   access setup, bounded sampling, RF freshness checks, and rolling-counter rain
@@ -299,7 +323,7 @@ the server, use `/Users/alice/Caelus/run_caelus.sh`.
 
 ### Linux and Raspberry Pi OS Bookworm/Trixie
 
-The installer offers AcuRite USB system setup and requests administrator
+The installer offers AcuRite and Oregon Scientific USB system setup and requests administrator
 authorization for its libusb package and device-specific udev rule. Run it as your
 normal account. macOS and Windows use their native HID drivers through bindings
 included in the standard install; see the [USB setup guide](docs/acurite_usb.md).

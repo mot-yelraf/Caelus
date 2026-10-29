@@ -50,7 +50,7 @@ installation is needed. Existing installations should rerun their normal install
 
 | Platform | USB path | Initial setup |
 | --- | --- | --- |
-| Raspberry Pi OS / Linux | PyUSB with system libusb | `install.sh` offers administrator-authorized libusb and AcuRite-only udev setup |
+| Raspberry Pi OS / Linux | PyUSB with system libusb | `install.sh` offers administrator-authorized libusb and weather-console udev setup |
 | macOS | Native HIDAPI | `install.sh` installs and checks the HID binding; the OS HID driver stays in place |
 | Windows | Native HIDAPI | `install.ps1` installs and checks the HID binding; the OS HID driver stays in place |
 
@@ -62,7 +62,7 @@ macOS and Windows HID access; Caelus uses numbered input-report reads through th
 
 ### Raspberry Pi and Linux permissions
 
-Run `install.sh` as your normal account. It asks whether to configure AcuRite USB
+Run `install.sh` as your normal account. It asks whether to configure AcuRite and Oregon Scientific USB
 access. Accepting requests administrator authentication through `sudo` in a
 terminal or `pkexec` on a supported desktop. Only a dedicated USB helper runs
 with elevated privileges; application files, pip, and the virtual environment
@@ -70,7 +70,8 @@ remain user-owned.
 
 The helper installs `libusb-1.0-0` with apt if the backend is missing, writes
 `/etc/udev/rules.d/70-caelus-acurite.rules`, and reloads udev rules. The rule grants
-mode 0660 access only to vendor/product `24c0:0003` for your account's existing
+mode 0660 access only to vendor/products `24c0:0003` (AcuRite) and
+`0fde:ca01` (Oregon Scientific) for your account's existing
 primary group. No group-membership change or application root access is required.
 Unplug/reconnect the console after setup.
 
@@ -205,3 +206,20 @@ logger, reset, or mode-setting commands. Restart Caelus after capture. If access
 fails, confirm the console is detected by the OS and no competing reader owns it.
 On Linux, check `lsusb` and that the udev rule targets the service account's primary
 group. On macOS/Windows, keep the native HID driver assigned.
+
+## Altitude and barometric pressure
+
+Set **Station altitude** under **Settings > Location** to the console's height
+above sea level, in feet for Imperial units or meters for Metric. A blank value
+keeps the Current Readings card on absolute pressure. Zero is a valid sea-level
+altitude. IP location detection does not supply or change this setting.
+
+With altitude configured, new AcuRite polls calculate a barometric pressure
+estimate using the [NWS altimeter-setting formula](https://www.weather.gov/media/epz/wxcalc/altimeterSetting.pdf).
+This standard-atmosphere correction does not use outdoor temperature and is not
+a meteorological mean-sea-level pressure reduction. The estimate is stored in
+`pressure`; the original console value remains in `indoor_absolute_pressure`.
+Both remain available to histories and exports. Historical rows are unchanged,
+and the Current Readings value updates after the next successful poll. Missing
+or stale console pressure does not produce an adjusted value. Ecowitt values
+are unaffected. No console calibration or mode commands are sent.

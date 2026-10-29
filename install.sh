@@ -92,18 +92,18 @@ configure_acurite_usb() {
   [ "$usb_setup_mode" != "no" ] || return 0
   usb_account="${CAELUS_USB_USER:-${SUDO_USER:-$(id -un)}}"
   usb_group="$(id -gn "$usb_account")" || return 1
-  usb_question="Set up AcuRite USB access for $usb_account (group $usb_group)? This may install libusb and adds a rule only for USB device 24c0:0003. Administrator authentication will be requested."
+  usb_question="Set up AcuRite / Oregon Scientific USB access for $usb_account (group $usb_group)? This may install libusb and adds rules only for USB devices 24c0:0003 and 0fde:ca01. Administrator authentication will be requested."
   if [ "$usb_setup_mode" = "auto" ]; then
     if [ -t 0 ]; then
       printf '%s [y/N] ' "$usb_question"
       IFS= read -r usb_answer || usb_answer=no
-      case "$usb_answer" in y|Y|yes|YES) ;; *) printf 'AcuRite USB system setup skipped.\n'; return 0 ;; esac
+      case "$usb_answer" in y|Y|yes|YES) ;; *) printf 'Weather console USB system setup skipped.\n'; return 0 ;; esac
     elif [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ] && command -v zenity >/dev/null 2>&1; then
-      zenity --question --title="AcuRite USB access" --text="$usb_question" || return 0
+      zenity --question --title="Weather console USB access" --text="$usb_question" || return 0
     elif [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ] && command -v kdialog >/dev/null 2>&1; then
-      kdialog --yesno "$usb_question" --title "AcuRite USB access" || return 0
+      kdialog --yesno "$usb_question" --title "Weather console USB access" || return 0
     else
-      printf 'AcuRite USB system setup skipped in noninteractive mode. Set CAELUS_SETUP_ACURITE_USB=yes to request it.\n'
+      printf 'Weather console USB system setup skipped in noninteractive mode. Set CAELUS_SETUP_ACURITE_USB=yes to request it.\n'
       return 0
     fi
   fi
@@ -207,12 +207,12 @@ fi
 
 case "$(uname -s)" in
   Linux)
-    configure_acurite_usb || printf 'AcuRite USB system setup was not completed. Rerun the installer to retry; the application installation continues.\n' >&2
+    configure_acurite_usb || printf 'Weather console USB system setup was not completed. Rerun the installer to retry; the application installation continues.\n' >&2
     ;;
   Darwin)
     "$INSTALL_DIR/.venv/bin/python" -c 'import hid; assert hasattr(hid.device, "get_input_report")' \
       || fail "Native HID USB support could not be loaded. Reinstall the standard requirements."
-    printf 'AcuRite uses the native macOS HID driver; no Linux USB permission rule is needed.\n'
+    printf 'AcuRite and Oregon Scientific use the native macOS HID driver; no Linux USB permission rule is needed.\n'
     ;;
 esac
 

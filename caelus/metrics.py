@@ -8,6 +8,25 @@ from typing import Any, Iterable
 from caelus.units import convert_value, display_unit_for
 
 
+def calculate_barometric_pressure(absolute_inhg: float | None, altitude_m: float | None) -> float | None:
+    """Estimate altitude-adjusted pressure in inHg using the NWS altimeter formula.
+
+    https://www.weather.gov/media/epz/wxcalc/altimeterSetting.pdf
+    This standard-atmosphere estimate is distinct from temperature-reduced MSLP.
+    """
+    if absolute_inhg is None or altitude_m is None:
+        return None
+    if not math.isfinite(absolute_inhg) or not math.isfinite(altitude_m) or not -500 <= altitude_m <= 9000:
+        return None
+    pressure_mb = absolute_inhg * 33.8638866667 - 0.3
+    if pressure_mb <= 0:
+        return None
+    base = pressure_mb ** 0.190284 + (1013.25 ** 0.190284 * 0.0065 / 288) * altitude_m
+    if base <= 0:
+        return None
+    return base ** (1 / 0.190284) / 33.8638866667
+
+
 @dataclass(frozen=True)
 class MetricSpec:
     key: str

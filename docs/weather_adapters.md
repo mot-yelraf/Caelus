@@ -80,8 +80,8 @@ the shared object in place; a failed save retains live settings.
    Tests and embedding applications can inject an adapter with
    `create_app(weather_adapter=adapter)` without adding a production selection.
 3. Add the station's runtime name and isolated history in `build_stations`, then
-   add optional device setup separately. Station settings has independent Ecowitt
-   and AcuRite cards; another family's connection UI must be added when supported.
+   add optional device setup separately. Station settings has independent Ecowitt, AcuRite,
+   Oregon Scientific, and Davis Vue cards; another family's connection UI must be added when supported.
 4. Add fixture payloads and contract tests proving unit conversion, zero/missing
    values, invalid data, timestamps, capabilities, status, and rain behavior.
    The hardware-free second adapter in `test_weather_adapters.py` demonstrates
@@ -100,10 +100,10 @@ its supported metric fields, including fields unavailable on some hardware.
 Unsupported soil probes and extra temperature channels are not advertised as
 parsed measurements.
 
-Each observation still represents one primary station. Ecowitt and AcuRite run
+Each observation still represents one primary station. Ecowitt, AcuRite, Oregon Scientific WMR100-family consoles, and Davis Vue run
 concurrently through separate `StationRuntime` adapters, loggers, and pollers in
 `caelus/stations.py`. The original Ecowitt database is preserved; AcuRite uses a
-separate database. Routes select a runtime through an explicit station query
+separate database, Oregon Scientific uses `wmr100.db`, and Davis Vue uses `davis.db`. Routes select a runtime through an explicit station query
 parameter, keeping browser tabs and exports independent. An optional adapter
 sampler has its own start/stop lifecycle; it must not block status requests.
 
@@ -159,3 +159,9 @@ uses GW3000 SD-card history, cloud accounts, MQTT, irrigation, or device control
 Discovery can list soil, air-quality, leak, lightning, and extra probe sensors,
 but this does not add their independent measurements to storage or the dashboard.
 Those channels need the separate metric/channel extensions described above.
+
+See the [Oregon Scientific USB guide](wmr100_usb.md) for model exclusions,
+stream sampling, field freshness, and reset-counter rain semantics.
+
+The [Davis Vue guide](davis_vue.md) covers its explicit local serial-port selection,
+read-only collector configuration, RF reception progress, and daily-rain policy.

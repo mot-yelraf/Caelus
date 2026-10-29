@@ -120,4 +120,10 @@ def create_weather_adapter(settings: AppSettings, *, kind: str | None = None) ->
     if selected == "acurite_usb":
         from caelus.acurite import AcuRiteUsbAdapter
         return AcuRiteUsbAdapter(settings)
+    if selected == "wmr100_usb":
+        from caelus.wmr100 import Wmr100UsbAdapter
+        return Wmr100UsbAdapter(settings)
+    if selected == "davis_vue":
+        from caelus.davis import DavisVueAdapter
+        return DavisVueAdapter(settings)
     raise ValueError(f"Unsupported weather adapter: {selected}")

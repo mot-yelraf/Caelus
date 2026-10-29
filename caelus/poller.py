@@ -8,7 +8,7 @@ from fastapi import FastAPI
 
 from caelus.observations import RainPolicy
 from caelus.rain import add_rain_increment, process_rain, add_recorded_daily_rain
-from caelus.metrics import calculate_feels_like, calculate_heat_index, calculate_wind_chill
+from caelus.metrics import calculate_barometric_pressure, calculate_feels_like, calculate_heat_index, calculate_wind_chill
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +72,10 @@ class GatewayPoller:
             mapped = dict(observation.measurements)
             if not any(value is not None for value in mapped.values()):
                 return None
+            if observation.source_id.startswith("acurite:"):
+                mapped["pressure"] = calculate_barometric_pressure(
+                    mapped.get("indoor_absolute_pressure"), getattr(self.settings, "altitude_m", None)
+                )
             mapped["feels_like"] = calculate_feels_like(
                 mapped.get("temperature"), mapped.get("humidity"), mapped.get("wind_speed")
             )
