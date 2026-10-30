@@ -154,3 +154,22 @@ def test_invalid_altitude_does_not_reset_other_settings(altitude, tmp_path, monk
     assert settings.altitude_m is None
     assert settings.latitude == 40
     assert 'Ignoring invalid setting altitude_m' in caplog.text
+
+
+@pytest.mark.parametrize("finish", ["theme", "chrome", "brass", "brass_mahogany"])
+def test_tile_finish_round_trip(finish, tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(AppSettings, "settings_path", tmp_path / "settings.json")
+    assert AppSettings._validate_value("metric_tile_style", finish) == finish
+    settings = AppSettings(metric_tile_style=finish)
+    settings.save()
+    assert AppSettings.load().metric_tile_style == finish
+
+
+def test_invalid_tile_finish_preserves_other_settings(tmp_path, monkeypatch, caplog) -> None:
+    path = tmp_path / "settings.json"
+    path.write_text(json.dumps({"metric_tile_style": "plastic", "theme": "desert"}))
+    monkeypatch.setattr(AppSettings, "settings_path", path)
+    settings = AppSettings.load()
+    assert settings.metric_tile_style == "theme"
+    assert settings.theme == "desert"
+    assert "metric_tile_style" in caplog.text

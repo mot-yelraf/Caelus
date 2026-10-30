@@ -447,7 +447,89 @@ a { color: inherit; }
 .metric-current { color: var(--accent); font: 500 1.25rem Georgia, serif; white-space: nowrap; }
 .weather-metric-graph { display: block; width: 100%; height: 230px; margin: 0.55rem 0 0.75rem; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: var(--metric-graph-bg, rgba(3, 22, 28, 0.18)); }
 .wind-rose-graph { height: 230px; }
-.weather-metric-gauge { height: 230px; }
+.metric-visual { height: 230px; margin: 0.55rem 0 0.75rem; }
+.metric-visual > canvas { height: 100%; margin: 0; }
+.metric-visual.is-round { width: 230px; max-width: 100%; aspect-ratio: 1; margin-inline: auto; }
+.metric-visual.is-round > canvas { width: 100%; height: auto; aspect-ratio: 1; border: 0; background: transparent; }
+
+/* Finishes preserve Caelus's card shape, typography and statistics layout. */
+body:is([data-metric-tile-style="chrome"], [data-metric-tile-style="brass"], [data-metric-tile-style="brass_mahogany"]) .weather-metric-card {
+  --ink: #202e35;
+  --muted: #475962;
+  --accent: #344d59;
+  --line: #73858a;
+  --tile-panel: linear-gradient(125deg, #eef3f5, #c4cfd5 38%, #e3eaee 70%, #b5c2ca);
+  --tile-bezel: conic-gradient(from -35deg, #5d6872, #faffff 12%, #8c969e 24%, #e4edf2 39%, #64707a 53%, #f8fdff 69%, #818b94 84%, #dce7ee 94%, #5d6872);
+  --tile-dial: linear-gradient(135deg, #f0f4f5, #c2ccd2 35%, #e6ecef 62%, #acbac2);
+  background: var(--tile-panel);
+  color: var(--ink);
+  border-color: var(--line);
+  box-shadow: inset 0 1px 2px #fffa, inset 0 -1px 2px #0004, var(--shadow);
+}
+body:is([data-metric-tile-style="brass"], [data-metric-tile-style="brass_mahogany"]) .weather-metric-card {
+  --ink: #352919;
+  --muted: #5c482a;
+  --accent: #765022;
+  --line: #98763e;
+  --tile-panel: linear-gradient(125deg, #ead59f, #c3a066 38%, #dfc286 70%, #b99352);
+  --tile-bezel: conic-gradient(from -35deg, #614221, #e6cb8c 12%, #9e7538 24%, #d8b568 39%, #65431f 53%, #f0d79b 69%, #987039 84%, #d0aa60 94%, #614221);
+  --tile-dial: repeating-conic-gradient(from -35deg, #fff2bd03 0deg .4deg, #4e321303 .5deg .85deg, transparent .9deg 1.6deg), conic-gradient(from -40deg, #ceb174, #efdaa3 11%, #c09c59 24%, #dcc087 35%, #f1dda7 49%, #bd9956 64%, #e5c98e 80%, #ceb174);
+}
+body[data-metric-tile-style="brass_mahogany"] .weather-metric-card {
+  --ink: #fff0ce;
+  --muted: #e4cda5;
+  --accent: #f1d49a;
+  background: repeating-linear-gradient(3deg, #ffffff04 0 1px, #19050014 2px 3px, transparent 4px 9px), linear-gradient(100deg, #3b150f, #833f29 30%, #542319 53%, #743620 75%, #36130e);
+}
+body:is([data-metric-tile-style="chrome"], [data-metric-tile-style="brass"], [data-metric-tile-style="brass_mahogany"]) .metric-visual {
+  --ink: #202b30;
+  --muted: #3d494c;
+  --line: #687275;
+  background: var(--tile-dial);
+  border: 6px solid #98763e;
+  border-image: var(--tile-bezel) 1;
+  box-shadow: inset 0 2px 5px #0006;
+}
+body[data-metric-tile-style="chrome"] .metric-visual { border-color: #78828c; }
+body:is([data-metric-tile-style="chrome"], [data-metric-tile-style="brass"], [data-metric-tile-style="brass_mahogany"]) .metric-visual > canvas { background: transparent; border: 0; }
+body:is([data-metric-tile-style="chrome"], [data-metric-tile-style="brass"], [data-metric-tile-style="brass_mahogany"]) .metric-visual.is-round {
+  position: relative;
+  padding: 14px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--tile-bezel);
+  box-shadow: 0 2px 4px #0007, inset 0 1px 1px #fff;
+}
+body:is([data-metric-tile-style="chrome"], [data-metric-tile-style="brass"], [data-metric-tile-style="brass_mahogany"]) .metric-visual.is-round::before {
+  content: "";
+  position: absolute;
+  inset: 11px;
+  border-radius: 50%;
+  background: var(--tile-dial);
+  box-shadow: inset 0 2px 5px #0007, 0 0 0 1px #fff7;
+  pointer-events: none;
+}
+.metric-visual.is-round > canvas { position: relative; }
+body:is([data-metric-tile-style="brass"], [data-metric-tile-style="brass_mahogany"]) .metric-visual.is-round::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  pointer-events: none;
+  background: radial-gradient(circle at calc(50.00000% - 0.00000px) calc(0.00000% - -5.50000px), #e9ca8d 0 .9px, #96703a 1.1px 1.7px, #513719 1.9px 2.4px, transparent 2.8px),
+    radial-gradient(circle at calc(75.00000% - 2.75000px) calc(6.69873% - -4.76314px), #e9ca8d 0 .9px, #96703a 1.1px 1.7px, #513719 1.9px 2.4px, transparent 2.8px),
+    radial-gradient(circle at calc(93.30127% - 4.76314px) calc(25.00000% - -2.75000px), #e9ca8d 0 .9px, #96703a 1.1px 1.7px, #513719 1.9px 2.4px, transparent 2.8px),
+    radial-gradient(circle at calc(100.00000% - 5.50000px) calc(50.00000% - -0.00000px), #e9ca8d 0 .9px, #96703a 1.1px 1.7px, #513719 1.9px 2.4px, transparent 2.8px),
+    radial-gradient(circle at calc(93.30127% - 4.76314px) calc(75.00000% - 2.75000px), #e9ca8d 0 .9px, #96703a 1.1px 1.7px, #513719 1.9px 2.4px, transparent 2.8px),
+    radial-gradient(circle at calc(75.00000% - 2.75000px) calc(93.30127% - 4.76314px), #e9ca8d 0 .9px, #96703a 1.1px 1.7px, #513719 1.9px 2.4px, transparent 2.8px),
+    radial-gradient(circle at calc(50.00000% - 0.00000px) calc(100.00000% - 5.50000px), #e9ca8d 0 .9px, #96703a 1.1px 1.7px, #513719 1.9px 2.4px, transparent 2.8px),
+    radial-gradient(circle at calc(25.00000% - -2.75000px) calc(93.30127% - 4.76314px), #e9ca8d 0 .9px, #96703a 1.1px 1.7px, #513719 1.9px 2.4px, transparent 2.8px),
+    radial-gradient(circle at calc(6.69873% - -4.76314px) calc(75.00000% - 2.75000px), #e9ca8d 0 .9px, #96703a 1.1px 1.7px, #513719 1.9px 2.4px, transparent 2.8px),
+    radial-gradient(circle at calc(0.00000% - -5.50000px) calc(50.00000% - 0.00000px), #e9ca8d 0 .9px, #96703a 1.1px 1.7px, #513719 1.9px 2.4px, transparent 2.8px),
+    radial-gradient(circle at calc(6.69873% - -4.76314px) calc(25.00000% - -2.75000px), #e9ca8d 0 .9px, #96703a 1.1px 1.7px, #513719 1.9px 2.4px, transparent 2.8px),
+    radial-gradient(circle at calc(25.00000% - -2.75000px) calc(6.69873% - -4.76314px), #e9ca8d 0 .9px, #96703a 1.1px 1.7px, #513719 1.9px 2.4px, transparent 2.8px);
+}
+
 .wind-rose-controls { display: flex; gap: 0.6rem; margin-top: 0.45rem; }
 .wind-rose-controls button { padding: 0; border: 0; border-bottom: 1px solid transparent; background: transparent; color: var(--muted); font-size: 0.58rem; font-weight: 800; letter-spacing: 0.08em; cursor: pointer; }
 .wind-rose-controls button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }

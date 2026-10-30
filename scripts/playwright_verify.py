@@ -313,6 +313,8 @@ def verify_dashboard(page: Page, base_url: str) -> None:
     page.locator("[data-close-graph]").click()
     assert not graph.evaluate("dialog => dialog.open")
 
+    verify_metric_finishes(page, base_url)
+
     if console_errors or page_errors or failed_first_party_requests:
         details = [
             *(f"console: {error}" for error in console_errors),
@@ -321,6 +323,112 @@ def verify_dashboard(page: Page, base_url: str) -> None:
         ]
         raise AssertionError("Browser errors detected:\n" + "\n".join(details))
 
+
+
+def verify_metric_finishes(page: Page, base_url: str) -> None:
+    """Verify disclosure state, finish persistence and equal-height framed views."""
+    page.reload(wait_until="domcontentloaded")
+    expect(page.locator("#settingsDialog details[open]")).to_have_count(0)
+    page.locator('[data-open-settings]').click()
+    page.locator('[data-settings-pane="appearance"]').click()
+    headings = page.locator('.appearance-section summary strong').all_text_contents()
+    assert headings == ["Metrics", "Display Style", "Theme", "Metric Tile Style"]
+    page.locator('.appearance-section').last.locator('summary').click()
+    finish = page.locator('[name="metric_tile_style"]')
+    finish.select_option("chrome")
+    expect(page.locator('body')).to_have_attribute('data-metric-tile-style', 'chrome')
+    page.locator('[data-close-settings]').first.click()
+    expect(page.locator('body')).to_have_attribute('data-metric-tile-style', 'theme')
+    page.locator('[data-open-settings]').click()
+    page.locator('[data-settings-pane="appearance"]').click()
+    finish.select_option("brass_mahogany")
+    page.locator('[data-settings-pane="station"]').click()
+    page.locator('[data-station-card="ecowitt"] > summary').click()
+    page.locator('[data-settings-pane="appearance"]').click()
+    page.locator('.appearance-section').nth(1).locator('summary').click()
+    disclosure_states = page.locator('#settingsDialog details').evaluate_all('nodes => nodes.map(node => node.open)')
+    page.locator('[data-save-pane="appearance"]').click()
+    expect(page.locator('[data-settings-status]')).to_have_text('Appearance saved.')
+    assert page.locator('#settingsDialog details').evaluate_all('nodes => nodes.map(node => node.open)') == disclosure_states
+    page.locator('[data-settings-pane="forecast"]').click()
+    page.locator('[data-save-pane="forecast"]').click()
+    expect(page.locator('[data-settings-status]')).to_have_text('Forecast saved.')
+    assert page.locator('#settingsDialog details').evaluate_all('nodes => nodes.map(node => node.open)') == disclosure_states
+    expect(page.locator('body')).to_have_attribute('data-metric-tile-style', 'brass_mahogany')
+    page.locator('[data-close-settings]').first.click()
+    page.reload(wait_until="domcontentloaded")
+    expect(page.locator('body')).to_have_attribute('data-metric-tile-style', 'brass_mahogany')
+
+    expect(page.locator("#settingsDialog details[open]")).to_have_count(0)
+    now = datetime.now(timezone.utc)
+    series = [{"timestamp": (now - timedelta(hours=24 - hour)).isoformat(), "value": 50 + hour}
+              for hour in range(25)]
+    metrics = []
+    for key, label, unit, current in (
+        ("temperature", "Outdoor temperature", "°F", 74),
+        ("humidity", "Outdoor relative humidity", "%", 74),
+        ("pressure", "Relative pressure", "inHg", 30.1),
+        ("wind_dir", "Wind direction", "°", 225),
+    ):
+        metric = {"key": key, "label": label, "unit": unit, "decimals": 1,
+                  "current": current, "series": [dict(point, value=current) for point in series]}
+        if key == "wind_dir":
+            metric["wind_speed"] = {"unit": "mph", "current": 5, "decimals": 1, "series": [
+                {"timestamp": point["timestamp"], "direction": 225, "speed": 5} for point in series]}
+        metrics.append(metric)
+    page.route("**/api/metrics/24h?*", lambda route: route.fulfill(json={
+        "metrics": metrics, "generated_at": now.isoformat(), "timezone": "UTC",
+    }))
+    styles = {key: "gauge" for key in page.locator("[data-metric-style-key]").evaluate_all(
+        "nodes => nodes.map(node => node.dataset.metricStyleKey)"
+    )}
+    for tile_finish in ("theme", "chrome", "brass", "brass_mahogany"):
+        response = page.context.request.post(f"{base_url}/settings", form={
+            "csrf_token": "playwright-test-token", "settings_pane": "appearance",
+            "metric_tile_style": tile_finish, "metric_display_styles": json.dumps(styles),
+        })
+        assert response.ok
+        page.reload(wait_until="domcontentloaded")
+        gauges = page.locator('.weather-metric-card:visible .metric-visual.is-gauge')
+        expect(gauges).to_have_count(4)
+        for width in (1440, 390, 320):
+            page.set_viewport_size({"width": width, "height": 1200})
+            # Let ResizeObserver redraw after the responsive layout changes.
+            page.wait_for_timeout(100)
+            for gauge in gauges.all():
+                bounds = gauge.bounding_box()
+                canvas = gauge.locator('canvas').bounding_box()
+                assert bounds and canvas
+                assert abs(bounds['height'] - 230) < 1
+                assert abs(bounds['width'] - bounds['height']) < 1
+                assert abs(canvas['width'] - canvas['height']) < 1
+                assert abs(canvas['x'] + canvas['width'] / 2 - bounds['x'] - bounds['width'] / 2) < 1
+                assert abs(canvas['y'] + canvas['height'] / 2 - bounds['y'] - bounds['height'] / 2) < 1
+                assert gauge.evaluate('node => node.scrollWidth <= node.clientWidth')
+            page.locator('.weather-metric-grid').screenshot(path=RESULTS / f'metric-{tile_finish}-{width}.png')
+        # Graph mode retains a rectangular frame when cycling a dial.
+        card = page.locator('.weather-metric-card:visible').first
+        card.click()
+        expect(card.locator('.metric-visual.is-round')).to_have_count(0)
+        graph_height = card.locator('.metric-visual').bounding_box()['height']
+        assert abs(graph_height - 230) < 1
+        page.set_viewport_size({"width": 1440, "height": 1200})
+        graph_stats = card.locator('.weather-metric-stats').bounding_box()
+        gauge_stats = page.locator('.weather-metric-card:visible').nth(1).locator('.weather-metric-stats').bounding_box()
+        assert graph_stats and gauge_stats
+        assert abs(graph_stats['y'] - gauge_stats['y']) < 1
+        page.set_viewport_size({"width": 1440, "height": 1200})
+        card.screenshot(path=RESULTS / f'metric-graph-{tile_finish}.png')
+        wind = page.locator('.weather-metric-card:visible').nth(3)
+        for hours in (24, 6):
+            wind.click()
+            expect(wind.locator('h3')).to_have_text(f'{hours}-hour Wind-Rose')
+            expect(wind.locator('.metric-visual.is-round')).to_have_count(1)
+            expect(wind.locator('.metric-visual.is-gauge')).to_have_count(0)
+            assert abs(wind.locator('.metric-visual').bounding_box()['height'] - graph_height) < 1
+            wind.screenshot(path=RESULTS / f'wind-rose-{hours}-{tile_finish}.png')
+        wind.click()
+        expect(wind.locator('.metric-visual.is-gauge')).to_have_count(1)
 
 
 def verify_severe_weather(page: Page) -> None:

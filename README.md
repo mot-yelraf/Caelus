@@ -2,9 +2,7 @@
   <img src="docs/screenshots/caelus-brand.png" alt="Caelus · Living Weather" width="400">
 </p>
 
-Caelus is a lightweight Python-based weather dashboard for Ecowitt LAN gateways
-and AcuRite PC Connect, Oregon Scientific WMR100-family, or Davis Vantage Vue consoles connected locally to the same Raspberry Pi, Linux PC,
-Mac, or Windows PC running Caelus. Stations can run simultaneously with separate histories.
+Caelus is a Python-based weather dashboard for Ecowitt LAN gateways/sensors and AcuRite PC Connect, Oregon Scientific WMR100-family, or Davis Vantage Vue with weather station and USB consoles connected locally to the same Raspberry Pi, Linux PC, Mac, or Windows PC running Caelus. Mulitiple stations can run simultaneously with separate histories.
 
 Supported Ecowitt gateways and their compatible WS sensor arrays:
 
@@ -113,6 +111,13 @@ For illustrated setup and operating instructions, see the
   until deliberately activated, so page scrolling is not captured accidentally
 - Responsive 24-hour cards for every valid stored Ecowitt metric, with local
   three-hour graph ticks and complete-window minimum, average, and maximum stats
+- Appearance settings are ordered Metrics, Display Style, Theme, and Metric Tile
+  Style. Choose Theme (the existing scene finish), Chrome, Brass, or Brass + Mahogany
+  for all metric cards, independently of graph/gauge selection. Metal gauges use
+  centered circular bezels at the same height as graph areas. Both Wind Rose
+  windows also use circular bezels; other graphs keep rectangular frames. Menu
+  sections start collapsed and keep their open/closed state across settings saves.
+  Unsaved finish previews revert when Settings closes.
 - Full-screen live history graph with eight selectable windows from one hour to
   29 days and up to four independently scaled metrics across two axes per side
 - Calculated eight-phase moon cycle with illumination, lunar age, and a live
