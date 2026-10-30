@@ -14,7 +14,7 @@
     <link rel="stylesheet" href="/static/styles.css?v={{ version }}" />
     <script src="/static/dashboard.js?v={{ version }}" defer></script>
   </head>
-  <body class="{% if settings.theme.startswith('custom:') %}theme-custom{% else %}theme-{{ settings.theme }}{% endif %}" data-theme-selection="{{ settings.theme }}" data-station-key="{{ active_station | default('') }}" data-poll-interval-seconds="{{ station_interval | default(settings.poll_interval_seconds) }}"{% if active_theme_style %} style="{{ active_theme_style }}"{% endif %}>
+  <body class="{% if settings.theme.startswith('custom:') %}theme-custom{% else %}theme-{{ settings.theme }}{% endif %}" data-theme-selection="{{ settings.theme }}" data-metric-tile-style="{{ settings.metric_tile_style }}" data-station-key="{{ active_station | default('') }}" data-poll-interval-seconds="{{ station_interval | default(settings.poll_interval_seconds) }}"{% if active_theme_style %} style="{{ active_theme_style }}"{% endif %}>
     {% macro reading(value, suffix='') -%}{{ value if value is not none else '—' }}{{ suffix if value is not none else '' }}{%- endmacro %}
     {% set metric_display = settings.unit_system == 'metric' %}
     {% set absolute_usb = active_station in ('acurite_usb', 'wmr100_usb') and settings.altitude_m is none %}
@@ -288,16 +288,8 @@
               <div class="appearance-pane-scroll">
                 <div class="pane-heading"><div><h3>Choose your world</h3></div></div>
                 <div class="appearance-sections">
-                  <details class="appearance-section" open>
-                    <summary><span><strong>Theme</strong><small>Choose the dashboard scenery.</small></span></summary>
-                    <div class="appearance-section-content">
-                      <div class="theme-picker" data-theme-picker>{% for value, label, icon, description in [('garden','Mountain Garden','🌿','Greenhouse glass, forest ridges and rain.'),('island','Sunny Beach','🏝️','Turquoise water, white sand and bright sun.'),('river','Forest River','🏞️','Cool water winding through deep woodland.'),('desert','Desert Bloom','🌵','Sunlit mesas, blue skies and desert blooms.')] %}<label class="theme-option theme-swatch-{{ value }}"><input type="radio" name="theme" value="{{ value }}" {% if settings.theme == value %}checked{% endif %}/><span class="theme-preview"><b>{{ icon }}</b></span><span><strong>{{ label }}</strong><small>{{ description }}</small></span></label>{% endfor %}</div>
-                      <div class="custom-theme-list" data-custom-theme-list>{% for theme in custom_themes %}<section class="custom-theme-collection" data-custom-theme-id="{{ theme.id }}"><header><strong>{{ theme.name }}</strong><button type="button" class="custom-theme-delete" data-delete-custom-theme="{{ theme.id }}">Delete</button></header><div class="theme-picker">{% for image in theme.images %}<label class="theme-option custom-theme-option"><input type="radio" name="theme" value="{{ image.selection }}" data-theme-style="{{ custom_theme_styles[image.selection] }}" {% if settings.theme == image.selection %}checked{% endif %}/><span class="theme-preview" style="background-image:url('{{ image.thumbnail_url }}')"><b>Custom</b></span><span><strong>{{ image.name }}</strong><small>{{ image.palette_name }}</small></span></label>{% endfor %}</div></section>{% endfor %}</div>
-                      <div class="custom-theme-toolbar"><button type="button" class="button-secondary" data-open-custom-theme>Custom Theme</button></div>
-                    </div>
-                  </details>
                   <details class="appearance-section">
-                    <summary><span><strong>Units</strong><small>Set one consistent measurement system.</small></span></summary>
+                    <summary><span><strong>Metrics</strong><small>Set one consistent measurement system.</small></span></summary>
                     <div class="appearance-section-content"><div class="field-grid appearance-units"><label class="field"><span>Display units</span><select name="unit_system"><option value="imperial" {% if settings.unit_system == 'imperial' %}selected{% endif %}>Imperial · °F, mph, inHg, inches</option><option value="metric" {% if settings.unit_system == 'metric' %}selected{% endif %}>Metric · °C, km/h, hPa, millimetres</option></select></label></div></div>
                   </details>
                   <details class="appearance-section">
@@ -307,6 +299,18 @@
                       <div class="metric-style-bulk"><label class="field"><span>All metrics</span><select data-all-metric-styles><option value="">Mixed</option><option value="graph24hr">24Hr Graph</option><option value="graph6hr">6Hr Graph</option><option value="gauge">Gauge</option></select></label></div>
                       <div class="metric-style-grid">{% for metric in metric_display_options %}{% set default_style = 'gauge' if metric.key == 'rain_total' else 'graph24hr' %}<label class="field metric-style-field"><span>{{ metric.label }}</span><select data-metric-style-key="{{ metric.key }}"><option value="graph24hr" {% if settings.metric_display_styles.get(metric.key, default_style) == 'graph24hr' %}selected{% endif %}>24Hr Graph</option><option value="graph6hr" {% if settings.metric_display_styles.get(metric.key) == 'graph6hr' %}selected{% endif %}>6Hr Graph</option><option value="gauge" {% if settings.metric_display_styles.get(metric.key, default_style) == 'gauge' %}selected{% endif %}>Gauge</option></select></label>{% endfor %}</div>
                     </div>
+                  </details>
+                  <details class="appearance-section">
+                    <summary><span><strong>Theme</strong><small>Choose the dashboard scenery.</small></span></summary>
+                    <div class="appearance-section-content">
+                      <div class="theme-picker" data-theme-picker>{% for value, label, icon, description in [('garden','Mountain Garden','🌿','Greenhouse glass, forest ridges and rain.'),('island','Sunny Beach','🏝️','Turquoise water, white sand and bright sun.'),('river','Forest River','🏞️','Cool water winding through deep woodland.'),('desert','Desert Bloom','🌵','Sunlit mesas, blue skies and desert blooms.')] %}<label class="theme-option theme-swatch-{{ value }}"><input type="radio" name="theme" value="{{ value }}" {% if settings.theme == value %}checked{% endif %}/><span class="theme-preview"><b>{{ icon }}</b></span><span><strong>{{ label }}</strong><small>{{ description }}</small></span></label>{% endfor %}</div>
+                      <div class="custom-theme-list" data-custom-theme-list>{% for theme in custom_themes %}<section class="custom-theme-collection" data-custom-theme-id="{{ theme.id }}"><header><strong>{{ theme.name }}</strong><button type="button" class="custom-theme-delete" data-delete-custom-theme="{{ theme.id }}">Delete</button></header><div class="theme-picker">{% for image in theme.images %}<label class="theme-option custom-theme-option"><input type="radio" name="theme" value="{{ image.selection }}" data-theme-style="{{ custom_theme_styles[image.selection] }}" {% if settings.theme == image.selection %}checked{% endif %}/><span class="theme-preview" style="background-image:url('{{ image.thumbnail_url }}')"><b>Custom</b></span><span><strong>{{ image.name }}</strong><small>{{ image.palette_name }}</small></span></label>{% endfor %}</div></section>{% endfor %}</div>
+                      <div class="custom-theme-toolbar"><button type="button" class="button-secondary" data-open-custom-theme>Custom Theme</button></div>
+                    </div>
+                  </details>
+                  <details class="appearance-section">
+                    <summary><span><strong>Metric Tile Style</strong><small>Choose the finish for all metric tiles.</small></span></summary>
+                    <div class="appearance-section-content"><label class="field"><span>Tile finish</span><select name="metric_tile_style">{% for value, label in [('theme','Theme'),('chrome','Chrome'),('brass','Brass'),('brass_mahogany','Brass + Mahogany')] %}<option value="{{ value }}" {% if settings.metric_tile_style == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label></div>
                   </details>
                 </div>
                 <div class="pane-actions"><button type="button" data-save-pane="appearance">Save Appearance</button></div>

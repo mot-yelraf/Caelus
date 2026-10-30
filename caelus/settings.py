@@ -15,6 +15,7 @@ LEGACY_THEME_MAP = {"light": "garden", "dark": "river", "midnight": "island"}
 ALLOWED_THEMES = SCENE_THEMES | set(LEGACY_THEME_MAP)
 ALLOWED_EXPORT_FORMATS = {"csv", "json"}
 ALLOWED_FORECAST_PROVIDERS = {"met_no", "open_meteo", "us"}
+ALLOWED_METRIC_TILE_STYLES = {"theme", "chrome", "brass", "brass_mahogany"}
 ALLOWED_METRIC_DISPLAY_STYLES = {"graph24hr", "graph6hr", "gauge"}
 
 
@@ -109,6 +110,7 @@ class AppSettings:
     theme: str = "garden"
     unit_system: str = "imperial"
     pressure_unit: str = "auto"
+    metric_tile_style: str = "theme"
     metric_display_styles: dict[str, str] = field(default_factory=dict)
     retention_days: int = 366
     export_format: str = "csv"
@@ -183,6 +185,10 @@ class AppSettings:
         if name == "pressure_unit":
             if value not in {"auto", "hpa", "inhg"}:
                 raise ValueError("unsupported pressure display unit")
+            return value
+        if name == "metric_tile_style":
+            if not isinstance(value, str) or value not in ALLOWED_METRIC_TILE_STYLES:
+                raise ValueError("unsupported metric tile style")
             return value
         if name == "metric_display_styles":
             if not isinstance(value, dict):

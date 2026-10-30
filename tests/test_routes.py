@@ -1,5 +1,6 @@
 import io
 import logging
+import re
 from html import unescape
 from pathlib import Path
 from urllib.parse import urljoin
@@ -731,9 +732,14 @@ def test_metric_display_style_settings_contract() -> None:
     assert ">Gauge</option>" in response.text
     assert ".metric-style-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr))" in css
     assert ".metric-style-bulk { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr))" in css
-    assert response.text.count('class="appearance-section"') == 3
+    assert response.text.count('class="appearance-section"') == 4
     assert "<strong>Theme</strong>" in response.text
-    assert "<strong>Units</strong>" in response.text
+    assert "<strong>Metrics</strong>" in response.text
+    headings = ["Metrics", "Display Style", "Theme", "Metric Tile Style"]
+    positions = [response.text.index(f"<strong>{heading}</strong>") for heading in headings]
+    assert positions == sorted(positions)
+    for label in ("Theme", "Chrome", "Brass", "Brass + Mahogany"):
+        assert f">{label}</option>" in response.text
     assert "<strong>Display Style</strong>" in response.text
     assert 'data-save-pane="appearance"' in response.text
     assert ".appearance-pane-scroll" in css
@@ -912,6 +918,7 @@ def test_appearance_pane_saves_without_other_settings_fields(tmp_path, monkeypat
             "settings_pane": "appearance",
             "theme": "river",
             "unit_system": "metric",
+            "metric_tile_style": "brass_mahogany",
             "metric_display_styles": '{"temperature":"gauge","humidity":"graph6hr"}',
             "csrf_token": "test-token",
         },
@@ -919,6 +926,8 @@ def test_appearance_pane_saves_without_other_settings_fields(tmp_path, monkeypat
 
     assert response.status_code == 200
     assert response.json() == {"ok": True, "pane": "appearance"}
+    assert app.state.settings.metric_tile_style == "brass_mahogany"
+    assert AppSettings.load().metric_tile_style == "brass_mahogany"
     assert app.state.settings.theme == "river"
     assert app.state.settings.unit_system == "metric"
     assert app.state.settings.pressure_unit == "auto"
@@ -1190,3 +1199,36 @@ def test_acurite_current_pressure_uses_adjusted_value_when_altitude_configured()
     assert client.get('/api/readings/current?station=acurite_usb').json()['reading']['pressure'] == 30.0
     app.state.settings.altitude_m = None
     assert 'Absolute pressure</span><strong data-reading-field="indoor_absolute_pressure"' in client.get('/?station=acurite_usb').text
+
+
+def test_invalid_tile_finish_keeps_appearance_save_atomic(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(AppSettings, "settings_path", tmp_path / "settings.json")
+    app = make_app()
+    original_theme = app.state.settings.theme
+    response = TestClient(app).post("/settings", data={
+        "csrf_token": "test-token", "settings_pane": "appearance",
+        "theme": "river", "metric_tile_style": "plastic",
+    })
+    assert response.status_code == 422
+    assert app.state.settings.theme == original_theme
+    assert app.state.settings.metric_tile_style == "theme"
+    assert not AppSettings.settings_path.exists()
+
+
+def test_other_settings_panes_preserve_tile_finish(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(AppSettings, "settings_path", tmp_path / "settings.json")
+    app = make_app()
+    app.state.settings.metric_tile_style = "chrome"
+    response = TestClient(app).post("/settings", data={
+        "csrf_token": "test-token", "settings_pane": "forecast",
+        "forecast_provider": "met_no", "metric_tile_style": "brass",
+    })
+    assert response.status_code == 200
+    assert app.state.settings.metric_tile_style == "chrome"
+
+
+def test_all_menu_disclosures_start_collapsed() -> None:
+    response = TestClient(make_app()).get("/")
+    details = re.findall(r"<details\b[^>]*>", response.text)
+    assert details
+    assert all(not re.search(r"\sopen(?:\s|=|>)", tag) for tag in details)

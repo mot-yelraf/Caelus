@@ -40,8 +40,9 @@
     const controls = Array.from(form.querySelectorAll("input, select, textarea"))
       .filter((control) => control.name && control.name !== "csrf_token" && control.type !== "file")
       .map((control) => ({name: control.name, value: control.value, checked: control.checked}));
+    const disclosures = Array.from(form.querySelectorAll("details"), (section) => section.open);
     try {
-      sessionStorage.setItem("caelus-settings-return", JSON.stringify({pane, message, controls}));
+      sessionStorage.setItem("caelus-settings-return", JSON.stringify({pane, message, controls, disclosures}));
     } catch (_error) {
       showToast(settingsStatus, "Settings saved. Close Settings to refresh the dashboard.");
       dialog.addEventListener("close", () => window.location.reload(), {once: true});
@@ -56,6 +57,16 @@
     metricStyleSelects.map((select) => [select.dataset.metricStyleKey, select.value])
   );
   const customThemeProperties = ["--surface-light", "--surface-tint", "--surface-ink", "--surface-muted", "--surface-accent", "--surface-border", "--scene-image", "--scene-position", "--scene-fallback", "--scene-shade", "--scene-vignette", "--accent", "--accent-2", "--line"];
+  const tileStyleSelect = form.querySelector('[name="metric_tile_style"]');
+  let originalTileStyle = body.dataset.metricTileStyle || "theme";
+
+  function applyTileStyle(style) {
+    body.dataset.metricTileStyle = style;
+    document.querySelectorAll(".weather-metric-card").forEach((card) => {
+      card.dispatchEvent(new Event("themechange"));
+    });
+  }
+
   let originalTheme = themeInputs().find((input) => input.checked)?.value || "garden";
   let activeMutationRequests = 0;
 
@@ -149,6 +160,10 @@
   }
 
   function closeSettings(restoreTheme) {
+    if (restoreTheme) {
+      applyTileStyle(originalTileStyle);
+      if (tileStyleSelect) tileStyleSelect.value = originalTileStyle;
+    }
     if (restoreTheme) applyThemeInput(themeInputs().find((input) => input.value === originalTheme));
     dialog.close();
     body.classList.remove("modal-open");
@@ -183,6 +198,7 @@
   });
   form.addEventListener("change", (event) => {
     if (event.target.matches('input[name="theme"]')) applyThemeInput(event.target);
+    if (event.target === tileStyleSelect) applyTileStyle(tileStyleSelect.value);
   });
   dialog.addEventListener("cancel", (event) => {
     event.preventDefault();
@@ -513,6 +529,7 @@
         throw new Error(payload.detail || `Settings could not be saved (${response.status})`);
       }
       if (paneName === "appearance") {
+        originalTileStyle = tileStyleSelect?.value || originalTileStyle;
         originalTheme = themeInputs().find((input) => input.checked)?.value || originalTheme;
       }
       if (settingsStatus) showToast(settingsStatus, `${originalLabel.replace("Save ", "")} saved.`);
@@ -1416,7 +1433,7 @@
     context.scale(ratio, ratio);
     context.clearRect(0, 0, width, height);
 
-    const styles = getComputedStyle(canvas.closest(".glass-card") || document.documentElement);
+    const styles = getComputedStyle(canvas);
     const accent = "#ffffff";
     const muted = styles.getPropertyValue("--muted").trim() || "rgba(235,247,240,.7)";
     const line = "rgba(0,0,0,.18)";
@@ -1544,16 +1561,9 @@
   const windDirections = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
 
   function drawWindRose(canvas, metric, generatedAt, hours) {
-    const context = canvas.getContext("2d");
-    const width = Math.max(320, Math.round(canvas.clientWidth || 520));
-    const height = 230;
-    const ratio = window.devicePixelRatio || 1;
-    canvas.width = Math.round(width * ratio);
-    canvas.height = Math.round(height * ratio);
-    context.scale(ratio, ratio);
-    context.clearRect(0, 0, width, height);
+    const context = gaugeContext(canvas);
 
-    const styles = getComputedStyle(canvas.closest(".glass-card") || document.documentElement);
+    const styles = getComputedStyle(canvas);
     const muted = styles.getPropertyValue("--muted").trim() || "rgba(235,247,240,.7)";
     const line = styles.getPropertyValue("--line").trim() || "rgba(196,235,220,.28)";
     const ink = styles.getPropertyValue("--ink").trim() || "#eef8f4";
@@ -1586,9 +1596,9 @@
 
     const total = bins.reduce((sum, bin) => sum + bin.count, 0);
     const maxCount = Math.max(...bins.map((bin) => bin.count), 1);
-    const centerX = width / 2;
-    const centerY = 101;
-    const radius = 72;
+    const centerX = 150;
+    const centerY = 150;
+    const radius = 84;
     context.strokeStyle = line;
     context.lineWidth = 1;
     [0.25, 0.5, 0.75, 1].forEach((fraction) => {
@@ -1648,19 +1658,19 @@
       context.fillText("No wind samples", centerX, centerY);
     }
 
-    const legendWidth = Math.min(270, width - 24);
+    const legendWidth = 180;
     const legendStart = centerX - legendWidth / 2;
     context.textAlign = "left";
     context.font = "700 9px Inter, sans-serif";
     speedBands.forEach((band, index) => {
       const x = legendStart + index * legendWidth / 4;
       context.fillStyle = band.color;
-      context.fillRect(x, 211, 10, 10);
+      context.fillRect(x, 262, 8, 8);
       context.fillStyle = muted;
-      context.fillText(band.label, x + 14, 216);
+      context.fillText(band.label, x + 11, 267);
     });
-    context.textAlign = "right";
-    context.fillText(metric.wind_speed?.unit || "mph", legendStart + legendWidth, 216);
+    context.textAlign = "center";
+    context.fillText(metric.wind_speed?.unit || "mph", centerX, 283);
     canvas.windRoseSummary = {bins, total, hours};
   }
 
@@ -1748,16 +1758,22 @@
     });
   }
 
-  function drawMetricGauge(canvas, metric) {
+  // Draw every dial in a square coordinate system. Its pivot and the CSS bezel
+  // share the same center, regardless of tile width or display pixel density.
+  function gaugeContext(canvas) {
     const context = canvas.getContext("2d");
-    const width = Math.max(320, Math.round(canvas.clientWidth || 520));
-    const height = 230;
+    const size = Math.max(1, canvas.clientWidth || 260);
     const ratio = window.devicePixelRatio || 1;
-    canvas.width = Math.round(width * ratio);
-    canvas.height = Math.round(height * ratio);
-    context.scale(ratio, ratio);
-    context.clearRect(0, 0, width, height);
-    const styles = getComputedStyle(canvas.closest(".glass-card") || document.documentElement);
+    canvas.width = Math.round(size * ratio);
+    canvas.height = Math.round(size * ratio);
+    context.scale(canvas.width / 300, canvas.height / 300);
+    context.clearRect(0, 0, 300, 300);
+    return context;
+  }
+
+  function drawMetricGauge(canvas, metric) {
+    const context = gaugeContext(canvas);
+    const styles = getComputedStyle(canvas);
     const ink = styles.getPropertyValue("--ink").trim() || "#eef8f4";
     const muted = styles.getPropertyValue("--muted").trim() || "rgba(235,247,240,.7)";
     const rainGauge = metric.key.startsWith("rain_");
@@ -1765,15 +1781,15 @@
     const value = rainGauge && Number.isFinite(rawValue) ? Math.max(0, rawValue) : rawValue;
     const [minimum, maximum, zones, configuredZoneStops] = gaugeConfig(metric);
     const zoneStops = configuredZoneStops || zones.map((_color, index) => index / zones.length).concat(1);
-    const centerX = width / 2;
-    const centerY = 133;
-    const radius = 84;
-    const start = Math.PI * 0.82;
-    const end = Math.PI * 2.18;
+    const centerX = 150;
+    const centerY = 150;
+    const radius = 100;
+    const start = Math.PI * 0.75;
+    const end = Math.PI * 2.25;
     const angleFor = (number) => start + Math.max(0, Math.min(1, (number - minimum) / (maximum - minimum))) * (end - start);
 
     context.lineCap = "butt";
-    context.lineWidth = 32;
+    context.lineWidth = 44;
     zones.forEach((color, index) => {
       context.strokeStyle = color;
       context.beginPath();
@@ -1781,14 +1797,18 @@
       context.stroke();
     });
     context.fillStyle = muted;
-    context.font = "700 10px Inter, sans-serif";
+    context.font = "500 12px Inter, sans-serif";
     context.textAlign = "center";
+    context.textBaseline = "middle";
     for (let index = 0; index <= 5; index += 1) {
       const tickValue = minimum + (maximum - minimum) * index / 5;
       const angle = angleFor(tickValue);
-      const tickX = centerX + Math.cos(angle) * (radius + 24);
-      const tickY = centerY + Math.sin(angle) * (radius + 24);
-      context.fillText(Math.abs(tickValue) >= 100 ? Math.round(tickValue) : Number(tickValue.toFixed(1)), tickX, tickY);
+      context.save();
+      context.translate(centerX + Math.cos(angle) * 137, centerY + Math.sin(angle) * 137);
+      const rotation = angle + Math.PI / 2;
+      context.rotate(rotation + (Math.cos(rotation) < 0 ? Math.PI : 0));
+      context.fillText(Math.abs(tickValue) >= 100 ? Math.round(tickValue) : Number(tickValue.toFixed(1)), 0, 0);
+      context.restore();
     }
     if (Number.isFinite(value)) {
       const needle = angleFor(value);
@@ -1806,24 +1826,17 @@
     }
     context.fillStyle = ink;
     context.font = "700 15px Inter, sans-serif";
-    context.fillText(metricValue(value, metric.decimals, metric.unit), centerX, 205);
+    context.fillText(metricValue(value, metric.decimals, metric.unit), centerX, 247);
   }
 
   function drawCompassGauge(canvas, metric) {
-    const context = canvas.getContext("2d");
-    const width = Math.max(320, Math.round(canvas.clientWidth || 520));
-    const height = 230;
-    const ratio = window.devicePixelRatio || 1;
-    canvas.width = Math.round(width * ratio);
-    canvas.height = Math.round(height * ratio);
-    context.scale(ratio, ratio);
-    context.clearRect(0, 0, width, height);
-    const styles = getComputedStyle(canvas.closest(".glass-card") || document.documentElement);
+    const context = gaugeContext(canvas);
+    const styles = getComputedStyle(canvas);
     const ink = styles.getPropertyValue("--ink").trim() || "#eef8f4";
     const line = styles.getPropertyValue("--line").trim() || "rgba(196,235,220,.28)";
-    const centerX = width / 2;
-    const centerY = 112;
-    const radius = 82;
+    const centerX = 150;
+    const centerY = 150;
+    const radius = 114;
     context.fillStyle = "rgba(158, 214, 228, 0.5)";
     context.strokeStyle = line;
     context.lineWidth = 10;
@@ -1848,7 +1861,7 @@
       const angle = (degrees - 90) * Math.PI / 180;
       context.fillText(label, centerX + Math.cos(angle) * 53, centerY + Math.sin(angle) * 53 + 5);
     });
-    const value = Number(metric.current);
+    const value = metric.current == null ? NaN : Number(metric.current);
     if (Number.isFinite(value)) {
       const angle = (value - 90) * Math.PI / 180;
       context.fillStyle = ink;
@@ -1906,7 +1919,10 @@
       stats.append(item);
       return {term, definition, time};
     });
-    card.append(heading, canvas, stats);
+    const visual = document.createElement("div");
+    visual.className = "metric-visual";
+    visual.append(canvas);
+    card.append(heading, visual, stats);
 
     const isWindRose = metric.key === "wind_dir" && metric.wind_speed;
     let displayStyle = metricDisplayStyles[metric.key]
@@ -1950,6 +1966,8 @@
       eyebrow.textContent = gaugeMode ? "Gauge" : `${hours}hr graph`;
       title.textContent = isWindRose ? (gaugeMode ? "Wind direction" : `${hours}-hour Wind-Rose`) : metric.label;
       current.textContent = metricValue(displayedMetric.current, displayedMetric.decimals, displayedMetric.unit);
+      visual.classList.toggle("is-gauge", gaugeMode);
+      visual.classList.toggle("is-round", gaugeMode || Boolean(isWindRose));
       canvas.className = `weather-metric-graph${gaugeMode ? " weather-metric-gauge" : isWindRose ? " wind-rose-graph" : ""}`;
       canvas.setAttribute("aria-label", gaugeMode
         ? `Gauge for ${title.textContent}`
@@ -1987,7 +2005,7 @@
       const summary = canvas.windRoseSummary;
       if (!summary?.total || displayStyle === "gauge") return;
       const rect = canvas.getBoundingClientRect();
-      const angle = (Math.atan2(event.clientY - rect.top - 101, event.clientX - rect.left - rect.width / 2) + Math.PI / 2 + Math.PI * 2) % (Math.PI * 2);
+      const angle = (Math.atan2((event.clientY - rect.top) * 300 / rect.height - 150, (event.clientX - rect.left) * 300 / rect.width - 150) + Math.PI / 2 + Math.PI * 2) % (Math.PI * 2);
       const index = Math.round(angle / (Math.PI / 8)) % 16;
       const bin = summary.bins[index];
       const percent = Math.round(bin.count / summary.total * 100);
@@ -2326,6 +2344,10 @@
     const saved = JSON.parse(sessionStorage.getItem("caelus-settings-return") || "null");
     sessionStorage.removeItem("caelus-settings-return");
     if (saved) {
+      const disclosures = form.querySelectorAll("details");
+      saved.disclosures?.forEach((open, index) => {
+        if (disclosures[index]) disclosures[index].open = open === true;
+      });
       saved.controls.forEach((draft) => {
         form.querySelectorAll("input, select, textarea").forEach((control) => {
           if (control.name !== draft.name) return;
@@ -2347,6 +2369,7 @@
       body.classList.add("modal-open");
       activatePane(saved.pane, true);
       applyThemeInput(themeInputs().find((input) => input.checked));
+      applyTileStyle(tileStyleSelect?.value || originalTileStyle);
       showToast(settingsStatus, saved.message);
     }
   } catch (_error) {

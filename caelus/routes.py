@@ -313,6 +313,7 @@ def register_routes(app: FastAPI) -> None:
         forecast_provider: str | None = Form(None),
         theme: str | None = Form(None),
         unit_system: str | None = Form(None),
+        metric_tile_style: str | None = Form(None),
         metric_display_styles: str | None = Form(None),
         retention_days: int | None = Form(None),
         export_format: str | None = Form(None),
@@ -382,6 +383,10 @@ def register_routes(app: FastAPI) -> None:
                 # Retained internally for compatibility with older settings;
                 # pressure now follows the selected display-unit preset.
                 candidate.pressure_unit = "auto"
+                if metric_tile_style is not None:
+                    candidate.metric_tile_style = AppSettings._validate_value(
+                        "metric_tile_style", metric_tile_style
+                    )
                 if metric_display_styles is not None:
                     candidate.metric_display_styles = AppSettings._validate_value(
                         "metric_display_styles", json.loads(metric_display_styles)
