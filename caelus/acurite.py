@@ -50,7 +50,8 @@ def decode_outdoor(raw: bytes) -> OutdoorReport:
     if len(raw) != 10 or raw[0] != 1:
         raise AcuRiteError("Invalid AcuRite outdoor report length or ID.")
     flavor, signal = raw[3] & 15, raw[8] & 15
-    channel = {0xC0: "A", 0x80: "B", 0x00: "C"}.get(raw[1] & 0xF0)
+    # Bits 7:6 identify the channel; bits 5:4 are the transmission sequence.
+    channel = {0xC0: "A", 0x80: "B", 0x00: "C"}.get(raw[1] & 0xC0)
     if flavor not in {1, 8} or signal > 3 or raw[9] not in {0, 255} or channel is None:
         raise AcuRiteError("Invalid AcuRite outdoor report framing.")
     sensor_id = f"{channel}-{((raw[1] & 15) << 8) | raw[2]:03x}"

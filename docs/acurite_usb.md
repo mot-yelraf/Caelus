@@ -135,7 +135,9 @@ the shared settings. Disabling a connection retains its historical data.
 ## Measurements and limits
 
 - Outdoor temperature and humidity, wind speed and 16-point direction are decoded
-  from alternating R1 reports. Zero wind and north are valid readings. Missing RF
+  from alternating R1 reports. Channel identity uses bits 7:6 of the first sensor
+  byte; transmission-sequence bits 5:4 do not change the sensor identity or
+  invalidate the report. Zero wind and north are valid readings. Missing RF
   reception clears outdoor values; individual cached fields expire after 120 seconds.
 - R2 supplies indoor temperature and **absolute console pressure**. Recognized
   HP03S calibration or the known linear calibration signature is required. Unknown

@@ -89,6 +89,31 @@ def test_outdoor_reports_preserve_zero_and_decode_sensor_identity():
     assert report.rain_counter == 1
 
 
+@pytest.mark.parametrize("key", ["temperature", "north_rain_one_inch", "rf_lost"])
+@pytest.mark.parametrize("channel, name", [(0xC0, "A"), (0x80, "B"), (0, "C")])
+@pytest.mark.parametrize("sequence", [0, 0x10, 0x20, 0x30])
+def test_outdoor_sequence_bits_do_not_change_channel_or_measurements(
+    key, channel, name, sequence
+):
+    raw = bytearray(packet(key))
+    expected = decode_outdoor(raw)
+    raw[1] = channel | sequence | (raw[1] & 0x0F)
+    report = decode_outdoor(raw)
+    assert report.sensor_id == f"{name}-123"
+    assert report.measurements == expected.measurements
+    assert report.rain_counter == expected.rain_counter
+    assert report.signal == expected.signal
+    assert report.battery == expected.battery
+
+
+@pytest.mark.parametrize("sequence", [0, 0x10, 0x20, 0x30])
+def test_reserved_outdoor_channel_is_rejected(sequence):
+    raw = bytearray(packet("temperature"))
+    raw[1] = 0x40 | sequence | (raw[1] & 0x0F)
+    with pytest.raises(AcuRiteError, match="framing"):
+        decode_outdoor(raw)
+
+
 @pytest.mark.parametrize("key", ["console_linear", "console_hp03"])
 def test_console_calibration_maps_absolute_pressure_only(key):
     values = decode_console(packet(key))
@@ -146,6 +171,37 @@ def test_alternating_packets_merge_only_fresh_fields(acquisition):
     clock.advance(121)
     assert adapter.read() is None
     assert adapter.status()["observation_fresh"] is False
+
+
+def test_sequence_changes_preserve_complete_60_second_history(tmp_path, acquisition):
+    adapter, transport, clock = acquisition
+    logger = DataLogger(str(tmp_path / "acurite.db"))
+    state = SimpleNamespace(
+        settings=adapter.settings, weather_adapter=adapter, data_logger=logger
+    )
+    poller = GatewayPoller(SimpleNamespace(state=state))
+    # Sample alternating R1 flavors at the USB cadence; persist every 60 seconds.
+    for elapsed in range(0, 181, 6):
+        if elapsed % 18 == 0:
+            index = elapsed // 18
+            raw = bytearray(packet("temperature" if index % 2 == 0 else "north_dry"))
+            raw[1] |= (index % 4) << 4
+            transport.reports[1] = bytes(raw)
+            adapter.sample_once()
+        if elapsed and elapsed % 60 == 0:
+            reading = poller.poll_once()
+            assert reading["temperature"] == 68
+            assert reading["humidity"] == 65
+            assert reading["wind_speed"] == 0
+            assert reading["wind_dir"] == 0
+            assert reading["indoor_temperature"] == 77
+            assert reading["indoor_absolute_pressure"] is not None
+            assert reading["rain_counter_value"] == 0
+            assert reading["source_id"] == "acurite:pi-usb-port-1:A-123"
+            assert adapter.status()["last_error"] == ""
+            assert adapter.status()["observation_fresh"] is True
+            assert logger.get_latest()["temperature"] == 68
+        clock.advance(6)
 
 
 def test_source_change_and_usb_disconnect_clear_caches(acquisition):

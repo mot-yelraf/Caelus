@@ -24,7 +24,9 @@ def app(tmp_path, monkeypatch):
 
     monkeypatch.setattr(AppSettings, "settings_path", tmp_path / "settings.json")
     app = FastAPI()
-    app.state.settings = AppSettings(acurite_enabled=True, use_ip_location=False)
+    app.state.settings = AppSettings(
+        gateway_enabled=True, acurite_enabled=True, use_ip_location=False
+    )
     app.state.data_logger = DataLogger(str(tmp_path / "caelus.db"))
     app.state.station_lock = RLock()
     app.state.stations = build_stations(app, tmp_path)
