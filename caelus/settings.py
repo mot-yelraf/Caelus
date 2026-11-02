@@ -90,7 +90,7 @@ class AppSettings:
     davis_port: str = ""
     davis_baud_rate: int = 19200
     davis_poll_interval_seconds: int = 60
-    gateway_enabled: bool = True
+    gateway_enabled: bool = False
     gateway_url: str = "http://192.168.1.100"
     gateway_id: str = ""
     gateway_model: str = ""

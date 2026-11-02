@@ -12,6 +12,36 @@ from caelus.settings import (
 from caelus.theme_manager import ThemeManager
 
 
+def test_first_install_has_no_enabled_stations(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(AppSettings, "settings_path", tmp_path / "settings.json")
+
+    settings = AppSettings.load()
+
+    assert settings.gateway_enabled is False
+    assert settings.acurite_enabled is False
+    assert settings.wmr100_enabled is False
+    assert settings.davis_enabled is False
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+def test_saved_station_enablement_is_preserved(tmp_path, monkeypatch, enabled) -> None:
+    monkeypatch.setattr(AppSettings, "settings_path", tmp_path / "settings.json")
+    settings = AppSettings(
+        gateway_enabled=enabled,
+        acurite_enabled=enabled,
+        wmr100_enabled=enabled,
+        davis_enabled=enabled,
+    )
+    settings.save()
+
+    restored = AppSettings.load()
+
+    assert restored.gateway_enabled is enabled
+    assert restored.acurite_enabled is enabled
+    assert restored.wmr100_enabled is enabled
+    assert restored.davis_enabled is enabled
+
+
 def test_load_preserves_known_values_and_ignores_unknown_fields(tmp_path, monkeypatch) -> None:
     settings_path = tmp_path / "settings.json"
     settings_path.write_text(

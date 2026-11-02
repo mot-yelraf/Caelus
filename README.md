@@ -247,6 +247,10 @@ IP-geolocation service.
 
 ## Ecowitt gateway setup
 
+New installations start with every station disabled. Enable and save the desired
+station under **Settings → Station** to begin acquisition. Updates preserve saved
+station enablement settings.
+
 Caelus supports the shared local HTTP API on **GW1100, GW1200, GW2000,
 and GW3000** gateways. GW2000/GW3000 compatibility is verified with synthetic
 fixtures derived from Ecowitt's protocol documentation; physical gateway testing

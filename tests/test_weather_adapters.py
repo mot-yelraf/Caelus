@@ -254,7 +254,7 @@ def test_nonforward_counter_sample_does_not_produce_increment():
 
 @pytest.mark.parametrize("family", ["wh69", "wh51", "unknown"])
 def test_ecowitt_station_freshness_is_independent_of_sensor_family(family):
-    settings = AppSettings()
+    settings = AppSettings(gateway_enabled=True)
     gateway = EcowittGateway(settings)
     gateway.last_status.update(
         state="online",
@@ -279,7 +279,7 @@ def test_ecowitt_station_freshness_is_independent_of_sensor_family(family):
 
 
 def test_live_weather_does_not_require_inventory():
-    gateway = EcowittGateway(AppSettings())
+    gateway = EcowittGateway(AppSettings(gateway_enabled=True))
     gateway.last_status.update(
         state="online", last_success=datetime.now(UTC).isoformat(), inventory=[]
     )
@@ -311,7 +311,7 @@ def test_factory_defaults_and_unknown_selection(tmp_path, monkeypatch, caplog):
 
 
 def test_failed_setup_save_does_not_change_live_settings(monkeypatch):
-    settings = AppSettings()
+    settings = AppSettings(gateway_enabled=True)
     gateway = EcowittGateway(settings)
     setup = EcowittStationSetup(settings, gateway)
 
