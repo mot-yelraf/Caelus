@@ -1,6 +1,9 @@
 # Third-Party and Binary Notices
 
-Caelus source code is distributed under the BSD 2-Clause License in `LICENSE`.
+Caelus source code is distributed under the GNU General Public License,
+version 3 only (SPDX: `GPL-3.0-only`), in [LICENSE](LICENSE).
+
+Copyright (c) 2026 T.W. Farley, dba Peace Hill Studios.
 
 ## Python Dependencies
 
@@ -40,3 +43,10 @@ The dashboard backgrounds, Caelus compass mark, and lunar surface texture under
 `static/` are distributed as part of Caelus. Preserve this notice and any
 asset-specific provenance or license information added alongside those files
 when redistributing them.
+
+## Third-Party Weather Artwork
+
+The Twemoji v17.0.2 weather artwork and Sensorius partly-cloudy-night adaptation
+in `static/weather-glyphs/` remain licensed under Creative Commons Attribution
+4.0 International (CC BY 4.0). Preserve their [attribution](static/weather-glyphs/README.md)
+and [license](static/weather-glyphs/LICENSE-GRAPHICS) when redistributing them.
