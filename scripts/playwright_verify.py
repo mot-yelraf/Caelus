@@ -247,18 +247,29 @@ def verify_dashboard(page: Page, base_url: str) -> None:
     assert "v0." not in page.locator(".site-header").inner_text()
     expect(page.locator('[data-settings-pane]').first).to_have_text("Location")
     expect(page.locator('[data-pane="location"]')).to_be_visible()
+    control_styles = settings.locator(
+        ".field input:not([type=hidden]), .field select, .input-unit, .provider-option, .theme-option"
+    ).evaluate_all("""nodes => nodes.map(node => {
+        const style = getComputedStyle(node);
+        return {radius: style.borderRadius, appearance: style.appearance, tag: node.tagName};
+    })""")
+    assert control_styles and control_styles[0]["radius"] != "0px"
+    assert all(style["radius"] == control_styles[0]["radius"] for style in control_styles)
+    assert all(style["appearance"] == "none" for style in control_styles if style["tag"] == "SELECT")
     for width in (1440, 390, 320):
         page.set_viewport_size({"width": width, "height": 1200})
         fields = page.locator(".location-fields").evaluate("""node =>
-            ['#locationLatitude', '#locationLongitude', '#locationAltitude'].map(selector =>
+            ['#locationName', '#locationTimezone', '#autoLocation', '#locationLatitude', '#locationLongitude', '#locationAltitude'].map(selector =>
                 node.querySelector(selector).getBoundingClientRect().toJSON())
         """)
         if width == 1440:
-            assert max(field["y"] for field in fields) - min(field["y"] for field in fields) < 1
-            assert fields[0]["x"] < fields[1]["x"] < fields[2]["x"]
-            assert max(field["width"] for field in fields) - min(field["width"] for field in fields) < 1
+            for row in (fields[:2], fields[2:]):
+                assert max(field["y"] for field in row) - min(field["y"] for field in row) < 1
+                assert all(left["x"] < right["x"] for left, right in zip(row, row[1:]))
+                assert max(field["width"] for field in row) - min(field["width"] for field in row) < 1
+            assert fields[0]["y"] < fields[2]["y"]
         else:
-            assert fields[0]["y"] < fields[1]["y"] < fields[2]["y"]
+            assert all(above["y"] < below["y"] for above, below in zip(fields, fields[1:]))
         pane = page.locator('[data-pane="location"]')
         assert pane.evaluate("node => node.scrollWidth <= node.clientWidth")
         settings.screenshot(path=RESULTS / f"location-settings-{width}.png")
@@ -266,15 +277,36 @@ def verify_dashboard(page: Page, base_url: str) -> None:
     station_tab = page.locator('[data-settings-pane="station"]')
     station_tab.click()
     page.locator('[data-station-card="ecowitt"] > summary').click()
+    for width in (1440, 390, 320):
+        page.set_viewport_size({"width": width, "height": 1200})
+        card = page.locator('[data-station-card="ecowitt"]')
+        bounds = card.evaluate("""node =>
+            ['.ecowitt-url-row .field', '.station-enable', '.ecowitt-details-row .field', '.ecowitt-info']
+                .map(selector => node.querySelector(selector).getBoundingClientRect().toJSON())
+        """)
+        url, enabled, interval, info = bounds
+        if width == 1440:
+            assert url["x"] + url["width"] < enabled["x"]
+            assert abs(url["y"] + url["height"] - enabled["y"] - enabled["height"]) < 1
+            assert abs(interval["y"] - info["y"]) < 1
+            assert abs(interval["width"] / info["width"] - 3 / 7) < 0.01
+            assert interval["y"] > url["y"] + url["height"]
+        else:
+            assert url["y"] < enabled["y"] < interval["y"] < info["y"]
+        assert card.evaluate("node => node.scrollWidth <= node.clientWidth")
+        settings.screenshot(path=RESULTS / f"ecowitt-settings-{width}.png")
+    page.set_viewport_size({"width": 1440, "height": 1200})
     page.locator("#ecowittGatewayUrl").fill("http://192.0.2.42")
     station_tab.focus()
     station_tab.press("ArrowUp")
     assert page.locator('[data-pane="location"]').is_visible()
     # Saving re-renders the dashboard and keeps other panes' drafts intact.
+    page.locator("#autoLocation").select_option("false")
     page.locator("#locationName").fill("Updated station")
     page.locator("#locationAltitude").fill("5000")
     page.locator('[data-save-pane="location"]').click()
     expect(page.locator("#station-title")).to_have_text("Updated station")
+    expect(page.locator("#autoLocation")).to_have_value("false")
     expect(page.locator("#locationAltitude")).to_have_value("5000")
     expect(page.locator("#locationAltitude")).to_have_attribute("value", "5000.0")
     expect(page.locator('[name="altitude_unit"]')).to_have_value("ft")
@@ -289,6 +321,19 @@ def verify_dashboard(page: Page, base_url: str) -> None:
     assert 0 <= bounds["y"] - dialog_bounds["y"] < 30
     expect(toast).to_be_hidden(timeout=6500)
     page.locator('[data-settings-pane="forecast"]').click()
+    for width in (1440, 390, 320):
+        page.set_viewport_size({"width": width, "height": 1200})
+        cards = page.locator(".provider-option").evaluate_all(
+            "nodes => nodes.map(node => node.getBoundingClientRect().toJSON())"
+        )
+        if width == 1440:
+            assert max(card["y"] for card in cards) - min(card["y"] for card in cards) < 1
+            assert cards[0]["x"] < cards[1]["x"] < cards[2]["x"]
+        else:
+            assert cards[0]["y"] < cards[1]["y"] < cards[2]["y"]
+        assert page.locator('[data-pane="forecast"]').evaluate("node => node.scrollWidth <= node.clientWidth")
+        settings.screenshot(path=RESULTS / f"forecast-settings-{width}.png")
+    page.set_viewport_size({"width": 1440, "height": 1200})
     page.locator('[name="forecast_provider"][value="open_meteo"]').check()
     page.locator('[data-save-pane="forecast"]').click()
     expect(page.locator(".provider-label")).to_have_text("open_meteo")
@@ -493,6 +538,19 @@ def verify_station_connections(page: Page, base_url: str) -> None:
     acurite = page.locator('[data-station-card="acurite_usb"]')
     expect(ecowitt.locator('[name="gateway_enabled"]')).to_be_hidden()
     expect(acurite.locator('[name="acurite_enabled"]')).to_be_hidden()
+    for width in (1440, 390, 320):
+        page.set_viewport_size({"width": width, "height": 1200})
+        for card in page.locator("[data-station-card]").all():
+            status = card.locator("summary [data-source-status]")
+            expect(status).to_be_visible()
+            expect(status).not_to_have_text("Checking connection…")
+            title_bounds = card.locator("summary > span").first.bounding_box()
+            status_bounds = status.bounding_box()
+            assert title_bounds and status_bounds
+            assert title_bounds["x"] + title_bounds["width"] < status_bounds["x"]
+            assert card.evaluate("node => node.scrollWidth <= node.clientWidth")
+        page.locator("#settingsDialog").screenshot(path=RESULTS / f"station-titles-{width}.png")
+    page.set_viewport_size({"width": 1440, "height": 1200})
     page.locator("#settingsDialog").screenshot(path=RESULTS / "station-connections-collapsed.png")
     acurite.locator("summary").focus()
     acurite.locator("summary").press("Enter")
@@ -524,6 +582,16 @@ def verify_station_connections(page: Page, base_url: str) -> None:
     ecowitt.locator('[name="gateway_url"]').fill("http://192.0.2.1")
     ecowitt.locator("[data-ecowitt-discover]").click()
     expect(page.locator("[data-settings-status]")).to_contain_text("registered sensor")
+    label_bounds = ecowitt.locator(".ecowitt-details-row > .field > span").bounding_box()
+    version_bounds = ecowitt.locator("[data-ecowitt-summary]").bounding_box()
+    interval_bounds = ecowitt.locator(".input-unit").bounding_box()
+    sensor_bounds = ecowitt.locator("[data-ecowitt-inventory] > div").first.bounding_box()
+    assert label_bounds and version_bounds and interval_bounds and sensor_bounds
+    assert abs(label_bounds["y"] - version_bounds["y"]) < 1
+    assert abs(label_bounds["height"] - version_bounds["height"]) < 1
+    assert abs(interval_bounds["y"] - sensor_bounds["y"]) < 1
+    assert abs(interval_bounds["height"] - sensor_bounds["height"]) < 1
+    ecowitt.screenshot(path=RESULTS / "ecowitt-aligned-rows.png")
     ecowitt.locator("[data-ecowitt-save]").click()
     expect(page.locator("[data-settings-status]")).to_contain_text("Ecowitt saved")
     oregon = page.locator('[data-station-card="wmr100_usb"]')
@@ -543,8 +611,23 @@ def verify_station_connections(page: Page, base_url: str) -> None:
     expect(page.locator("[data-settings-status]")).to_contain_text("Davis Vantage Vue saved")
     sources = page.request.get(f"{base_url}/api/stations").json()["stations"]
     assert all(item["status"]["enabled"] for item in sources)
-    for width in (1440, 390):
+    for width in (1440, 390, 320):
         page.set_viewport_size({"width": width, "height": 1000})
+        for card in (acurite, oregon, davis):
+            card.scroll_into_view_if_needed()
+            fields = card.locator(".station-fields > label").evaluate_all(
+                "nodes => nodes.map(node => node.getBoundingClientRect().toJSON())"
+            )
+            assert len(fields) == 4
+            if width == 1440:
+                bottoms = [field["y"] + field["height"] for field in fields]
+                assert max(bottoms) - min(bottoms) < 1
+                assert all(left["x"] < right["x"] for left, right in zip(fields, fields[1:]))
+                assert max(field["width"] for field in fields) - min(field["width"] for field in fields) < 1
+            else:
+                assert all(above["y"] < below["y"] for above, below in zip(fields, fields[1:]))
+            assert card.evaluate("node => node.scrollWidth <= node.clientWidth")
+            card.screenshot(path=RESULTS / f"{card.get_attribute('data-station-card')}-settings-{width}.png")
         davis.scroll_into_view_if_needed()
         expect(davis.locator("[data-station-save]")).to_be_visible()
         pane = page.locator('[data-pane="station"]')
