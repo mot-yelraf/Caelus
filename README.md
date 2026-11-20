@@ -468,6 +468,21 @@ Dependabot groups Python minor and patch version updates into one weekly PR;
 major version updates remain separate for review. New update PRs are expected
 while version updates are enabled, even after existing PRs have been resolved.
 
+## License
+
+Copyright (c) 2026 T.W. Farley, dba Peace Hill Studios.
+
+Caelus is free software: you can redistribute it and/or modify it under the
+terms of the GNU General Public License, version 3 only (SPDX: `GPL-3.0-only`).
+See [LICENSE](LICENSE) for the full terms.
+
+Caelus is distributed without any warranty, including the implied warranties
+of merchantability or fitness for a particular purpose. See the GNU General
+Public License for details.
+
+Third-party dependencies, data, and weather artwork retain their own licenses
+and notices; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
 ## Attribution
 
 - System Architecture: TW Farley

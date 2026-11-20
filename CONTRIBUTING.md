@@ -14,6 +14,13 @@ Ecowitt-compatible gateways. It combines:
 The project is approachable, but stability and compatibility with existing
 installations are primary goals.
 
+## License
+
+Contributions to Caelus are provided under the project's GNU General Public
+License, version 3 only (SPDX: `GPL-3.0-only`); see [LICENSE](LICENSE). Preserve
+applicable third-party attribution and license notices as described in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
 ## Workflow
 
 1. Fork the repository.
