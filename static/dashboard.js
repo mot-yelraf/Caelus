@@ -729,7 +729,7 @@
         document.getElementById("locationLongitude").value = Number(payload.longitude).toFixed(4);
         document.getElementById("locationTimezone").value = payload.timezone || "UTC";
         if (payload.location_name) document.getElementById("locationName").value = payload.location_name;
-        document.getElementById("autoLocation").checked = true;
+        document.getElementById("autoLocation").value = "true";
         if (detectStatus) showToast(detectStatus, `Located via ${payload.provider}. Save Location to refresh the dashboard.`);
       } catch (error) {
         if (detectStatus) showToast(detectStatus, error.message || "Location detection failed", true);

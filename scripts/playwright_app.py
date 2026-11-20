@@ -125,7 +125,10 @@ class BrowserTestAdapter:
 class BrowserTestGateway:
     def discover(self, url):
         return {"ok": True, "gateway_url": url, "gateway_id": "ecowitt-test",
-                "gateway_model": "GW3000 test fixture", "inventory": [], "rain_source": "traditional",
+                "gateway_model": "GW3000 test fixture",
+                "inventory": [{"name": "Temp & Humidity & Solar & Wind & Rain",
+                               "family": "wh69", "id": "12924", "signal": 4}],
+                "rain_source": "traditional",
                 "rain_reset_hour": 0, "live_metric_count": 1}
 
 

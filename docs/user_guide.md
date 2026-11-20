@@ -1,6 +1,4 @@
-<p align="center">
-  <img src="screenshots/caelus-brand.png" alt="Caelus · Living Weather" width="400">
-</p>
+![Caelus dashboard overview](screenshots/dashboard-overview.png)
 
 # Caelus User Guide
 
@@ -8,7 +6,7 @@ Caelus is a local weather dashboard and history service for Ecowitt LAN gateways
 
 This guide is for day-to-day users. You do not need to understand Python, FastAPI, or SQLite to operate Caelus.
 
-The dashboard overview screenshot was updated from a running Caelus station on October 25, 2026, and includes Feels Like, Wind Chill, and the compact forecast labels. The full-dashboard screenshot was captured on October 19, 2026, before those additions. Other dashboard screenshots, plus the Location and Data & Map settings screenshots, were updated on September 30, 2026. The Station screenshots were updated on October 28, 2026, using the current interface with controlled example data; they do not represent a live hardware validation. Other screenshots, including the Mobile Operation graphics, were captured on September 9, 2026. The Location and Station screenshots use example coordinates and a documentation-only gateway address; enter your own values during setup. Your location, readings, gateway model, forecast, lunar view, and available metrics will differ.
+The dashboard overview screenshot was updated from a running Caelus station on October 25, 2026, and includes Feels Like, Wind Chill, and the compact forecast labels. The full-dashboard screenshot was captured on October 19, 2026, before those additions. The Location screenshot was updated on November 19, 2026, using the current interface with controlled example data. Other dashboard screenshots and the Data & Map settings screenshot were updated on September 30, 2026. The Station overview, Ecowitt, AcuRite, Oregon Scientific, and Davis screenshots were updated on November 19, 2026, using controlled example data; they do not represent live hardware validation. Other screenshots, including the Mobile Operation graphics, were captured on September 9, 2026. The Location and Station screenshots use example coordinates and a documentation-only gateway address; enter your own values during setup. Your location, readings, gateway model, forecast, lunar view, and available metrics will differ.
 
 ## Open Caelus
 
@@ -32,19 +30,37 @@ retention settings are shared. Each browser tab keeps its station in the URL.
 **Settings > Station** contains independently expandable connection sections.
 Select a station heading to expand or collapse its controls; sections start
 collapsed, and several can remain open at the same time. Each section has its own
-enable control, connection status, history interval, and Save button. AcuRite
+enable control, history interval, and Save button. Connection status appears in
+the right column of each heading, even when its controls are collapsed. AcuRite
 connects by USB to the same Raspberry Pi, Linux PC, Mac, or Windows PC running
 Caelus; see the
 [AcuRite setup and validation guide](acurite_usb.md).
 For Oregon Scientific models, see the [WMR100-family setup guide](wmr100_usb.md).
 
-## Quickstart Station Setup
+## Quick Station Setup
 
-Open **Settings > Station** and expand the connection you want to configure.
+### Location settings
+
+Start with **Settings > Location** so forecasts, Sun and Moon calculations, and
+station dates use the right place and timezone.
+
+![Location settings with name and timezone above IP location, coordinates, and altitude](screenshots/settings-location.png)
+
+1. Enter **Location name** and an IANA **Timezone**, such as `America/Denver`.
+2. Choose **Disabled** under **IP location** to enter **Latitude** and
+   **Longitude** manually. To detect an approximate location instead, select
+   **Detect & fill from IP**, then review the name, timezone, and coordinates.
+   Detection sends the server's public IP to `ipapi.co` or `ipwho.is`.
+3. Enter **Altitude** above sea level if known, using the displayed feet or
+   metres. Leave it blank if unknown.
+4. Select **Save Location**.
+
+Then open **Settings > Station** and expand the connection you want to configure.
 You can enable several stations; their readings and histories stay separate.
-The Station screenshots below predate the Oregon Scientific and Davis sections.
+The right side of each station heading shows its connection status, even when
+its controls are collapsed.
 
-![Station settings with the Ecowitt and AcuRite sections collapsed](screenshots/settings-station.png)
+![Station settings with all four connection sections collapsed and status in each title row](screenshots/settings-station.png)
 
 ### Ecowitt gateway
 
@@ -72,7 +88,7 @@ for measurement coverage and validation status.
    instructions. For 01025, 01035, 01036, 01525, and 02032 families, select USB or
    PC Connect mode **4** on the console. The 01536-RX uses mode 4 automatically.
    Then select **Enabled**.
-4. Leave **USB serial number** blank when one matching console is connected.
+4. Leave **USB SN (optional)** blank when one matching console is connected.
    Use an actual serial descriptor to select among multiple matching consoles.
 5. Set **History interval** from 60 to 3600 seconds, then select **Save AcuRite**.
 6. Check the connection status. Allow a USB sampling cycle and a history interval
@@ -137,12 +153,12 @@ enable collection; changes take effect when you select that section's Save butto
 
 #### Ecowitt gateway controls
 
-![Ecowitt gateway settings expanded, with AcuRite collapsed](screenshots/settings-station-ecowitt.png)
+![Ecowitt gateway controls with title status and vertically aligned history interval, version, and sensor inventory](screenshots/settings-station-ecowitt.png)
 
 - **Enabled** starts or stops Ecowitt collection when saved.
 - **Gateway base URL** is the local HTTP base address, without a path, query,
   embedded credentials, or fragment. The screenshot uses the example address
-  `http://192.0.2.42`; enter your gateway's actual LAN address.
+  `http://192.0.2.1`; enter your gateway's actual LAN address.
 - **History interval** accepts 60 to 3600 seconds for this station's polling
   and saved observations.
 - **Find Sensors** queries the gateway and displays its model and paired inventory.
@@ -156,13 +172,13 @@ custom-server push, MQTT, irrigation, or switches.
 
 #### AcuRite USB controls
 
-![AcuRite USB controls expanded in the scrollable Station pane](screenshots/settings-station-acurite.png)
+![AcuRite controls in a four-column row with connection status in the title](screenshots/settings-station-acurite.png)
 
 - **Enabled** starts or stops AcuRite collection when saved.
 - **Console model** selects the supported console family and displays its USB
   mode instructions. Set mode 4 on the console for families with a mode menu,
   and recheck it after a console power loss.
-- **USB serial number (optional)** selects a particular console. Leave it blank
+- **USB SN (optional)** selects a particular console. Leave it blank
   for automatic selection when only one matching device is connected.
 - **History interval** accepts 60 to 3600 seconds for saved observations. Outdoor
   USB reports are sampled every 18 seconds independently of this interval.
@@ -177,16 +193,48 @@ first baseline or during outages. Live indoor humidity and wind gusts are
 unavailable. See the [USB setup and console validation guide](acurite_usb.md)
 for platform permissions, decoding limits, and report capture.
 
+#### Oregon Scientific USB controls
+
+![Oregon Scientific controls with model, optional USB serial number, history interval, and Enabled](screenshots/settings-station-oregon.png)
+
+Read the control row from left to right:
+
+1. **Console model** records your WMR100-family console. Choose its actual model;
+   WMRS200 is supported, but WMR200, WMR300, and WMR89 use different protocols.
+2. **USB SN (optional)** selects a specific console. Leave it blank when only
+   one compatible console is connected.
+3. **History interval** accepts 60 to 3600 seconds for saved observations;
+   live USB sampling runs independently.
+4. **Enabled** starts or stops collection when saved.
+5. **Save Oregon Scientific** applies this connection's settings.
+6. **Title status** reports whether the connection is disabled, waiting for
+   observations, receiving fresh data, or encountering an error. It remains
+   visible when the section is collapsed.
+
+Connect the console to the computer running Caelus and close other software
+reading it. Set **Altitude** in Location settings for estimated barometric
+pressure; a blank altitude leaves pressure absolute. **Recorded rain today**
+counts observed increments and can have gaps during outages. See the
+[Oregon Scientific setup and validation guide](wmr100_usb.md) for USB access,
+measurements, and physical-validation limits.
+
 #### Davis Vantage Vue controls
 
-- **Enabled** starts or stops Vue collection when saved.
-- **Datalogger serial port** identifies the local port for your USB virtual-serial
-  or serial datalogger. It is required when enabling collection.
-- **Baud rate** must match the console; the default is **19200**.
-- **History interval** accepts 60 to 3600 seconds for saved observations. Live
-  sampling runs independently of this interval.
-- **Save Davis Vantage Vue** saves only this connection's settings. Check its
-  status line for connection and device-access errors.
+![Davis controls with datalogger serial port, baud rate, history interval, and Enabled](screenshots/settings-station-davis.png)
+
+Read the control row from left to right:
+
+1. **Datalogger serial port** identifies the local port for your USB
+   virtual-serial or serial datalogger. It is required when enabling collection.
+   The screenshot uses `/dev/test-vue`; replace it with your actual device path.
+2. **Baud rate** must match the console; the default is **19200**. The screenshot
+   shows **9600** as a saved example, not a required setting.
+3. **History interval** accepts 60 to 3600 seconds for saved observations.
+   Live sampling runs independently of this interval.
+4. **Enabled** starts or stops Vue collection when saved.
+5. **Save Davis Vantage Vue** applies only this connection's settings.
+6. **Title status** shows connection and device-access errors or fresh-observation
+   status, even when the section is collapsed.
 
 The Vue supplies indoor/outdoor temperature and humidity, wind speed/direction,
 the console's 10-minute wind gust, relative and absolute pressure, rain rate,
@@ -200,23 +248,6 @@ Connections can run at the same time. Saving one does not submit unsaved
 changes in another. A failed fetch does not erase the station's last stored
 observation; check its status and observation time for freshness. Each station's
 current readings, graphs, and downloads follow the dashboard's station selector.
-
-### Location
-
-![Location settings](screenshots/settings-location.png)
-
-- **Location name** is the dashboard heading.
-- **Latitude** accepts -90 through 90.
-- **Longitude** accepts -180 through 180.
-- **Timezone** uses an IANA name such as `America/Denver`.
-- **Use IP location** allows automatic detection.
-- **Detect & fill from IP** performs detection immediately and fills the location fields.
-
-**Detect & fill from IP** and **Save Location** share the action row below the location fields. Detection fills the fields; select **Save Location** to apply them.
-
-For manual setup, clear **Use IP location**, enter coordinates and a matching timezone, then select **Save Location**.
-
-When IP location is enabled or explicitly detected, Caelus sends the server’s public IP address to `ipapi.co`, with `ipwho.is` as a fallback, to obtain an approximate city, timezone, latitude, and longitude. Astral then performs Sun and Moon calculations locally from the saved coordinates; Astral is not the IP-location provider.
 
 ### Forecast
 
@@ -284,9 +315,7 @@ On a wide screen, the first row contains **Current readings**, **Today’s forec
 
 Exports are available under **Settings > Data & Map > Download Data**; there is no separate Weather Archive tile.
 
-![Dashboard overview: current conditions, Windy on the left and Lunar Calendar on the right, then the first sensor metric row](screenshots/dashboard-overview.png)
-
-The overview shows the first sensor row; additional sensor rows continue below. [View the full dashboard](screenshots/dashboard-full.png), which ends after Sensor Metrics without a Weather Archive tile.
+The overview at the start of this guide shows the first sensor row; additional sensor rows continue below. [View the full dashboard](screenshots/dashboard-full.png), which ends after Sensor Metrics without a Weather Archive tile.
 
 ### Current Readings
 
