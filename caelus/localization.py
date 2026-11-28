@@ -14,9 +14,11 @@ from babel.numbers import format_decimal
 
 DEFAULT_LOCALE = "en-US"
 CATALOGS = {
+    "ar": "ar",
     "de": "de-DE",
     "es": "es-419",
     "fr": "fr-CA",
+    "hi": "hi-IN",
     "it": "it-IT",
     "ja": "ja-JP",
     "nl": "nl-NL",
@@ -26,6 +28,10 @@ CATALOGS = {
     "zh": "zh-Hans-CN",
 }
 CATALOG_PATH = Path(__file__).resolve().parents[1] / "static" / "locales"
+ARABIC_DIGITS = {
+    "arab": str.maketrans("0123456789", "٠١٢٣٤٥٦٧٨٩"),
+    "arabext": str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹"),
+}
 PREFERENCE = re.compile(
     r"([a-z]{2,8}(?:-[a-z0-9]{1,8})*|\*)"
     r"(?:\s*;\s*q=(0(?:\.\d{0,3})?|1(?:\.0{0,3})?))?",
@@ -40,12 +46,31 @@ def _catalog(language: str) -> dict[str, str]:
     return json.loads((CATALOG_PATH / f"{language}.json").read_text(encoding="utf-8"))
 
 
+@lru_cache
+def _format_locale(region: str) -> Locale:
+    return Locale.parse(region, sep="-")
+
+
+def _display_digits(value: str, locale: Locale) -> str:
+    if locale.language == "ar":
+        # Babel localizes the separators but emits Latin digits.
+        table = ARABIC_DIGITS.get(locale.default_numbering_system)
+        if table is not None:
+            return value.translate(table)
+    return value
+
+
 @dataclass(frozen=True)
 class DisplayLocale:
     """The interface language and the viewer's date and number conventions."""
 
     language: str = DEFAULT_LOCALE
     region: str = DEFAULT_LOCALE
+
+    @property
+    def direction(self) -> str:
+        """Return the reading direction of the selected interface catalog."""
+        return "rtl" if self.language == "ar" else "ltr"
 
     @property
     def messages(self) -> dict[str, str]:
@@ -63,7 +88,9 @@ class DisplayLocale:
         """Format a display value without changing form values or API data."""
         if self.region == DEFAULT_LOCALE or not isinstance(value, (int, float)):
             return value
-        return format_decimal(value, locale=self.region.replace("-", "_"))
+        locale = _format_locale(self.region)
+        numbering = "default" if locale.language == "ar" else "latn"
+        return _display_digits(format_decimal(value, locale=locale, numbering_system=numbering), locale)
 
     def date_label(self, value: str, fallback: str, skeleton: str = "MMMd") -> str:
         """Format an ISO calendar date in the selected region."""
@@ -73,7 +100,8 @@ class DisplayLocale:
             day = date.fromisoformat(value)
         except ValueError:
             return fallback
-        return format_skeleton(skeleton, day, locale=self.region.replace("-", "_"))
+        locale = _format_locale(self.region)
+        return _display_digits(format_skeleton(skeleton, day, locale=locale), locale)
 
     def clock(self, value: str, fallback: str) -> str:
         """Format a station-local clock value using the selected hour cycle."""
@@ -83,7 +111,8 @@ class DisplayLocale:
             clock = datetime.strptime(value, "%H:%M").time()
         except ValueError:
             return fallback
-        return format_time(clock, "short", locale=self.region.replace("-", "_"))
+        locale = _format_locale(self.region)
+        return _display_digits(format_time(clock, "short", locale=locale), locale)
 
     def timestamp(self, value: str, fallback: str, zone: str) -> str:
         """Format a timestamp in the station timezone and selected region."""
@@ -99,7 +128,8 @@ class DisplayLocale:
             zoneinfo = ZoneInfo(zone)
         except (KeyError, ValueError):
             return fallback
-        return format_datetime(when, "medium", tzinfo=zoneinfo, locale=self.region.replace("-", "_"))
+        locale = _format_locale(self.region)
+        return _display_digits(format_datetime(when, "medium", tzinfo=zoneinfo, locale=locale), locale)
 
     def forecast_summary(self, forecast: dict) -> str:
         """Render a generated forecast headline with its structured parts."""

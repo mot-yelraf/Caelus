@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="{{ locale.language }}">
+<html lang="{{ locale.language }}"{% if locale.direction == 'rtl' %} dir="rtl"{% endif %}>
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -80,7 +80,7 @@
                 </div>
                 {% set narrative = forecast.hours[0].get('narrative') if forecast.provider == 'us' and forecast.hours else none %}
                 {% if narrative %}
-                  <p class="forecast-synopsis">{{ t(forecast.hours[0].get('narrative_period') or 'Forecast period') }} ({{ t('NWS · original units') }}): <span lang="en" data-forecast-narrative>{{ narrative }}</span></p>
+                  <p class="forecast-synopsis">{{ t(forecast.hours[0].get('narrative_period') or 'Forecast period') }} ({{ t('NWS · original units') }}): <span lang="en" dir="ltr" data-forecast-narrative>{{ narrative }}</span></p>
                   {% if translate_weather %}<button type="button" class="button-secondary" data-translate-narrative>{{ t('Translate forecast') }}</button>{% endif %}
                 {% elif forecast.get('synopsis') %}<p class="forecast-synopsis">{{ locale.forecast_synopsis(forecast) }}</p>{% endif %}
               </div>
@@ -93,7 +93,7 @@
             {% set hour_count = forecast.hours | length %}
             <p class="forecast-metric-key">{{ t('FL: Feels Like · WC: Wind Chill') }}</p>
             <div class="hourly-carousel" data-hourly-carousel data-page-size="8">
-              <button class="hourly-page-button hourly-page-previous" type="button" data-hourly-previous aria-label="{{ t('Show previous forecast hour') }}" hidden>&lt;</button>
+              <button class="hourly-page-button hourly-page-previous" type="button" dir="ltr" data-hourly-previous aria-label="{{ t('Show previous forecast hour') }}" hidden>{{ '>' if locale.direction == 'rtl' else '<' }}</button>
               <div class="hourly-strip">
                 {% for hour in forecast.hours %}
                   <div class="forecast-hour" data-hourly-index="{{ loop.index0 }}"{% if loop.index0 >= 8 %} hidden{% endif %}>
@@ -108,7 +108,7 @@
                   </div>
                 {% endfor %}
               </div>
-              <button class="hourly-page-button hourly-page-next" type="button" data-hourly-next aria-label="{{ t('Show next forecast hour') }}"{% if hour_count <= 8 %} hidden{% endif %}>&gt;</button>
+              <button class="hourly-page-button hourly-page-next" type="button" dir="ltr" data-hourly-next aria-label="{{ t('Show next forecast hour') }}"{% if hour_count <= 8 %} hidden{% endif %}>{{ '<' if locale.direction == 'rtl' else '>' }}</button>
             </div>
             <p class="hourly-page-status" data-hourly-status aria-live="polite">{{ t('Hours {start}–{end} of {total}', start=1, end=[8, hour_count]|min, total=hour_count) }}</p>
             {% if forecast.days %}

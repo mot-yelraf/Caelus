@@ -218,8 +218,9 @@ Choose **Settings → Appearance → Language & Region**, then save Appearance.
 **System** follows the viewing browser or desktop webview's language preference
 and regional formats. The bundled interface supports US English, Latin
 American Spanish, Canadian French, German, Brazilian Portuguese, Simplified
-Chinese, Japanese, Italian, Dutch, Polish, and Ukrainian. Unsupported languages
-use the US English interface. **English** forces US English and US formatting.
+Chinese, Japanese, Italian, Dutch, Polish, Ukrainian, Modern Standard Arabic,
+and Hindi. Unsupported languages use the US English interface. **English**
+forces US English and US formatting.
 The station's configured timezone and measurement units apply to every viewer.
 
 For optional on-demand translation of National Weather Service forecast

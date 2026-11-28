@@ -15,7 +15,7 @@ function displayNumber(value, options) {
 function displayDate(value, fallback, options) {
   const date = new Date(value);
   return displayRegion === "en-US" || !value || !Number.isFinite(date.getTime())
-    ? fallback : new Intl.DateTimeFormat(displayRegion, options).format(date);
+    ? fallback : new Intl.DateTimeFormat(displayRegion, {...options, calendar: "gregory"}).format(date);
 }
 
 function displayClock(value, fallback) {
@@ -1151,7 +1151,7 @@ function displayClock(value, fallback) {
     const date = metricDate(value);
     if (Number.isNaN(date.getTime())) return "—";
     return new Intl.DateTimeFormat(displayRegion, {
-      timeZone: timezoneName,
+      calendar: "gregory", timeZone: timezoneName,
       hour: "numeric",
       minute: "2-digit",
     }).format(date);
@@ -1221,12 +1221,12 @@ function displayClock(value, fallback) {
     if (isDayBoundary || (payload.hours <= 24 && parts.hour === "00"
       && (payload.hours > 6 || parts.minute === "00"))) {
       return displayRegion === "en-US" ? `${parts.day}${parts.month}`
-        : new Intl.DateTimeFormat(displayRegion, {timeZone: payload.timezone, day: "numeric", month: "short"}).format(date);
+        : new Intl.DateTimeFormat(displayRegion, {calendar: "gregory", timeZone: payload.timezone, day: "numeric", month: "short"}).format(date);
     }
     const options = payload.hours <= 24
       ? {timeZone: payload.timezone, hour: "numeric", minute: payload.hours <= 6 ? "2-digit" : undefined}
       : {timeZone: payload.timezone, month: "short", day: "numeric"};
-    const label = new Intl.DateTimeFormat(displayRegion, options).format(date);
+    const label = new Intl.DateTimeFormat(displayRegion, {...options, calendar: "gregory"}).format(date);
     return displayRegion === "en-US" ? label.replace(" ", "") : label;
   }
 
@@ -1557,7 +1557,7 @@ function displayClock(value, fallback) {
       context.stroke();
       const tickDate = new Date(tickTime);
       const tickLabel = new Intl.DateTimeFormat(displayRegion, {
-        timeZone: timezoneName, hour: "numeric",
+        calendar: "gregory", timeZone: timezoneName, hour: "numeric",
         minute: displayedDuration < 6 * 60 * 60 * 1000 ? "2-digit" : undefined,
       }).format(tickDate);
       context.textAlign = tick === 0 ? "left" : tick === tickCount ? "right" : "center";
@@ -2296,7 +2296,7 @@ function displayClock(value, fallback) {
       list.replaceChildren();
       notification.querySelector('[data-alert-status]').hidden = !alertData.alerts_stale;
       const formatTime = value => new Date(value).toLocaleString(displayRegion, {
-        timeZone: forecastPanel.dataset.timezone || 'UTC', timeZoneName: 'short',
+        calendar: 'gregory', timeZone: forecastPanel.dataset.timezone || 'UTC', timeZoneName: 'short',
       });
       alerts.forEach(alert => {
         const article = document.createElement('article');
@@ -2306,7 +2306,10 @@ function displayClock(value, fallback) {
           const element = document.createElement(tag);
           element.textContent = content;
           element.className = className;
-          if (language) element.lang = language;
+          if (language) {
+            element.lang = language;
+            if (language === "en") element.dir = "ltr";
+          }
           article.append(element);
         };
         add('h3', alert.event, '', 'en');

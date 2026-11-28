@@ -32,12 +32,15 @@ def test_catalog_covers_all_existing_messages(language):
 
 
 @pytest.mark.parametrize(("preference", "language", "region", "formatted"), [
+    ("ar-EG", "ar", "ar-EG", "١٢٫٥"),
+    ("ar-MA", "ar", "ar-MA", "12,5"),
     ("de-CH", "de-DE", "de-CH", "12.5"),
     ("pt-PT", "pt-BR", "pt-PT", "12,5"),
     ("zh-CN", "zh-Hans-CN", "zh-Hans-CN", "12.5"),
     ("zh-SG", "zh-Hans-CN", "zh-Hans-SG", "12.5"),
     ("zh-TW", "en-US", "zh-Hant-TW", "12.5"),
     ("zh-Hant-XX", "en-US", "en-US", 12.5),
+    ("hi", "hi-IN", "hi-IN", "12.5"),
     ("ja", "ja-JP", "ja-JP", "12.5"),
     ("it", "it-IT", "it-IT", "12,5"),
     ("nl-BE", "nl-NL", "nl-BE", "12,5"),
@@ -50,6 +53,18 @@ def test_catalog_and_regional_formatting(preference, language, region, formatted
     assert locale.number(12.5) == formatted
     english = resolve_display_locale("english", preference)
     assert (english.language, english.region) == ("en-US", "en-US")
+
+
+def test_arabic_direction_and_regional_numerals():
+    egypt = resolve_display_locale("system", "ar-EG")
+    assert egypt.direction == "rtl"
+    assert egypt.number(123456.5) == "١٢٣٬٤٥٦٫٥"
+    assert egypt.date_label("2026-11-28", "Nov 28") == "٢٨ نوفمبر"
+    assert "٢٠٢٦" in egypt.timestamp("2026-11-28T12:00:00Z", "English", "UTC")
+    assert resolve_display_locale("english", "ar-EG").direction == "ltr"
+    hindi = resolve_display_locale("system", "hi-IN")
+    assert hindi.direction == "ltr"
+    assert hindi.number(123456.5) == "1,23,456.5"
 
 
 @pytest.mark.parametrize(("preference", "region", "clock"), [

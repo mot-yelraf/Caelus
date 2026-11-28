@@ -3,13 +3,13 @@
 <div data-alert-list tabindex="0" role="region" aria-label="{{ t('Active alert details, scroll for more') }}">
   {% for alert in severe_alerts %}
   <article class="severe-weather-alert">
-    <h3 lang="en">{{ alert.event }}</h3>
-    <p lang="en">{{ alert.headline }}</p>
+    <h3 lang="en" dir="ltr">{{ alert.event }}</h3>
+    <p lang="en" dir="ltr">{{ alert.headline }}</p>
     <p class="alert-meta">{{ t(alert.severity) }} · {{ alert.senderName }}</p>
-    <p lang="en">{{ alert.areaDesc }}</p>
+    <p lang="en" dir="ltr">{{ alert.areaDesc }}</p>
     <p class="alert-meta">{{ t('Effective') }} <time datetime="{{ alert.effective }}">{{ locale.timestamp(alert.effective, alert.effective, settings.timezone) }}</time> {{ t('· Until') }} <time datetime="{{ alert.expires }}">{{ locale.timestamp(alert.expires, alert.expires, settings.timezone) }}</time></p>
-    <p class="alert-description" lang="en">{{ alert.description }}</p>
-    {% if alert.instruction %}<p class="alert-instruction" lang="en">{{ alert.instruction }}</p>{% endif %}
+    <p class="alert-description" lang="en" dir="ltr">{{ alert.description }}</p>
+    {% if alert.instruction %}<p class="alert-instruction" lang="en" dir="ltr">{{ alert.instruction }}</p>{% endif %}
   </article>
   {% endfor %}
 </div>

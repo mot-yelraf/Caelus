@@ -724,6 +724,8 @@ def run_browser_check(base_url: str) -> None:
                 ("nl-NL", "nl-NL", "Verwachting voor vandaag", "Tijdsbereik", "Taal en regio", "Station verzendt gegevens"),
                 ("pl-PL", "pl-PL", "Prognoza na dziś", "Zakres czasu", "Język i region", "Stacja przesyła dane"),
                 ("uk-UA", "uk-UA", "Прогноз на сьогодні", "Період", "Мова й регіон", "Станція передає дані"),
+                ("ar-EG", "ar", "توقعات اليوم", "النطاق الزمني", "اللغة والمنطقة", "المحطة ترسل البيانات"),
+                ("hi-IN", "hi-IN", "आज का पूर्वानुमान", "समय सीमा", "भाषा और क्षेत्र", "स्टेशन डेटा भेज रहा है"),
             ]
             for locale, language, forecast, graph_range, language_section, station_status in new_locales:
                 with browser.new_context(locale=locale, viewport={"width": 390, "height": 844}) as localized:
@@ -737,12 +739,25 @@ def run_browser_check(base_url: str) -> None:
                     expect(localized_page.locator("html")).to_have_attribute("lang", language)
                     expect(localized_page.locator("[data-today-forecast] .eyebrow")).to_have_text(forecast)
                     expect(localized_page.locator("[data-station-state-label]")).to_have_text(station_status)
+                    expect(localized_page.locator("html")).to_have_css("direction", "rtl" if language == "ar" else "ltr")
+                    if language == "ar":
+                        next_hour = localized_page.locator("[data-hourly-next]")
+                        expect(next_hour).to_have_attribute("aria-label", "عرض الساعة التالية من التوقعات")
+                        expect(next_hour).to_have_text("<")
+                        next_hour.click()
+                        expect(localized_page.locator('[data-hourly-index="8"]')).to_be_visible()
+                        expect(localized_page.locator("[data-forecast-narrative]")).to_have_attribute("dir", "ltr")
+                        localized_page.set_viewport_size({"width": 1440, "height": 1200})
+                        expect(localized_page.locator(".map-row")).to_have_css("direction", "ltr")
+                        expect(localized_page.locator(".lunar-event-timeline")).to_have_css("direction", "ltr")
                     localized_page.locator("[data-open-graph]").click()
                     expect(localized_page.locator("#graphRangeTitle")).to_have_text(graph_range)
                     localized_page.locator("[data-close-graph]").click()
                     localized_page.locator("[data-open-settings]").click()
                     localized_page.locator('[data-settings-pane="appearance"]').click()
                     expect(localized_page.get_by_text(language_section, exact=True)).to_be_visible()
+                    if language in {"ar", "hi-IN"}:
+                        localized_page.screenshot(path=RESULTS / f"appearance-{language}.png")
         except Exception:
             page.screenshot(path=RESULTS / "failure.png", full_page=True)
             context.tracing.stop(path=RESULTS / "trace.zip")
