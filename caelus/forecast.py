@@ -30,7 +30,7 @@ NWS_POINTS_URL = "https://api.weather.gov/points/{latitude:.4f},{longitude:.4f}"
 NWS_ALERTS_URL = "https://api.weather.gov/alerts/active"
 ALERT_CACHE_SECONDS = 60
 CACHE_SECONDS = 60 * 60
-CACHE_FORMAT = 10
+CACHE_FORMAT = 11
 
 
 def normalize_nws_alerts(payload: dict[str, Any], now: datetime) -> list[dict[str, str]]:
@@ -428,10 +428,10 @@ def _period_name(hour: int) -> str:
     return "overnight"
 
 
-def _daily_summary(rows: list[dict[str, Any]], timezone_name: str) -> str:
+def _daily_summary_message(rows: list[dict[str, Any]], timezone_name: str) -> tuple[str, dict[str, str]]:
     """Describe the day's early sky and most likely precipitation period."""
     if not rows:
-        return "Forecast unavailable"
+        return "Forecast unavailable", {}
     third = max(1, len(rows) // 3)
     early_clouds = [float(row["cloud_percent"]) for row in rows[:third] if row.get("cloud_percent") is not None]
     average_cloud = sum(early_clouds) / len(early_clouds) if early_clouds else None
@@ -457,8 +457,8 @@ def _daily_summary(rows: list[dict[str, Any]], timezone_name: str) -> str:
             late_average = sum(late_clouds) / len(late_clouds)
             late = "Clear" if late_average < 20 else "Mostly clear" if late_average < 45 else "Partly cloudy" if late_average < 75 else "Cloudy"
             if late != opening:
-                return f"{opening} early, {late.lower()} late"
-        return f"{opening} early"
+                return "{opening} early, {later} late", {"opening": opening, "later": late}
+        return "{opening} early", {"opening": opening}
     periods = Counter(
         _period_name((_parse_time(row["time"]) or datetime.now(timezone.utc)).astimezone(ZoneInfo(timezone_name)).hour)
         for row in wet_rows
@@ -470,7 +470,9 @@ def _daily_summary(rows: list[dict[str, Any]], timezone_name: str) -> str:
         intensity = "snow/sleet"
     elif any("thunder" in row.get("condition", "").lower() for row in wet_rows):
         intensity = "thunderstorms"
-    return f"{opening} early, {intensity} {wet_period}"
+    return "{opening} early, {precipitation} {period}", {
+        "opening": opening, "precipitation": intensity, "period": wet_period,
+    }
 
 
 def _daily_detail(rows: list[dict[str, Any]], local_date: Any, timezone_name: str) -> dict[str, Any]:
@@ -481,6 +483,7 @@ def _daily_detail(rows: list[dict[str, Any]], local_date: Any, timezone_name: st
     low_mph, high_mph = min(winds_mph), max(winds_mph)
     average_mps = sum(_mph_to_mps(value) for value in winds_mph) / len(winds_mph)
     condition = Counter(row["condition"] for row in rows).most_common(1)[0][0]
+    summary_message = _daily_summary_message(rows, timezone_name)
     thermal_ranges = {}
     for metric in ("feels_like", "wind_chill"):
         values = [value for row in rows if (value := _safe_float(row.get(f"{metric}_f"))) is not None]
@@ -493,7 +496,10 @@ def _daily_detail(rows: list[dict[str, Any]], local_date: Any, timezone_name: st
         "date": local_date.isoformat(),
         "label": f"{local_date.strftime('%a %b')} {local_date.day}",
         "condition": condition,
-        "summary": _daily_summary(rows, timezone_name),
+        "summary": summary_message[0].format(**{
+            key: value.lower() if key == "later" else value for key, value in summary_message[1].items()
+        }),
+        "summary_message": summary_message,
         "icon_key": _condition_icon_key(condition),
         "precip_label": _precipitation_chance_label_for_rows(rows),
         "high_f": round(high_f),
@@ -568,6 +574,7 @@ def build_forecast(
         "updated_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
         "condition": condition,
         "summary": today_detail["summary"],
+        "summary_message": today_detail["summary_message"],
         "synopsis": _forecast_synopsis(provider, display_hours),
         "humidity_low": today_detail["humidity_low"],
         "humidity_high": today_detail["humidity_high"],
@@ -699,7 +706,7 @@ class ForecastService:
             cache_needs_refresh = payload.get("cache_format") != CACHE_FORMAT or not isinstance(
                 payload.get("days"), list
             )
-            if cache_needs_refresh:
+            if not isinstance(payload.get("days"), list):
                 payload["days"] = []
             updated = _parse_time(payload.get("updated_at"))
             same = payload.get("provider") == settings.forecast_provider and abs(float(payload["latitude"]) - settings.latitude) < 0.05 and abs(float(payload["longitude"]) - settings.longitude) < 0.05

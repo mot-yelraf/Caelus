@@ -23,6 +23,7 @@ from caelus.gateway import EcowittGatewayError
 from caelus.station import EcowittStationSetup, save_settings_changes
 from caelus.observations import METRIC_UNITS
 from caelus.location import resolve_ip_location
+from caelus.localization import resolve_display_locale
 from caelus.metrics import build_24_hour_metric_cards, metric_display_options
 from caelus.settings import (
     ALLOWED_EXPORT_FORMATS,
@@ -33,6 +34,7 @@ from caelus.settings import (
     validate_windy_iframe_url,
 )
 from caelus.units import convert_reading, display_unit_for
+from caelus.weather_translation import ALERT_TRANSLATION_FIELDS, TARGETS
 from caelus.theme_manager import (
     MAX_THEME_IMAGES,
     MAX_UPLOAD_BYTES,
@@ -159,6 +161,7 @@ def register_routes(app: FastAPI) -> None:
     @app.get("/", response_class=HTMLResponse)
     async def dashboard(request: Request) -> Any:
         settings: AppSettings = app.state.settings
+        locale = resolve_display_locale(settings.language_mode, request.headers.get("accept-language", ""))
         runtime = station_runtime(request)
         data_logger: DataLogger = runtime.data_logger
         latest = reading_for_display(
@@ -188,6 +191,9 @@ def register_routes(app: FastAPI) -> None:
                 "request": request,
                 "version": __version__,
                 "settings": settings,
+                "locale": locale,
+                "t": locale.translate,
+                "translate_weather": locale.language in TARGETS and bool(getattr(app.state, "weather_translator", None)),
                 "latest": latest,
                 "station": (await ecowitt_status(request)).get("station", {}),
                 "active_station": runtime.key,
@@ -198,8 +204,10 @@ def register_routes(app: FastAPI) -> None:
                 "davis_baud_rates": DAVIS_BAUD_RATES,
                 "acurite_profile": console_profile(settings.acurite_model),
                 "available_stations": [{"key": item.key, "name": item.name} for item in getattr(app.state, "stations", {}).values()],
-                "latest_observation_time": format_observation_time(
-                    latest.get("timestamp"), settings.timezone
+                "latest_observation_time": locale.timestamp(
+                    latest.get("timestamp", ""),
+                    locale.translate(format_observation_time(latest.get("timestamp"), settings.timezone)),
+                    settings.timezone,
                 ),
                 "windy_iframe_url": build_windy_iframe_url(
                     settings.windy_iframe_url, settings.latitude, settings.longitude
@@ -218,6 +226,7 @@ def register_routes(app: FastAPI) -> None:
                 "custom_theme_styles": custom_theme_styles,
                 "active_theme_style": custom_theme_styles.get(settings.theme, ""),
             },
+            headers={"Content-Language": locale.language, "Vary": "Accept-Language", "Cache-Control": "no-cache"},
         )
 
     @app.get("/api/themes")
@@ -312,6 +321,7 @@ def register_routes(app: FastAPI) -> None:
         timezone_name: str | None = Form(None),
         forecast_provider: str | None = Form(None),
         theme: str | None = Form(None),
+        language_mode: str | None = Form(None),
         unit_system: str | None = Form(None),
         metric_tile_style: str | None = Form(None),
         metric_display_styles: str | None = Form(None),
@@ -371,6 +381,8 @@ def register_routes(app: FastAPI) -> None:
                     forecast_provider or candidate.forecast_provider
                 )
             if settings_pane in {"all", "appearance"}:
+                if language_mode is not None:
+                    candidate.language_mode = AppSettings._validate_value("language_mode", language_mode)
                 requested_theme = normalize_theme(theme or candidate.theme)
                 candidate.theme = (
                     theme_manager().normalize_selection(requested_theme)
@@ -674,6 +686,33 @@ def register_routes(app: FastAPI) -> None:
         if forecast_service is None:
             return {"ok": False, "reason": "forecast service unavailable"}
         return await asyncio.to_thread(forecast_service.get, app.state.settings, force=force)
+
+    @app.post("/api/forecast/translation")
+    async def translate_forecast_text(
+        request: Request, csrf_token: str = Form(""), alert_id: str | None = Form(None),
+    ) -> Response:
+        """Translate only the current provider narrative or an active alert."""
+        if not secrets.compare_digest(csrf_token, app.state.csrf_token):
+            raise HTTPException(status_code=403, detail="invalid CSRF token")
+        settings = app.state.settings
+        locale = resolve_display_locale(settings.language_mode, request.headers.get("accept-language", ""))
+        translator = getattr(app.state, "weather_translator", None)
+        service = getattr(app.state, "forecast_service", None)
+        if translator is None or service is None or locale.language not in TARGETS or settings.forecast_provider != "us":
+            raise HTTPException(status_code=404, detail="Weather translation is unavailable.")
+        forecast = await asyncio.to_thread(service.get, settings)
+        if alert_id is None:
+            hours = forecast.get("hours", [])
+            source = {"narrative": hours[0].get("narrative", "")} if forecast.get("provider") == "us" and hours else {}
+        else:
+            alert = next((alert for alert in forecast.get("alerts", []) if alert["id"] == alert_id), None)
+            source = {field: alert.get(field, "") for field in ALERT_TRANSLATION_FIELDS} if alert else {}
+        if not any(source.values()):
+            raise HTTPException(status_code=404, detail="Weather translation is unavailable.")
+        translation = await asyncio.to_thread(translator.translate, source, locale.language)
+        if translation is None:
+            raise HTTPException(status_code=503, detail="Weather translation is unavailable.")
+        return JSONResponse({"source": source, "translation": translation}, headers={"Cache-Control": "no-store"})
 
     @app.get("/export")
     async def export_data(request: Request, format: str = "csv") -> Response:

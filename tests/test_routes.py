@@ -82,6 +82,80 @@ def test_dashboard_displays_zero_values() -> None:
     assert 'class="weather-badge"' not in response.text
 
 
+def test_dashboard_negotiates_spanish_and_falls_back_per_viewer() -> None:
+    client = TestClient(make_app())
+    spanish = client.get("/", headers={"Accept-Language": "es-AR, en-US;q=0.8"})
+    assert spanish.headers["content-language"] == "es-419"
+    assert spanish.headers["vary"] == "Accept-Language"
+    assert '<html lang="es-419">' in spanish.text
+    assert '<h2 id="settingsTitle">Configuración</h2>' in spanish.text
+    assert 'Idioma y región' in spanish.text
+    assert 'Abrir gráfica' in spanish.text
+    assert 'Pronóstico de hoy' in spanish.text
+    assert '"region": "es-AR"' in spanish.text
+    french = client.get("/", headers={"Accept-Language": "fr-FR, en-US;q=0.8"})
+    assert french.headers["content-language"] == "fr-CA"
+    assert '<html lang="fr-CA">' in french.text
+    assert '<h2 id="settingsTitle">Paramètres</h2>' in french.text
+    assert 'Langue et région' in french.text
+    assert 'Ouvrir le graphique' in french.text
+    assert 'Prévisions du jour' in french.text
+    assert '"region": "fr-FR"' in french.text
+    unsupported = client.get("/", headers={"Accept-Language": "sv-SE, es-MX;q=0.8"})
+    assert unsupported.headers["content-language"] == "en-US"
+    assert '"region": "sv-SE"' in unsupported.text
+    assert 'Today’s forecast' in unsupported.text
+    assert client.get("/").headers["content-language"] == "en-US"
+
+
+def test_appearance_language_saves_atomically(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(AppSettings, "settings_path", tmp_path / "settings.json")
+    app = make_app()
+    client = TestClient(app, headers={"Accept-Language": "es-MX"})
+    data = {"settings_pane": "appearance", "csrf_token": "test-token"}
+    assert client.post("/settings", data={**data, "language_mode": "english"}).status_code == 200
+    assert AppSettings.load().language_mode == "english"
+    assert client.get("/").headers["content-language"] == "en-US"
+    rejected = client.post("/settings", data={**data, "language_mode": "es", "unit_system": "metric"})
+    assert rejected.status_code == 422
+    assert app.state.settings.unit_system == "imperial"
+    assert app.state.settings.language_mode == "english"
+    assert client.post("/settings", data={**data, "language_mode": "system"}).status_code == 200
+    assert client.get("/").headers["content-language"] == "es-419"
+
+
+@pytest.mark.parametrize(("preference", "language"), [("es-MX", "es-419"), ("fr-CA", "fr-CA")])
+def test_weather_translation_uses_provider_content_and_respects_locale(preference, language) -> None:
+    app = make_app()
+    app.state.settings.forecast_provider = "us"
+    forecast = {"provider": "us", "hours": [{"narrative": "High near 47."}], "alerts": [
+        {"id": "active-alert", "event": "Flood Warning", "instruction": "Move to higher ground."},
+    ]}
+
+    class Forecast:
+        def get(self, _settings):
+            return forecast
+
+    class Translator:
+        def translate(self, source, requested_language):
+            assert requested_language == language
+            return {field: f"{language} {value}" for field, value in source.items()}
+
+    app.state.forecast_service = Forecast()
+    app.state.weather_translator = Translator()
+    client = TestClient(app)
+    url = "/api/forecast/translation"
+    localized = {"Accept-Language": preference}
+    token = {"csrf_token": "test-token"}
+    assert client.post(url, headers=localized).status_code == 403
+    assert client.post(url, data=token).status_code == 404
+    narrative = client.post(url, headers=localized, data={**token, "narrative": "Ignored"})
+    assert narrative.json()["translation"] == {"narrative": f"{language} High near 47."}
+    alert = client.post(url, headers=localized, data={**token, "alert_id": "active-alert"})
+    assert alert.json()["source"]["instruction"] == "Move to higher ground."
+    assert client.post(url, headers=localized, data={**token, "alert_id": "expired-alert"}).status_code == 404
+
+
 def test_favicon_serves_caelus_icon() -> None:
     client = TestClient(make_app())
     response = client.get("/favicon.ico")
@@ -243,7 +317,7 @@ def test_dashboard_refresh_timers_follow_station_and_forecast_contract() -> None
 
     assert 'fetch(stationUrl("/api/readings/current"), {cache: "no-store"})' in script
     assert 'fetch(stationUrl("/api/station/status"), {cache: "no-store"})' in script
-    assert 'label.textContent = online ? "Online"' in script
+    assert 'label.textContent = online ? t("Online")' in script
     assert "window.setInterval(refreshEcowittDashboard, safeSeconds * 1000)" in script
     assert 'fetch("/api/forecast?force=true", {cache: "no-store"})' in script
     assert "nextHour.setMinutes(60, 1, 0)" in script
@@ -732,7 +806,7 @@ def test_metric_display_style_settings_contract() -> None:
     assert ">Gauge</option>" in response.text
     assert ".metric-style-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr))" in css
     assert ".metric-style-bulk { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr))" in css
-    assert response.text.count('class="appearance-section"') == 4
+    assert response.text.count('class="appearance-section"') == 5
     assert "<strong>Theme</strong>" in response.text
     assert "<strong>Metrics</strong>" in response.text
     headings = ["Metrics", "Display Style", "Theme", "Metric Tile Style"]
@@ -807,9 +881,9 @@ def test_map_interaction_gate_and_metric_graph_contract() -> None:
     assert "context.fillText(formatAxisValue(tickValue), left - 8, tickY);" in script
     assert "points.reduce((sum, point) => sum + point.value, 0) / points.length" in script
     assert "displayedMetric.stats_by_hours" in script
-    assert "`AVG ${metricValue(average, metric.decimals, metric.unit)}`" in script
+    assert 't("AVG {value}", {value: metricValue(average, metric.decimals, metric.unit)})' in script
     assert "function drawWindRose(" in script
-    assert '`${hours}-hour Wind-Rose`' in script
+    assert 't("{hours}-hour Wind-Rose", {hours})' in script
     assert '{maximum: 5, label: "0–5"' in script
     assert "function drawMetricGauge(" in script
     assert "rain_total: 100" in script

@@ -502,6 +502,32 @@ def test_linux_uses_gtk_and_installs_matching_desktop_identity(
     assert f"StartupWMClass={desktop.LINUX_APP_ID}\n" in text
 
 
+@pytest.mark.parametrize(
+    ("model", "codename", "software_rendering"),
+    [
+        ("Raspberry Pi 5 Model B", "trixie", True),
+        ("Raspberry Pi 4 Model B", "bookworm", False),
+        ("Generic Linux PC", "trixie", False),
+    ],
+)
+def test_linux_renderer_defaults(monkeypatch, model, codename, software_rendering):
+    monkeypatch.setattr(desktop.Path, "read_text", lambda *_args, **_kwargs: model)
+    monkeypatch.setattr(desktop.platform, "freedesktop_os_release", lambda: {"VERSION_CODENAME": codename})
+    monkeypatch.delenv("WEBKIT_SKIA_ENABLE_CPU_RENDERING", raising=False)
+    monkeypatch.delenv("GDK_BACKEND", raising=False)
+    monkeypatch.setenv("WEBKIT_DISABLE_DMABUF_RENDERER", "0")
+
+    desktop._configure_linux_rendering()
+
+    assert desktop.os.environ["GDK_BACKEND"] == "wayland,x11"
+    assert desktop.os.environ.get("WEBKIT_SKIA_ENABLE_CPU_RENDERING") == ("1" if software_rendering else None)
+    assert desktop.os.environ["WEBKIT_DISABLE_DMABUF_RENDERER"] == "0"
+
+    monkeypatch.delenv("WEBKIT_DISABLE_DMABUF_RENDERER")
+    desktop._configure_linux_rendering()
+    assert desktop.os.environ.get("WEBKIT_DISABLE_DMABUF_RENDERER") == ("1" if software_rendering else None)
+
+
 def test_linux_launcher_passes_the_native_icon_to_gtk(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

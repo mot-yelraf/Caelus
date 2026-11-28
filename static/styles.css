@@ -905,6 +905,7 @@ dialog, .glass-card, .metric-loading { border-radius: 1rem; }
 .severe-weather-alert p { line-height: 1.5; }
 .severe-weather-alert .alert-meta { font-size: 0.8rem; color: var(--muted); }
 .alert-description, .alert-instruction { white-space: pre-wrap; }
+.weather-translation p, [data-forecast-narrative] { white-space: pre-wrap; overflow-wrap: anywhere; }
 .alert-instruction { font-weight: 700; }
 [data-today-forecast][hidden], [data-severe-weather][hidden], [data-alert-status][hidden] { display: none; }
 

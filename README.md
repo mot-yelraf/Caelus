@@ -212,6 +212,28 @@ URLs with a path use their existing direct-request retry path. Fatal server
 exits require a desktop relaunch or an external service manager; the desktop
 launcher does not currently supervise a server after opening its window.
 
+## Language and region
+
+Choose **Settings → Appearance → Language & Region**, then save Appearance.
+**System** follows the viewing browser or desktop webview's language preference
+and regional formats. The bundled interface supports US English, Latin
+American Spanish, Canadian French, German, Brazilian Portuguese, Simplified
+Chinese, Japanese, Italian, Dutch, Polish, and Ukrainian. Unsupported languages
+use the US English interface. **English** forces US English and US formatting.
+The station's configured timezone and measurement units apply to every viewer.
+
+For optional on-demand translation of National Weather Service forecast
+narratives and alerts into the supported interface languages, enable [Google Cloud Translation Basic](https://cloud.google.com/translate/docs/reference/rest/v2/translate)
+and set `CAELUS_TRANSLATION_API_KEY` in the Caelus server environment before
+starting Caelus. Caelus sends public NWS text to Google when a viewer selects
+**Translate forecast** or **Translate alert**. Translations require internet
+access and may incur charges. The original remains visible alongside any
+machine translation. The bundled interface and Caelus-generated forecast text
+use local message catalogs.
+
+See the [localization guide](docs/localization_support.md) for the full locale
+table and the implementation pattern for other projects.
+
 ## Location and forecast privacy
 
 Today’s forecast also shows same-calendar-date minimums, maximums, and averages for temperature, relative
@@ -351,6 +373,10 @@ chmod +x /home/pi/Caelus-source/install.sh
 /home/pi/Caelus-source/install.sh
 /home/pi/Caelus/run_caelus_gui.sh
 ```
+
+On Raspberry Pi OS Trixie, the desktop launcher uses WebKitGTK software
+rendering to avoid display corruption. Restart the desktop window after an
+update to apply the renderer settings.
 
 The default runtime database is `/home/pi/Caelus/data/caelus.db`. The same
 commands work on x86-64 or ARM Linux with the appropriate absolute home path.

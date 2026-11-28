@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 import secrets
 import threading
 from contextlib import asynccontextmanager
@@ -16,6 +17,7 @@ from caelus.station import EcowittStationSetup
 from caelus.stations import build_stations, start_station, stop_stations
 from caelus.forecast import ForecastService
 from caelus.weather_climate import WeatherClimateService
+from caelus.weather_translation import WeatherTranslator
 from caelus.location import resolve_ip_location
 from caelus.poller import GatewayPoller
 from caelus.routes import register_routes
@@ -101,6 +103,8 @@ def create_app(*, weather_adapter: WeatherAdapter | None = None) -> FastAPI:
             app.state.station_setup = EcowittStationSetup(app.state.settings, weather_adapter.gateway, app.state.station_lock)
         app.state.poller = GatewayPoller(app)
     app.state.forecast_service = ForecastService(BASE_DIR.parent / "data" / "forecast.json")
+    translation_key = os.environ.get("CAELUS_TRANSLATION_API_KEY", "").strip()
+    app.state.weather_translator = WeatherTranslator(translation_key) if translation_key else None
     app.state.weather_climate_service = WeatherClimateService(BASE_DIR.parent / "data" / "weather_climate.json")
     app.state.csrf_token = secrets.token_urlsafe(32)
     app.mount("/static", StaticFiles(directory=str(BASE_DIR.parent / "static")), name="static")
