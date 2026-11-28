@@ -1,8 +1,8 @@
 # Caelus localization support
 
-Caelus supports 11 interface languages across the dashboard, Caelus Graphum,
+Caelus supports 13 interface languages across the dashboard, Caelus Graphum,
 System Settings, and live dashboard updates. This guide documents the
-implementation in Caelus `v0.26.332.4` and the pattern that Biodynamic_Calendar
+implementation in Caelus `v0.26.332.5` and the pattern that Biodynamic_Calendar
 and Sensorius_AI can adapt to their own interfaces.
 
 ## Supported languages
@@ -10,9 +10,11 @@ and Sensorius_AI can adapt to their own interfaces.
 | Interface language | Catalog locale | Example system preferences |
 | --- | --- | --- |
 | US English | `en-US` (built-in source text) | `en-US`, `en-GB`, `en-CA` |
+| Modern Standard Arabic | `ar` | `ar`, `ar-EG`, `ar-SA`, `ar-MA` |
 | German | `de-DE` | `de-DE`, `de-AT`, `de-CH` |
 | Latin American Spanish | `es-419` | `es-419`, `es-MX`, `es-AR`, `es-ES` |
 | Canadian French | `fr-CA` | `fr-CA`, `fr-FR` |
+| Hindi | `hi-IN` | `hi`, `hi-IN` |
 | Italian | `it-IT` | `it-IT`, `it-CH` |
 | Japanese | `ja-JP` | `ja-JP` |
 | Dutch | `nl-NL` | `nl-NL`, `nl-BE` |
@@ -26,6 +28,9 @@ can also determine formatting. For example, `fr-FR` uses the Canadian French
 catalog with France’s date and time formats, and `nl-BE` uses the Dutch catalog
 with Belgian formats. Traditional Chinese preferences such as `zh-TW` use
 English interface text with the available regional formatting.
+The Arabic interface reads right to left. The selected region supplies
+formatting conventions, including numeral shapes where applicable. Caelus
+uses Gregorian dates for weather and astronomy across locales.
 
 ## Selecting a language and region
 
@@ -111,6 +116,5 @@ available.
 Caelus verification covers [locale and catalog behavior](../tests/test_localization.py),
 [route rendering](../tests/test_routes.py),
 [optional translation](../tests/test_weather_translation.py), and
-[headless Chromium checks](../scripts/playwright_verify.py). The eight catalogs
-added in this release were machine-assisted and have yet to receive
-native-speaker review.
+[headless Chromium checks](../scripts/playwright_verify.py). The ten most
+recently added catalogs have yet to receive native-speaker review.

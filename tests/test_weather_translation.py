@@ -4,7 +4,7 @@ import pytest
 from caelus.weather_translation import WeatherTranslator
 
 
-@pytest.mark.parametrize(("language", "target"), [("es-419", "es"), ("fr-CA", "fr-CA")])
+@pytest.mark.parametrize(("language", "target"), [("es-419", "es"), ("fr-CA", "fr-CA"), ("ar", "ar"), ("hi-IN", "hi")])
 def test_translator_keeps_paragraphs_and_reuses_exact_source(monkeypatch, language, target):
     calls = []
 

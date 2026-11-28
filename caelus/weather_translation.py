@@ -11,9 +11,11 @@ import requests
 LOGGER = logging.getLogger(__name__)
 TRANSLATION_URL = "https://translation.googleapis.com/language/translate/v2"
 TARGETS = {
+    "ar": "ar",
     "de-DE": "de",
     "es-419": "es",
     "fr-CA": "fr-CA",
+    "hi-IN": "hi",
     "it-IT": "it",
     "ja-JP": "ja",
     "nl-NL": "nl",
