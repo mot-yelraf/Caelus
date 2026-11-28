@@ -108,6 +108,7 @@ class AppSettings:
     location_provider: str = ""
     forecast_provider: str = "met_no"
     theme: str = "garden"
+    language_mode: str = "system"
     unit_system: str = "imperial"
     pressure_unit: str = "auto"
     metric_tile_style: str = "theme"
@@ -178,6 +179,10 @@ class AppSettings:
             return validate_windy_iframe_url(str(value))
         if name == "theme":
             return normalize_theme(value)
+        if name == "language_mode":
+            if not isinstance(value, str) or value not in {"english", "system"}:
+                raise ValueError("Unsupported display language")
+            return value
         if name == "unit_system":
             if value not in {"imperial", "metric"}:
                 raise ValueError("unsupported display unit system")

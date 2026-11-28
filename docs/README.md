@@ -1,6 +1,7 @@
 # Caelus Documentation
 
 - [User Guide](user_guide.md) - illustrated setup, dashboard, settings, operation, privacy, and troubleshooting guide.
+- [Localization support](localization_support.md) - supported languages, regional formatting, and the implementation pattern for related projects.
 
 - [AcuRite USB](acurite_usb.md) - PC Connect console setup on Raspberry Pi/Linux, macOS, and Windows, permissions, and hardware validation.
 - [Oregon Scientific USB](wmr100_usb.md) - WMR100-family setup, measurements, and physical-validation limits.

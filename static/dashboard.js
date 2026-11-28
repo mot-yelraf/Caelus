@@ -1,3 +1,29 @@
+const {region: displayRegion, messages: displayMessages, translateWeather} = JSON.parse(
+  document.getElementById("displayLocale")?.textContent || '{"region":"en-US","messages":{}}'
+);
+function t(message, values = {}) {
+  const translated = Object.hasOwn(displayMessages, message) ? displayMessages[message] : message;
+  return String(translated ?? "").replace(/\{(\w+)\}/g, (placeholder, key) => (
+    Object.hasOwn(values, key) ? String(values[key]) : placeholder
+  ));
+}
+
+function displayNumber(value, options) {
+  return typeof value === "number" ? value.toLocaleString(displayRegion, options) : value;
+}
+
+function displayDate(value, fallback, options) {
+  const date = new Date(value);
+  return displayRegion === "en-US" || !value || !Number.isFinite(date.getTime())
+    ? fallback : new Intl.DateTimeFormat(displayRegion, options).format(date);
+}
+
+function displayClock(value, fallback) {
+  return displayDate(`2000-01-01T${value}:00Z`, fallback, {
+    timeZone: "UTC", hour: "numeric", minute: "2-digit",
+  });
+}
+
 (function () {
   const dialog = document.getElementById("settingsDialog");
   const form = document.getElementById("settingsForm");
@@ -24,6 +50,10 @@
   const panes = Array.from(dialog.querySelectorAll("[data-pane]"));
   const settingsStatus = form.querySelector("[data-settings-status]");
   const toastTimers = new WeakMap();
+  const paneSavedMessages = {
+    location: "Location saved.", forecast: "Forecast saved.", appearance: "Appearance saved.",
+    "data-map": "Map saved.",
+  };
 
   function showToast(target, message, isError = false) {
     if (!target) return;
@@ -35,16 +65,16 @@
     }, 5000));
   }
 
-  function refreshSavedSettings(pane, message) {
+  function refreshSavedSettings(pane) {
     // Preserve drafts in other panes while re-rendering all server-derived views.
     const controls = Array.from(form.querySelectorAll("input, select, textarea"))
       .filter((control) => control.name && control.name !== "csrf_token" && control.type !== "file")
       .map((control) => ({name: control.name, value: control.value, checked: control.checked}));
     const disclosures = Array.from(form.querySelectorAll("details"), (section) => section.open);
     try {
-      sessionStorage.setItem("caelus-settings-return", JSON.stringify({pane, message, controls, disclosures}));
+      sessionStorage.setItem("caelus-settings-return", JSON.stringify({pane, controls, disclosures}));
     } catch (_error) {
-      showToast(settingsStatus, "Settings saved. Close Settings to refresh the dashboard.");
+      showToast(settingsStatus, t("Settings saved. Close Settings to refresh the dashboard."));
       dialog.addEventListener("close", () => window.location.reload(), {once: true});
       return;
     }
@@ -266,13 +296,13 @@
     const preview = document.createElement("div");
     preview.className = "custom-theme-upload-preview";
     preview.setAttribute("role", "img");
-    preview.setAttribute("aria-label", "Selected theme image preview");
+    preview.setAttribute("aria-label", t("Selected theme image preview"));
     const palette = document.createElement("select");
     palette.className = "custom-theme-palette";
     themePalettes.forEach((item) => {
       const option = document.createElement("option");
       option.value = String(item.id || "");
-      option.textContent = String(item.name || item.id || "Palette");
+      option.textContent = t(item.name || item.id || "Palette");
       palette.appendChild(option);
     });
     const swatches = document.createElement("span");
@@ -287,18 +317,18 @@
     };
     palette.addEventListener("change", updatePalette);
     updatePalette();
-    const paletteField = customThemeField("Palette", palette);
+    const paletteField = customThemeField(t("Palette"), palette);
     paletteField.appendChild(swatches);
     const imageName = document.createElement("input");
     imageName.type = "text";
     imageName.maxLength = 60;
-    imageName.placeholder = "Image name";
+    imageName.placeholder = t("Image name");
     imageName.className = "custom-theme-image-name";
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = "button-secondary";
     remove.dataset.removeCustomImage = "";
-    remove.textContent = "Remove Image";
+    remove.textContent = t("Remove Image");
     remove.addEventListener("click", () => {
       if (preview.dataset.objectUrl) URL.revokeObjectURL(preview.dataset.objectUrl);
       row.remove();
@@ -322,7 +352,7 @@
     grid.append(customThemeField("Image selector", file), customThemeField("Image", preview), paletteField);
     const actions = document.createElement("div");
     actions.className = "custom-theme-image-actions";
-    actions.append(customThemeField("Image name", imageName), remove);
+    actions.append(customThemeField(t("Image name"), imageName), remove);
     row.append(grid, actions);
     customThemeImages.appendChild(row);
     updateCustomThemeRowActions();
@@ -356,12 +386,12 @@
     collection.dataset.customThemeId = String(theme.id || "");
     const header = document.createElement("header");
     const title = document.createElement("strong");
-    title.textContent = String(theme.name || "Custom Theme");
+    title.textContent = String(theme.name || t("Custom Theme"));
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = "custom-theme-delete";
     remove.dataset.deleteCustomTheme = String(theme.id || "");
-    remove.textContent = "Delete";
+    remove.textContent = t("Delete");
     header.append(title, remove);
     const picker = document.createElement("div");
     picker.className = "theme-picker";
@@ -377,13 +407,13 @@
       preview.className = "theme-preview";
       preview.style.backgroundImage = `url('${String(image.thumbnail_url || "")}')`;
       const badge = document.createElement("b");
-      badge.textContent = "Custom";
+      badge.textContent = t("Custom");
       preview.appendChild(badge);
       const copy = document.createElement("span");
       const imageTitle = document.createElement("strong");
-      imageTitle.textContent = String(image.name || "Custom Theme");
+      imageTitle.textContent = String(image.name || t("Custom Theme"));
       const paletteName = document.createElement("small");
-      paletteName.textContent = String(image.palette_name || "Custom palette");
+      paletteName.textContent = t(image.palette_name || "Custom palette");
       copy.append(imageTitle, paletteName);
       label.append(radio, preview, copy);
       picker.appendChild(label);
@@ -396,7 +426,7 @@
     const rows = Array.from(customThemeImages?.querySelectorAll(".custom-theme-image-row") || []);
     const name = String(customThemeName?.value || "").trim();
     if (!name) {
-      if (customThemeStatus) showToast(customThemeStatus, "Enter a theme name.", true);
+      if (customThemeStatus) showToast(customThemeStatus, t("Enter a theme name."), true);
       return;
     }
     const payload = new FormData();
@@ -407,11 +437,11 @@
       const imageName = String(row.querySelector(".custom-theme-image-name")?.value || "").trim();
       const palette = String(row.querySelector(".custom-theme-palette")?.value || "");
       if (!file || !imageName) {
-        if (customThemeStatus) showToast(customThemeStatus, "Choose and name every image.", true);
+        if (customThemeStatus) showToast(customThemeStatus, t("Choose and name every image."), true);
         return;
       }
       if (file.size > 5 * 1024 * 1024) {
-        if (customThemeStatus) showToast(customThemeStatus, "Each image must be 5 MB or smaller.", true);
+        if (customThemeStatus) showToast(customThemeStatus, t("Each image must be 5 MB or smaller."), true);
         return;
       }
       payload.append("images", file);
@@ -420,19 +450,19 @@
     }
     const originalLabel = customThemeCreate.textContent;
     customThemeCreate.disabled = true;
-    customThemeCreate.textContent = "Creating…";
-    if (customThemeStatus) showToast(customThemeStatus, "Processing images…");
+    customThemeCreate.textContent = t("Creating…");
+    if (customThemeStatus) showToast(customThemeStatus, t("Processing images…"));
     try {
       const response = await mutationFetch("/api/themes", {method: "POST", body: payload});
       const result = await response.json().catch(() => ({}));
-      if (!response.ok || !result.ok) throw new Error(result.detail || "Could not create theme.");
+      if (!response.ok || !result.ok) throw new Error(result.detail || t("Could not create theme."));
       const created = result.theme;
       created.images = (created.images || []).map((image) => ({...image, style: result.styles?.[image.selection] || ""}));
       appendCustomThemeCollection(created);
       closeCustomThemeDialog();
-      if (settingsStatus) showToast(settingsStatus, "Custom theme created. Choose an image, then save Appearance.");
+      if (settingsStatus) showToast(settingsStatus, t("Custom theme created. Choose an image, then save Appearance."));
     } catch (error) {
-      if (customThemeStatus) showToast(customThemeStatus, error.message || "Could not create theme.", true);
+      if (customThemeStatus) showToast(customThemeStatus, t(error.message) || t("Could not create theme."), true);
     } finally {
       customThemeCreate.disabled = false;
       customThemeCreate.textContent = originalLabel;
@@ -448,7 +478,7 @@
     try {
       const response = await mutationFetch(`/api/themes/${encodeURIComponent(themeId)}`, {method: "DELETE", body: payload});
       const result = await response.json().catch(() => ({}));
-      if (!response.ok || !result.ok) throw new Error(result.detail || "Could not delete theme.");
+      if (!response.ok || !result.ok) throw new Error(result.detail || t("Could not delete theme."));
       const collection = button.closest(".custom-theme-collection");
       if (collection?.querySelector('input[name="theme"]:checked')) {
         const garden = form.querySelector('input[name="theme"][value="garden"]');
@@ -458,11 +488,11 @@
         }
       }
       collection?.remove();
-      if (settingsStatus) showToast(settingsStatus, "Custom theme deleted.");
+      if (settingsStatus) showToast(settingsStatus, t("Custom theme deleted."));
     } catch (error) {
       button.disabled = false;
       if (settingsStatus) {
-        showToast(settingsStatus, error.message || "Could not delete theme.", true);
+        showToast(settingsStatus, t(error.message) || t("Could not delete theme."), true);
       }
     }
   }
@@ -488,8 +518,8 @@
     const pane = event.target.closest("[data-pane]");
     if (pane) activatePane(pane.dataset.pane, false);
     if (settingsStatus) {
-      const fieldName = event.target.closest("label")?.querySelector("span")?.textContent || "highlighted field";
-      showToast(settingsStatus, `Check the ${fieldName.toLowerCase()} before saving.`, true);
+      const fieldName = event.target.closest("label")?.querySelector("span")?.textContent || t("highlighted field");
+      showToast(settingsStatus, t("Check the {field} before saving.", {field: fieldName.toLocaleLowerCase(displayRegion)}), true);
     }
   }, true);
   async function savePane(paneName, saveButton) {
@@ -518,28 +548,29 @@
 
     const originalLabel = saveButton.textContent;
     saveButton.disabled = true;
-    saveButton.textContent = "Saving…";
+    saveButton.textContent = t("Saving…");
     if (settingsStatus) {
-      showToast(settingsStatus, `Saving ${paneName.replace("-", " & ")} settings…`);
+      showToast(settingsStatus, t("Saving settings…"));
     }
     try {
       const response = await mutationFetch(form.action, {method: "POST", body: formData});
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload.ok) {
-        throw new Error(payload.detail || `Settings could not be saved (${response.status})`);
+        throw new Error(typeof payload.detail === "string"
+          ? t(payload.detail) : t("Settings could not be saved ({status})", {status: response.status}));
       }
       if (paneName === "appearance") {
         originalTileStyle = tileStyleSelect?.value || originalTileStyle;
         originalTheme = themeInputs().find((input) => input.checked)?.value || originalTheme;
       }
-      if (settingsStatus) showToast(settingsStatus, `${originalLabel.replace("Save ", "")} saved.`);
+      if (settingsStatus) showToast(settingsStatus, t(paneSavedMessages[paneName] || "Settings saved."));
       if (paneName === "station") {
         setDashboardRefreshInterval(Number(ecowittInterval?.value));
       }
-      refreshSavedSettings(paneName, `${originalLabel.replace("Save ", "")} saved.`);
+      refreshSavedSettings(paneName);
     } catch (error) {
       if (settingsStatus) {
-        showToast(settingsStatus, error.message || "Settings could not be saved.", true);
+        showToast(settingsStatus, t(error.message) || t("Settings could not be saved."), true);
       }
     } finally {
       saveButton.disabled = false;
@@ -573,8 +604,8 @@
       const row = document.createElement("div");
       const name = document.createElement("strong");
       const detail = document.createElement("span");
-      name.textContent = sensor.name || "Ecowitt sensor";
-      detail.textContent = `${sensor.family || "Ecowitt"} · ID ${sensor.id || "unknown"} · ${sensor.reporting === false ? "not reporting" : `signal ${sensor.signal ?? "—"}`}`;
+      name.textContent = sensor.name || t("Ecowitt sensor");
+      detail.textContent = `${sensor.family || "Ecowitt"} · ID ${sensor.id || t("unknown")} · ${sensor.reporting === false ? t("not reporting") : t("signal {strength}", {strength: sensor.signal ?? "—"})}`;
       row.append(name, detail);
       ecowittInventory.append(row);
     });
@@ -588,7 +619,7 @@
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || !payload.ok) {
-      throw new Error(payload.error || payload.detail || `Ecowitt request failed (${response.status})`);
+      throw new Error(payload.error || payload.detail || t("Ecowitt request failed ({status})", {status: response.status}));
     }
     return payload;
   }
@@ -596,16 +627,18 @@
   ecowittDiscoverButton?.addEventListener("click", async () => {
     ecowittDiscoverButton.disabled = true;
     ecowittSaveButton.disabled = true;
-    if (ecowittStatus) showToast(ecowittStatus, "Querying the Ecowitt gateway…");
+    if (ecowittStatus) showToast(ecowittStatus, t("Querying the Ecowitt gateway…"));
     try {
       ecowittDiscovery = await ecowittRequest("/api/ecowitt/discover", {gateway_url: ecowittUrl.value});
       renderEcowittInventory(ecowittDiscovery.inventory);
-      if (ecowittStatus) showToast(ecowittStatus, `${ecowittDiscovery.gateway_model}: ${ecowittDiscovery.inventory.length} registered sensor(s), ${ecowittDiscovery.live_metric_count} live metric(s).`);
+      if (ecowittStatus) showToast(ecowittStatus, t("{model}: {sensors} registered sensor(s), {metrics} live metric(s).", {
+        model: ecowittDiscovery.gateway_model, sensors: ecowittDiscovery.inventory.length, metrics: ecowittDiscovery.live_metric_count,
+      }));
       ecowittSaveButton.disabled = false;
     } catch (error) {
       ecowittDiscovery = null;
       renderEcowittInventory([]);
-      if (ecowittStatus) showToast(ecowittStatus, error.message || "Gateway discovery failed.", true);
+      if (ecowittStatus) showToast(ecowittStatus, t(error.message) || t("Gateway discovery failed."), true);
     } finally {
       ecowittDiscoverButton.disabled = false;
     }
@@ -639,20 +672,22 @@
       poll_interval_seconds: Number(card.querySelector(`[name="${prefix}_poll_interval_seconds"]`).value),
     };
     button.disabled = true;
-    showToast(settingsStatus, "Saving station connection…");
+    showToast(settingsStatus, t("Saving station connection…"));
     try {
       await ecowittRequest(`/api/stations/${key}/settings`, payload);
       if (key === "ecowitt" && ecowittSummary) {
-        ecowittSummary.textContent = enabled ? ecowittDiscovery?.gateway_model || "Ecowitt polling enabled" : "Ecowitt polling disabled";
+        ecowittSummary.textContent = enabled ? ecowittDiscovery?.gateway_model || t("Ecowitt polling enabled") : t("Ecowitt polling disabled");
       }
-      showToast(settingsStatus, `${key === "ecowitt" ? "Ecowitt" : key === "wmr100_usb" ? "Oregon Scientific" : key === "davis_vue" ? "Davis Vantage Vue" : "AcuRite"} saved. ${enabled ? "Waiting for fresh readings." : "Acquisition disabled; history retained."}`);
+      showToast(settingsStatus, t("{station} saved.", {station: {
+        ecowitt: "Ecowitt", wmr100_usb: "Oregon Scientific", davis_vue: "Davis Vantage Vue", acurite_usb: "AcuRite",
+      }[key]}) + " " + t(enabled ? "Waiting for fresh readings." : "Acquisition disabled; history retained."));
       await refreshStationConnections();
       if (key === stationKey) {
         setDashboardRefreshInterval(payload.poll_interval_seconds);
         await refreshEcowittDashboard();
       }
     } catch (error) {
-      showToast(settingsStatus, error.message || "Station could not be saved.", true);
+      showToast(settingsStatus, t(error.message) || t("Station could not be saved."), true);
     } finally {
       button.disabled = false;
     }
@@ -670,12 +705,12 @@
         const target = form.querySelector(`[data-source-status="${item.key}"]`);
         if (!target) return;
         const status = item.status;
-        target.textContent = !status.enabled ? "Disabled · history retained" : status.last_error ||
-          (status.observation_fresh ? "Receiving fresh observations" : status.connected ? "Connected · waiting for outdoor sensors" : "Waiting for connection");
+        target.textContent = !status.enabled ? t("Disabled · history retained") : status.last_error ||
+          (status.observation_fresh ? t("Receiving fresh observations") : status.connected ? t("Connected · waiting for outdoor sensors") : t("Waiting for connection"));
         target.classList.toggle("is-error", Boolean(status.enabled && status.last_error));
       });
     } catch (_error) {
-      form.querySelectorAll("[data-source-status]").forEach((item) => { item.textContent = "Connection status unavailable"; });
+      form.querySelectorAll("[data-source-status]").forEach((item) => { item.textContent = t("Connection status unavailable"); });
     }
   }
   refreshStationConnections();
@@ -696,7 +731,7 @@
       });
       if (previousButton) previousButton.hidden = pageStart === 0;
       if (nextButton) nextButton.hidden = pageEnd >= hours.length;
-      if (status) status.textContent = `Hours ${pageStart + 1}–${pageEnd} of ${hours.length}`;
+      if (status) status.textContent = t("Hours {start}–{end} of {total}", {start: pageStart + 1, end: pageEnd, total: hours.length});
     }
 
     previousButton?.addEventListener("click", () => {
@@ -715,7 +750,7 @@
   if (detectButton) {
     detectButton.addEventListener("click", async () => {
       detectButton.disabled = true;
-      if (detectStatus) showToast(detectStatus, "Finding approximate location…");
+      if (detectStatus) showToast(detectStatus, t("Finding approximate location…"));
       try {
         const csrfToken = form.querySelector('input[name="csrf_token"]')?.value || "";
         const response = await mutationFetch("/api/location/detect", {
@@ -724,15 +759,15 @@
           body: new URLSearchParams({csrf_token: csrfToken}).toString(),
         });
         const payload = await response.json();
-        if (!response.ok || !payload.ok) throw new Error(payload.reason || "Location detection failed");
+        if (!response.ok || !payload.ok) throw new Error(payload.reason || t("Location detection failed"));
         document.getElementById("locationLatitude").value = Number(payload.latitude).toFixed(4);
         document.getElementById("locationLongitude").value = Number(payload.longitude).toFixed(4);
         document.getElementById("locationTimezone").value = payload.timezone || "UTC";
         if (payload.location_name) document.getElementById("locationName").value = payload.location_name;
         document.getElementById("autoLocation").value = "true";
-        if (detectStatus) showToast(detectStatus, `Located via ${payload.provider}. Save Location to refresh the dashboard.`);
+        if (detectStatus) showToast(detectStatus, t("Located via {provider}. Save Location to refresh the dashboard.", {provider: payload.provider}));
       } catch (error) {
-        if (detectStatus) showToast(detectStatus, error.message || "Location detection failed", true);
+        if (detectStatus) showToast(detectStatus, t(error.message) || t("Location detection failed"), true);
       } finally {
         detectButton.disabled = false;
       }
@@ -827,11 +862,17 @@
     canvas.dataset.illumination = String(illuminationPercent);
     canvas.dataset.brightLimbAngle = String(moon.bright_limb_angle || 0);
     canvas.dataset.diskRotation = String(moon.disk_rotation || 0);
-    const viewLabel = moon.view_label || "Observer-local view";
-    canvas.setAttribute("aria-label", `${viewLabel} of the ${moon.name}, ${illuminationPercent} percent illuminated`);
+    const viewLabel = t(moon.view_label || "Observer-local view");
+    canvas.setAttribute("aria-label", t("{view} of the {phase}, {amount} percent illuminated", {
+      view: viewLabel, phase: t(moon.name), amount: illuminationPercent,
+    }));
+    const phase = t(moon.name);
+    const view = viewLabel.toLocaleLowerCase(displayRegion);
     canvas.title = moon.representative_date
-      ? `${moon.name} · ${viewLabel.toLowerCase()} near lunar transit on ${moon.representative_date}`
-      : `${moon.name} · ${viewLabel.toLowerCase()} now`;
+      ? t("{phase} · {view} near lunar transit on {date}", {
+        phase, view, date: displayDate(moon.representative_date, moon.representative_date, {timeZone: "UTC", dateStyle: "medium"}),
+      })
+      : t("{phase} · {view} now", {phase, view});
   }
 
   function renderLocalMoon(moon) {
@@ -851,7 +892,7 @@
       bright_limb_angle: canvas.dataset.localBrightLimbAngle,
       disk_rotation: canvas.dataset.localDiskRotation,
       representative_date: canvas.dataset.representativeDate,
-      name: canvas.closest(".lunar-step")?.querySelector("[data-phase-name]")?.textContent || "Moon phase",
+      name: canvas.closest(".lunar-step")?.querySelector("[data-phase-name]")?.textContent || t("Moon phase"),
     };
   }
 
@@ -873,7 +914,7 @@
         illumination: current.dataset.illumination,
         bright_limb_angle: current.dataset.localBrightLimbAngle,
         disk_rotation: current.dataset.localDiskRotation,
-        name: document.getElementById("currentMoonName")?.textContent || "Moon",
+        name: document.getElementById("currentMoonName")?.textContent || t("Moon"),
       });
     }
     document.querySelectorAll("[data-phase-moon]").forEach((canvas) => {
@@ -886,7 +927,7 @@
       button.setAttribute("aria-pressed", active ? "true" : "false");
     });
     const status = document.getElementById("lunarViewStatus");
-    if (status) status.textContent = reference ? "Reference phase diagram" : "Observer-local phase timeline";
+    if (status) status.textContent = reference ? t("Reference phase diagram") : t("Observer-local phase timeline");
     const orientation = document.getElementById("moonLocalView");
     if (orientation) {
       orientation.hidden = reference;
@@ -927,9 +968,9 @@
       canvas.dataset.localBrightLimbAngle = phase.bright_limb_angle;
       canvas.dataset.localDiskRotation = phase.disk_rotation;
       canvas.dataset.representativeDate = phase.representative_date;
-      if (name) name.textContent = phase.name;
+      if (name) name.textContent = t(phase.name);
       if (date) {
-        date.textContent = phase.date_label;
+        date.textContent = displayDate(phase.representative_date, phase.date_label, {timeZone: "UTC", month: "short", day: "numeric"});
         date.setAttribute("datetime", phase.representative_date);
       }
       renderMoonForView(canvas, phase);
@@ -1046,7 +1087,7 @@
       illumination: initialMoonDisk.dataset.illumination,
       bright_limb_angle: initialMoonDisk.dataset.brightLimbAngle,
       disk_rotation: initialMoonDisk.dataset.diskRotation,
-      name: document.getElementById("currentMoonName")?.textContent || "Moon",
+      name: document.getElementById("currentMoonName")?.textContent || t("Moon"),
     });
   }
   const initialPhaseCanvases = Array.from(document.querySelectorAll("[data-phase-moon]"));
@@ -1081,10 +1122,10 @@
       const mapUrl = windyFrame.getAttribute("src");
       if (!mapUrl) return;
       windyResetButton.disabled = true;
-      windyResetButton.textContent = "Resetting…";
+      windyResetButton.textContent = t("Resetting…");
       windyFrame.addEventListener("load", () => {
         windyResetButton.disabled = false;
-        windyResetButton.textContent = "× Close forecast";
+        windyResetButton.textContent = t("× Close forecast");
       }, {once: true});
       windyFrame.setAttribute("src", mapUrl);
     });
@@ -1099,13 +1140,17 @@
     if (value == null) return "—";
     const numeric = Number(value);
     if (!Number.isFinite(numeric)) return "—";
-    return `${numeric.toFixed(Number(decimals) || 0)}${unit ? ` ${unit}` : ""}`;
+    const precision = Number(decimals) || 0;
+    const formatted = displayNumber(numeric, {
+      minimumFractionDigits: precision, maximumFractionDigits: precision, useGrouping: false,
+    });
+    return `${formatted}${unit ? ` ${unit}` : ""}`;
   }
 
   function metricTime(value, timezoneName) {
     const date = metricDate(value);
     if (Number.isNaN(date.getTime())) return "—";
-    return new Intl.DateTimeFormat(undefined, {
+    return new Intl.DateTimeFormat(displayRegion, {
       timeZone: timezoneName,
       hour: "numeric",
       minute: "2-digit",
@@ -1127,15 +1172,15 @@
   let fullGraphRequestSequence = 0;
 
   const graphRangeLabels = new Map([
-    [1, "Last hour"], [6, "Last 6 hours"], [12, "Last 12 hours"], [24, "Last 24 hours"],
-    [72, "Last 3 days"], [168, "Last 7 days"], [336, "Last 14 days"], [696, "Last 29 days"],
+    [1, t("Last hour")], [6, t("Last 6 hours")], [12, t("Last 12 hours")], [24, t("Last 24 hours")],
+    [72, t("Last 3 days")], [168, t("Last 7 days")], [336, t("Last 14 days")], [696, t("Last 29 days")],
   ]);
 
   function updateGraphSelectionState(message = "") {
     const count = graphMetricInputs.filter((input) => input.checked).length;
-    if (graphSelectionCount) graphSelectionCount.textContent = `${count} of 4`;
+    if (graphSelectionCount) graphSelectionCount.textContent = t("{count} of 4", {count});
     if (graphSelectionStatus) {
-      graphSelectionStatus.textContent = message || "Select up to four metrics.";
+      graphSelectionStatus.textContent = message || t("Select up to four metrics.");
       graphSelectionStatus.classList.toggle("is-error", Boolean(message));
     }
   }
@@ -1145,7 +1190,7 @@
       const selected = graphMetricInputs.filter((item) => item.checked);
       if (selected.length > 4) {
         input.checked = false;
-        updateGraphSelectionState("A maximum of four metrics can be graphed.");
+        updateGraphSelectionState(t("A maximum of four metrics can be graphed."));
         return;
       }
       updateGraphSelectionState();
@@ -1164,7 +1209,7 @@
     const numeric = Number(value);
     if (!Number.isFinite(numeric)) return "—";
     const precision = Math.min(2, Math.max(0, Number(decimals) || 0));
-    return numeric.toLocaleString(undefined, {minimumFractionDigits: precision, maximumFractionDigits: precision});
+    return numeric.toLocaleString(displayRegion, {minimumFractionDigits: precision, maximumFractionDigits: precision});
   }
 
   function fullGraphTimeLabel(time, payload, isDayBoundary = false) {
@@ -1175,12 +1220,14 @@
     }).formatToParts(date).map((part) => [part.type, part.value]));
     if (isDayBoundary || (payload.hours <= 24 && parts.hour === "00"
       && (payload.hours > 6 || parts.minute === "00"))) {
-      return `${parts.day}${parts.month}`;
+      return displayRegion === "en-US" ? `${parts.day}${parts.month}`
+        : new Intl.DateTimeFormat(displayRegion, {timeZone: payload.timezone, day: "numeric", month: "short"}).format(date);
     }
     const options = payload.hours <= 24
       ? {timeZone: payload.timezone, hour: "numeric", minute: payload.hours <= 6 ? "2-digit" : undefined}
       : {timeZone: payload.timezone, month: "short", day: "numeric"};
-    return new Intl.DateTimeFormat(undefined, options).format(date).replace(" ", "");
+    const label = new Intl.DateTimeFormat(displayRegion, options).format(date);
+    return displayRegion === "en-US" ? label.replace(" ", "") : label;
   }
 
   function fullGraphDayTicks(startTime, endTime, timezoneName) {
@@ -1355,7 +1402,10 @@
       context.fillText(label, legendX + 15, 21);
       legendX += context.measureText(label).width + 42;
     });
-    canvas.setAttribute("aria-label", `${graphRangeLabels.get(Number(payload.hours)) || `${payload.hours} hours`} graph of ${metrics.map((metric) => metric.label).join(", ")}`);
+    canvas.setAttribute("aria-label", t("{range} graph of {metrics}", {
+      range: graphRangeLabels.get(Number(payload.hours)) || t("{hours} hours", {hours: payload.hours}),
+      metrics: metrics.map((metric) => metric.label).join(", "),
+    }));
   }
 
   async function renderSelectedFullGraph({silent = false} = {}) {
@@ -1365,39 +1415,39 @@
       renderedGraphPayload = null;
       renderedGraphKeys = [];
       if (fullScreenGraph) fullScreenGraph.width = fullScreenGraph.width;
-      if (graphStageTitle) graphStageTitle.textContent = graphRangeLabels.get(selectedGraphHours) || `${selectedGraphHours} hours`;
-      if (graphStageMeta) graphStageMeta.textContent = "No metrics selected";
+      if (graphStageTitle) graphStageTitle.textContent = graphRangeLabels.get(selectedGraphHours) || t("{hours} hours", {hours: selectedGraphHours});
+      if (graphStageMeta) graphStageMeta.textContent = t("No metrics selected");
       if (graphStageMessage) {
         graphStageMessage.hidden = false;
-        graphStageMessage.textContent = "Select at least one metric.";
+        graphStageMessage.textContent = t("Select at least one metric.");
       }
-      updateGraphSelectionState("Select at least one metric.");
+      updateGraphSelectionState(t("Select at least one metric."));
       return;
     }
     const requestSequence = ++fullGraphRequestSequence;
     if (!silent && graphStageMessage) {
       graphStageMessage.hidden = false;
-      graphStageMessage.textContent = "Loading graph data…";
+      graphStageMessage.textContent = t("Loading graph data…");
     }
     try {
       const response = await fetch(stationUrl(`/api/metrics/range?hours=${selectedGraphHours}`), {cache: "no-store"});
-      if (!response.ok) throw new Error("Graph data is unavailable.");
+      if (!response.ok) throw new Error(t("Graph data is unavailable."));
       const payload = await response.json();
       if (requestSequence !== fullGraphRequestSequence) return;
-      const metricsByKey = new Map((payload.metrics || []).map((metric) => [metric.key, metric]));
+      const metricsByKey = new Map((payload.metrics || []).map((metric) => [metric.key, {...metric, label: t(metric.label)}]));
       const selectedMetrics = selectedKeys.map((key) => metricsByKey.get(key)).filter(Boolean);
-      if (!selectedMetrics.length) throw new Error("No stored readings are available for the selected metrics.");
+      if (!selectedMetrics.length) throw new Error(t("No stored readings are available for the selected metrics."));
       renderedGraphPayload = payload;
       renderedGraphKeys = selectedMetrics.map((metric) => metric.key);
-      if (graphStageTitle) graphStageTitle.textContent = graphRangeLabels.get(Number(payload.hours)) || `${payload.hours} hours`;
+      if (graphStageTitle) graphStageTitle.textContent = graphRangeLabels.get(Number(payload.hours)) || t("{hours} hours", {hours: payload.hours});
       if (graphStageMeta) graphStageMeta.textContent = selectedMetrics.map((metric) => metric.label).join(" · ");
       if (graphStageMessage) graphStageMessage.hidden = true;
       drawFullScreenGraph(fullScreenGraph, selectedMetrics, payload);
-      updateGraphSelectionState(selectedMetrics.length < selectedKeys.length ? "Metrics without stored readings were omitted." : "");
+      updateGraphSelectionState(selectedMetrics.length < selectedKeys.length ? t("Metrics without stored readings were omitted.") : "");
     } catch (error) {
       if (requestSequence === fullGraphRequestSequence && !silent && graphStageMessage) {
         graphStageMessage.hidden = false;
-        graphStageMessage.textContent = error.message || "Graph data is unavailable.";
+        graphStageMessage.textContent = t(error.message) || t("Graph data is unavailable.");
       }
     }
   }
@@ -1418,7 +1468,7 @@
   if (window.ResizeObserver && fullScreenGraph) {
     new ResizeObserver(() => {
       if (!renderedGraphPayload || !graphDialog?.open) return;
-      const metricsByKey = new Map((renderedGraphPayload.metrics || []).map((metric) => [metric.key, metric]));
+      const metricsByKey = new Map((renderedGraphPayload.metrics || []).map((metric) => [metric.key, {...metric, label: t(metric.label)}]));
       drawFullScreenGraph(fullScreenGraph, renderedGraphKeys.map((key) => metricsByKey.get(key)).filter(Boolean), renderedGraphPayload);
     }).observe(fullScreenGraph);
   }
@@ -1470,7 +1520,7 @@
     const tickStep = valueRange / yTickCount;
     const stepDecimals = tickStep < 1 ? 2 : Number.isInteger(tickStep) ? 0 : 1;
     const axisDecimals = Math.min(2, Math.max(Number(metric.decimals) || 0, stepDecimals));
-    const formatAxisValue = (value) => Number(value).toLocaleString(undefined, {
+    const formatAxisValue = (value) => Number(value).toLocaleString(displayRegion, {
       minimumFractionDigits: axisDecimals,
       maximumFractionDigits: axisDecimals,
     });
@@ -1506,12 +1556,12 @@
       context.lineTo(tickX, bottom);
       context.stroke();
       const tickDate = new Date(tickTime);
-      const tickLabel = new Intl.DateTimeFormat(undefined, displayedDuration < 6 * 60 * 60 * 1000
-        ? {timeZone: timezoneName, hour: "numeric", minute: "2-digit"}
-        : {timeZone: timezoneName, hour: "numeric", hour12: true}
-      ).format(tickDate);
+      const tickLabel = new Intl.DateTimeFormat(displayRegion, {
+        timeZone: timezoneName, hour: "numeric",
+        minute: displayedDuration < 6 * 60 * 60 * 1000 ? "2-digit" : undefined,
+      }).format(tickDate);
       context.textAlign = tick === 0 ? "left" : tick === tickCount ? "right" : "center";
-      context.fillText(tickLabel.replace(" ", ""), tickX, height - 9);
+      context.fillText(displayRegion === "en-US" ? tickLabel.replace(" ", "") : tickLabel, tickX, height - 9);
     }
 
     const average = points.reduce((sum, point) => sum + point.value, 0) / points.length;
@@ -1526,7 +1576,7 @@
       context.stroke();
       context.restore();
 
-      const averageLabel = `AVG ${metricValue(average, metric.decimals, metric.unit)}`;
+      const averageLabel = t("AVG {value}", {value: metricValue(average, metric.decimals, metric.unit)});
       context.font = "700 9px Inter, sans-serif";
       context.textAlign = "right";
       context.textBaseline = "middle";
@@ -1638,7 +1688,7 @@
     context.fillText("N", centerX, centerY - radius - 14);
     context.fillText("E", centerX + radius + 14, centerY);
     context.fillText("S", centerX, centerY + radius + 14);
-    context.fillText("W", centerX - radius - 14, centerY);
+    context.fillText(t("W"), centerX - radius - 14, centerY);
 
     if (total) {
       const dominantIndex = bins.reduce((best, bin, index) => bin.count > bins[best].count ? index : best, 0);
@@ -1649,13 +1699,13 @@
       context.fill();
       context.fillStyle = "#ffffff";
       context.font = "700 11px Inter, sans-serif";
-      context.fillText(windDirections[dominantIndex], centerX, centerY - 5);
+      context.fillText(t(windDirections[dominantIndex]), centerX, centerY - 5);
       context.font = "700 9px Inter, sans-serif";
       context.fillText(`${dominantPercent}%`, centerX, centerY + 8);
     } else {
       context.fillStyle = muted;
       context.font = "10px Inter, sans-serif";
-      context.fillText("No wind samples", centerX, centerY);
+      context.fillText(t("No wind samples"), centerX, centerY);
     }
 
     const legendWidth = 180;
@@ -1859,7 +1909,7 @@
     context.textAlign = "center";
     [["N", 0], ["E", 90], ["S", 180], ["W", 270]].forEach(([label, degrees]) => {
       const angle = (degrees - 90) * Math.PI / 180;
-      context.fillText(label, centerX + Math.cos(angle) * 53, centerY + Math.sin(angle) * 53 + 5);
+      context.fillText(t(label), centerX + Math.cos(angle) * 53, centerY + Math.sin(angle) * 53 + 5);
     });
     const value = metric.current == null ? NaN : Number(metric.current);
     if (Number.isFinite(value)) {
@@ -1909,7 +1959,7 @@
     canvas.setAttribute("role", "img");
     const stats = document.createElement("dl");
     stats.className = "weather-metric-stats";
-    const statElements = ["Min", "Avg", "Max"].map((label) => {
+    const statElements = [t("Min"), t("Avg"), t("Max")].map((label) => {
       const item = document.createElement("div");
       const term = document.createElement("dt");
       const definition = document.createElement("dd");
@@ -1933,7 +1983,7 @@
       const exactStats = statsByHours?.[String(hours)] || (!statsByHours && hours === 24 ? displayedMetric.stats : null);
       if (exactStats) {
         [[exactStats.min, exactStats.min_at], [exactStats.avg, null], [exactStats.max, exactStats.max_at]].forEach(([value, timestamp], index) => {
-          statElements[index].term.textContent = isWindRose ? `${hours}h ${["Min", "Avg", "Max"][index]}` : ["Min", "Avg", "Max"][index];
+          statElements[index].term.textContent = isWindRose ? t("{hours}h {stat}", {hours, stat: [t("Min"), t("Avg"), t("Max")][index]}) : [t("Min"), t("Avg"), t("Max")][index];
           statElements[index].definition.textContent = metricValue(value, displayedMetric.decimals, displayedMetric.unit);
           statElements[index].time.textContent = timestamp ? metricTime(timestamp, timezoneName) : "";
           statElements[index].time.dateTime = timestamp || "";
@@ -1952,7 +2002,7 @@
       const maximum = points.reduce((best, point) => point.value > best.value ? point : best);
       const average = points.reduce((sum, point) => sum + point.value, 0) / points.length;
       [[minimum.value, minimum.timestamp], [average, null], [maximum.value, maximum.timestamp]].forEach(([value, timestamp], index) => {
-        statElements[index].term.textContent = isWindRose ? `${hours}h ${["Min", "Avg", "Max"][index]}` : ["Min", "Avg", "Max"][index];
+        statElements[index].term.textContent = isWindRose ? t("{hours}h {stat}", {hours, stat: [t("Min"), t("Avg"), t("Max")][index]}) : [t("Min"), t("Avg"), t("Max")][index];
         statElements[index].definition.textContent = metricValue(value, displayedMetric.decimals, displayedMetric.unit);
         statElements[index].time.textContent = timestamp ? metricTime(timestamp, timezoneName) : "";
         statElements[index].time.dateTime = timestamp || "";
@@ -1963,16 +2013,17 @@
       const hours = displayStyle === "graph6hr" ? 6 : 24;
       const gaugeMode = displayStyle === "gauge";
       const displayedMetric = isWindRose && !gaugeMode ? metric.wind_speed : metric;
-      eyebrow.textContent = gaugeMode ? "Gauge" : `${hours}hr graph`;
-      title.textContent = isWindRose ? (gaugeMode ? "Wind direction" : `${hours}-hour Wind-Rose`) : metric.label;
+      eyebrow.textContent = gaugeMode ? t("Gauge") : t("{hours}hr graph", {hours});
+      title.textContent = isWindRose ? (gaugeMode ? t("Wind direction") : t("{hours}-hour Wind-Rose", {hours})) : metric.label;
       current.textContent = metricValue(displayedMetric.current, displayedMetric.decimals, displayedMetric.unit);
       visual.classList.toggle("is-gauge", gaugeMode);
       visual.classList.toggle("is-round", gaugeMode || Boolean(isWindRose));
       canvas.className = `weather-metric-graph${gaugeMode ? " weather-metric-gauge" : isWindRose ? " wind-rose-graph" : ""}`;
       canvas.setAttribute("aria-label", gaugeMode
-        ? `Gauge for ${title.textContent}`
-        : isWindRose ? `${hours}-hour wind rose with wind-speed bands` : `${hours}-hour graph of ${metric.label}`);
-      card.setAttribute("aria-label", `${title.textContent}, ${eyebrow.textContent}. Click to change display style.`);
+        ? t("Gauge for {title}", {title: title.textContent})
+        : isWindRose ? t("{hours}-hour wind rose with wind-speed bands", {hours})
+          : t("{hours}-hour graph of {metric}", {hours, metric: metric.label}));
+      card.setAttribute("aria-label", t("{title}, {style}. Click to change display style.", {title: title.textContent, style: eyebrow.textContent}));
       updateStats(displayedMetric, gaugeMode ? 24 : hours);
       if (gaugeMode) {
         if (isWindRose) drawCompassGauge(canvas, metric);
@@ -2010,7 +2061,9 @@
       const bin = summary.bins[index];
       const percent = Math.round(bin.count / summary.total * 100);
       const average = bin.count ? (bin.speedTotal / bin.count).toFixed(1) : "0.0";
-      canvas.title = `${summary.hours} Hours wind rose — ${windDirections[index]} ${percent}% — average ${average} ${metric.wind_speed.unit}`;
+      canvas.title = t("{hours} Hours wind rose — {direction} {percent}% — average {average} {unit}", {
+        hours: summary.hours, direction: t(windDirections[index]), percent, average, unit: metric.wind_speed.unit,
+      });
     });
     requestAnimationFrame(render);
     if (window.ResizeObserver) new ResizeObserver(render).observe(canvas);
@@ -2031,13 +2084,13 @@
       if (!metrics.length) {
         const empty = document.createElement("p");
         empty.className = "metric-loading";
-        empty.textContent = "No valid sensor readings have been stored in the last 24 hours.";
+        empty.textContent = t("No valid sensor readings have been stored in the last 24 hours.");
         grid.append(empty);
         return;
       }
       const timezoneName = payload.timezone || section.dataset.timezone || "UTC";
       metrics.forEach((metric) => {
-        grid.append(createMetricCard(metric, payload.generated_at, timezoneName));
+        grid.append(createMetricCard({...metric, label: t(metric.label)}, payload.generated_at, timezoneName));
       });
       const cards = Array.from(grid.querySelectorAll(".weather-metric-card"));
       const expansionStorageKey = "caelus.weatherMetricsExpanded";
@@ -2061,7 +2114,7 @@
         });
         if (!expansionToggle) return;
         expansionToggle.setAttribute("aria-expanded", String(expanded));
-        expansionToggle.setAttribute("aria-label", expanded ? "Show fewer weather sensor metrics" : "Show all weather sensor metrics");
+        expansionToggle.setAttribute("aria-label", expanded ? t("Show fewer weather sensor metrics") : t("Show all weather sensor metrics"));
         const icon = expansionToggle.querySelector("span");
         if (icon) icon.textContent = expanded ? "▼" : "▶";
       };
@@ -2080,7 +2133,7 @@
       grid.replaceChildren();
       const error = document.createElement("p");
       error.className = "metric-loading metric-error";
-      error.textContent = "The 24-hour weather history could not be loaded.";
+      error.textContent = t("The 24-hour weather history could not be loaded.");
       grid.append(error);
     }
   }
@@ -2094,21 +2147,21 @@
       element.classList.toggle("is-waiting", !reporting);
     });
     document.querySelectorAll("[data-station-state-label]").forEach((element) => {
-      element.textContent = reporting ? "Station reporting" : "Station offline";
+      element.textContent = reporting ? t("Station reporting") : t("Station offline");
     });
     const battery = ["OK", "LOW"].includes(status?.station?.battery_status) ? status.station.battery_status : "UNKNOWN";
     const batteryElement = document.querySelector("[data-battery-status]");
     if (batteryElement) {
       batteryElement.dataset.batteryStatus = battery;
-      batteryElement.setAttribute("aria-label", `Battery Status ${battery}`);
-      batteryElement.title = `Battery Status ${battery}`;
+      batteryElement.setAttribute("aria-label", t("Battery Status {status}", {status: t(battery)}));
+      batteryElement.title = t("Battery Status {status}", {status: t(battery)});
     }
     const indicator = document.querySelector("[data-sensor-online-status]");
     const label = indicator?.querySelector("[data-sensor-online-label]");
     if (!indicator || !label) return;
     const online = status?.enabled === true && status?.state === "online";
     indicator.classList.toggle("is-online", online);
-    label.textContent = online ? "Online" : status?.state === "offline" ? "Offline" : "Standing by";
+    label.textContent = online ? t("Online") : status?.state === "offline" ? t("Offline") : t("Standing by");
   }
 
   async function refreshSensorOnlineStatus() {
@@ -2127,19 +2180,22 @@
     const available = reading && Object.keys(reading).length > 0;
     document.querySelectorAll("[data-reading-field]").forEach((element) => {
       const value = reading?.[element.dataset.readingField];
-      element.textContent = value == null ? "—" : `${value}${element.dataset.readingSuffix || ""}`;
+      element.textContent = value == null ? "—"
+        : `${displayNumber(value, {maximumFractionDigits: 3, useGrouping: false})}${element.dataset.readingSuffix || ""}`;
     });
     const observationStatus = document.querySelector("[data-observation-status]");
     if (observationStatus) {
       observationStatus.replaceChildren();
       if (available) {
-        observationStatus.append("Last observation ");
+        observationStatus.append(t("Last observation") + " ");
         const time = document.createElement("time");
         time.dateTime = String(reading.timestamp || "");
-        time.textContent = observationTime || "just now";
+        time.textContent = displayDate(metricDate(reading.timestamp), t(observationTime || "just now"), {
+          timeZone: body.dataset.stationTimezone, dateStyle: "medium", timeStyle: "short",
+        });
         observationStatus.append(time);
       } else {
-        observationStatus.textContent = "Waiting for the first gateway observation";
+        observationStatus.textContent = t("Waiting for the first gateway observation");
       }
     }
 
@@ -2180,7 +2236,47 @@
   }
   setDashboardRefreshInterval(Number(body.dataset.pollIntervalSeconds));
 
+  async function translateProviderText(button, source, alertId, expires) {
+    button.disabled = true;
+    const status = document.createElement("p");
+    status.setAttribute("role", "status");
+    status.textContent = t("Translating…");
+    button.after(status);
+    try {
+      const data = new FormData();
+      data.set("csrf_token", form.elements.csrf_token.value);
+      if (alertId) data.set("alert_id", alertId);
+      const response = await fetch("/api/forecast/translation", {method: "POST", body: data});
+      if (!response.ok) throw new Error();
+      const {source: original, translation} = await response.json();
+      if (!button.isConnected || (expires && Date.now() >= Date.parse(expires))) return;
+      const fields = Object.keys(source);
+      const normalized = value => value.replace(/\r\n?/g, "\n");
+      if (fields.some(field => normalized(source[field]) !== normalized(original[field])
+        || (source[field] && !translation[field]))) throw new Error();
+      status.textContent = t("Machine translation");
+      const translated = document.createElement("div");
+      translated.className = "weather-translation";
+      for (const field of fields) {
+        if (!translation[field]) continue;
+        const paragraph = document.createElement("p");
+        paragraph.textContent = translation[field];
+        translated.append(paragraph);
+      }
+      status.after(translated);
+      button.hidden = true;
+    } catch (_error) {
+      status.textContent = t("Weather translation is unavailable.");
+      button.disabled = false;
+      button.addEventListener("click", () => status.remove(), {once: true});
+    }
+  }
+
   const forecastPanel = document.querySelector('[data-forecast-provider]');
+  forecastPanel?.querySelector("[data-translate-narrative]")?.addEventListener("click", (event) => {
+    const narrative = forecastPanel.querySelector("[data-forecast-narrative]")?.textContent;
+    if (narrative) translateProviderText(event.currentTarget, {narrative});
+  });
   if (forecastPanel?.dataset.forecastProvider === 'us') {
     const notification = forecastPanel.querySelector('[data-severe-weather]');
     const daily = forecastPanel.querySelector('[data-today-forecast]');
@@ -2199,26 +2295,38 @@
       const list = notification.querySelector('[data-alert-list]');
       list.replaceChildren();
       notification.querySelector('[data-alert-status]').hidden = !alertData.alerts_stale;
-      const formatTime = value => new Date(value).toLocaleString(undefined, {
+      const formatTime = value => new Date(value).toLocaleString(displayRegion, {
         timeZone: forecastPanel.dataset.timezone || 'UTC', timeZoneName: 'short',
       });
       alerts.forEach(alert => {
         const article = document.createElement('article');
         article.className = 'severe-weather-alert';
-        const add = (tag, content, className = '') => {
+        const add = (tag, content, className = '', language = '') => {
           if (!content) return;
           const element = document.createElement(tag);
           element.textContent = content;
           element.className = className;
+          if (language) element.lang = language;
           article.append(element);
         };
-        add('h3', alert.event);
-        add('p', alert.headline);
-        add('p', `${alert.severity} · ${alert.senderName}`, 'alert-meta');
-        add('p', alert.areaDesc);
-        add('p', `Effective ${formatTime(alert.effective)} · Until ${formatTime(alert.expires)}`, 'alert-meta');
-        add('p', alert.description, 'alert-description');
-        add('p', alert.instruction, 'alert-instruction');
+        add('h3', alert.event, '', 'en');
+        add('p', alert.headline, '', 'en');
+        add('p', `${t(alert.severity)} · ${alert.senderName}`, 'alert-meta');
+        add('p', alert.areaDesc, '', 'en');
+        add('p', t("Effective {start} · Until {end}", {start: formatTime(alert.effective), end: formatTime(alert.expires)}), 'alert-meta');
+        add('p', alert.description, 'alert-description', 'en');
+        add('p', alert.instruction, 'alert-instruction', 'en');
+        if (translateWeather && alert.id) {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "button-secondary";
+          button.textContent = t("Translate alert");
+          button.addEventListener("click", () => translateProviderText(button, {
+            event: alert.event, headline: alert.headline,
+            description: alert.description, instruction: alert.instruction,
+          }, alert.id, alert.expires));
+          article.append(button);
+        }
         list.append(article);
       });
     }
@@ -2288,20 +2396,22 @@
       const moon = await response.json();
       renderLocalMoon(moon);
       updatePhaseTimeline(moon.previous_phases || [], moon.upcoming_phases || []);
-      document.getElementById("currentMoonName").textContent = moon.name;
+      document.getElementById("currentMoonName").textContent = t(moon.name);
       document.getElementById("currentMoonIllumination").textContent = `${moon.illumination}%`;
-      document.getElementById("currentMoonAge").textContent = moon.age_days;
+      document.getElementById("currentMoonAge").textContent = displayNumber(moon.age_days);
       document.getElementById("moonLocalView").textContent = moon.moon_altitude == null
-        ? "Observer-local orientation"
-        : `Observer-local orientation · ${moon.moon_altitude}° altitude${moon.moon_altitude < 0 ? " (below horizon)" : ""}`;
+        ? t("Observer-local orientation")
+        : t("Observer-local orientation · {angle}° altitude{below}", {
+          angle: displayNumber(moon.moon_altitude), below: moon.moon_altitude < 0 ? " " + t("(below horizon)") : "",
+        });
       updateLunarEventTimeline(moon);
-      document.getElementById("mapSunriseTime").textContent = moon.sunrise_display || formatSolarTime(moon.sunrise);
-      document.getElementById("mapSunsetTime").textContent = moon.sunset_display || formatSolarTime(moon.sunset);
-      document.getElementById("solarNoonTime").textContent = moon.solar_noon_display || formatSolarTime(moon.solar_noon);
+      document.getElementById("mapSunriseTime").textContent = displayClock(moon.sunrise, moon.sunrise_display || formatSolarTime(moon.sunrise));
+      document.getElementById("mapSunsetTime").textContent = displayClock(moon.sunset, moon.sunset_display || formatSolarTime(moon.sunset));
+      document.getElementById("solarNoonTime").textContent = displayClock(moon.solar_noon, moon.solar_noon_display || formatSolarTime(moon.solar_noon));
       document.getElementById("daylightDuration").textContent = moon.daylight_duration;
-      document.getElementById("nextSeasonLabel").textContent = moon.next_season_label ?? "—";
+      document.getElementById("nextSeasonLabel").textContent = t(moon.next_season_label ?? "—");
       const nextSeasonDate = document.getElementById("nextSeasonDate");
-      nextSeasonDate.textContent = moon.next_season_date ?? "—";
+      nextSeasonDate.textContent = displayDate(moon.next_season_at?.slice(0, 10), moon.next_season_date ?? "—", {timeZone: "UTC", dateStyle: "medium"});
       nextSeasonDate.setAttribute("datetime", moon.next_season_at || "");
       const eclipseList = document.getElementById("nextEclipseList");
       eclipseList.replaceChildren();
@@ -2310,24 +2420,24 @@
         const emptyItem = document.createElement("li");
         emptyItem.className = "eclipse-empty";
         emptyItem.textContent = moon.eclipse_calculation_available
-          ? "No visible eclipses for the next 12 months"
-          : "Eclipse calculations unavailable · rerun the Caelus installer";
+          ? t("No visible eclipses for the next 12 months")
+          : t("Eclipse calculations unavailable · rerun the Caelus installer");
         eclipseList.append(emptyItem);
       } else {
         eclipses.forEach((eclipse) => {
           const item = document.createElement("li");
           const kind = document.createElement("strong");
           const date = document.createElement("time");
-          kind.textContent = eclipse.kind || "Eclipse";
-          date.textContent = eclipse.date || "—";
+          kind.textContent = t(eclipse.kind || "Eclipse");
+          date.textContent = displayDate(eclipse.at?.slice(0, 10), eclipse.date || "—", {timeZone: "UTC", dateStyle: "medium"});
           date.setAttribute("datetime", eclipse.at || "");
           item.append(kind, date);
           eclipseList.append(item);
         });
       }
-      document.getElementById("sunState").textContent = moon.sun_is_up ? "Sun above horizon" : "Sun below horizon";
+      document.getElementById("sunState").textContent = moon.sun_is_up ? t("Sun above horizon") : t("Sun below horizon");
       updateDaylightTrack(moon.daylight_progress);
-      document.getElementById("lunarUpdated").textContent = `Updated ${moon.updated_at.slice(11, 16)} UTC`;
+      document.getElementById("lunarUpdated").textContent = t("Updated {time} UTC", {time: moon.updated_at.slice(11, 16)});
       renderSelectedLunarView();
     } catch (_error) {
       return;
@@ -2370,7 +2480,7 @@
       activatePane(saved.pane, true);
       applyThemeInput(themeInputs().find((input) => input.checked));
       applyTileStyle(tileStyleSelect?.value || originalTileStyle);
-      showToast(settingsStatus, saved.message);
+      showToast(settingsStatus, t(paneSavedMessages[saved.pane] || "Settings saved."));
     }
   } catch (_error) {
     // A blocked or stale session store must not prevent dashboard use.
@@ -2409,13 +2519,15 @@
     const imperial = row.dataset.unitSystem === 'imperial';
     const averages = ready ? payload.averages || {} : {};
     const format = (value, factor, offset, digits, unit) => Number.isFinite(value)
-      ? (value * factor + offset).toFixed(digits) + unit : '—';
+      ? displayNumber(value * factor + offset, {
+        minimumFractionDigits: digits, maximumFractionDigits: digits, useGrouping: false,
+      }) + unit : '—';
     const statistics = (field, ...units) => ready
       ? ['min', 'max', 'avg'].map(stat => {
         const key = stat === 'avg' ? field : `${field}_${stat}`;
         const year = averages[`${key}_year`];
         const suffix = stat !== 'avg' && Number.isFinite(averages[key]) && Number.isInteger(year) ? ` (${year})` : '';
-        return `${stat[0].toUpperCase() + stat.slice(1)} ${format(averages[key], ...units)}${suffix}`;
+        return `${t(stat[0].toUpperCase() + stat.slice(1))} ${format(averages[key], ...units)}${suffix}`;
       }).join('\n')
       : '—';
     const values = {
@@ -2428,14 +2540,19 @@
     row.dataset.status = payload.status;
     const dateParts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(payload.date || '');
     const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const displayDate = dateParts && monthNames[Number(dateParts[2]) - 1]
+    const englishDate = dateParts && monthNames[Number(dateParts[2]) - 1]
       ? `${dateParts[3]}-${monthNames[Number(dateParts[2]) - 1]}` : '';
-    row.querySelector('.forecast-history-label').textContent = ready && payload.baseline && displayDate
-      ? `Historical Min, Max, Avg ${payload.baseline} for ${displayDate}` : `Historical Min, Max, Avg since 1991 · ${payload.status === 'warming' ? 'loading' : 'unavailable'}`;
-    if (ready && payload.stale) row.querySelector('.forecast-history-label').textContent += ' · cached';
+    const regionDate = displayDate(payload.date, englishDate, {timeZone: "UTC", month: "short", day: "numeric"});
+    row.querySelector('.forecast-history-label').textContent = ready && payload.baseline && regionDate
+      ? t("Historical Min, Max, Avg {baseline} for {date}", {baseline: payload.baseline, date: regionDate})
+      : t(payload.status === "warming" ? "Historical Min, Max, Avg since 1991 · loading" : "Historical Min, Max, Avg since 1991 · unavailable");
+    if (ready && payload.stale) row.querySelector('.forecast-history-label').textContent += t(' · cached');
     row.title = ready
-      ? `Historical minimum, maximum, and average for the same calendar date as ${payload.date} across available years, using history from ${payload.start_date || "1991-01-01"} through ${payload.end_date || "the latest available date"} at the station location (${averages.samples || "available"} samples). Open-Meteo / ERA5. Min/max are extrema across historical daily lows/highs; Years identify when each extreme occurred (earliest year for ties). Avg is the mean of daily averages. Rain uses daily totals including dry days, not probabilities.`
-      : (payload.status === 'warming' ? 'Historical statistics are loading' : 'Historical statistics are unavailable');
+      ? t("Historical minimum, maximum, and average for the same calendar date as {date} across available years, using history from {start} through {end} at the station location ({samples} samples). Open-Meteo / ERA5. Min/max are extrema across historical daily lows/highs; Years identify when each extreme occurred (earliest year for ties). Avg is the mean of daily averages. Rain uses daily totals including dry days, not probabilities.", {
+        date: payload.date, start: payload.start_date || "1991-01-01",
+        end: payload.end_date || t("the latest available date"), samples: averages.samples || t("available"),
+      })
+      : t(payload.status === "warming" ? "Historical statistics are loading" : "Historical statistics are unavailable");
   }
   refreshHistoricalAverages();
   window.addEventListener('pagehide', () => { historyStopped = true; clearTimeout(historyTimer); });

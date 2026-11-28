@@ -14,14 +14,20 @@ SCRIPT = (Path(__file__).resolve().parents[1] / "static/dashboard.js").read_text
 HELPERS = SCRIPT[SCRIPT.index("  function metricDate("):SCRIPT.index("  function metricValue(")]
 RENDERER = SCRIPT[SCRIPT.index("  function fullGraphValue("):SCRIPT.index("  async function renderSelectedFullGraph(")]
 ZONES = SCRIPT[SCRIPT.index("  function gaugeConfig("):SCRIPT.index("  function drawMetricGauge(")]
+TRANSLATE = SCRIPT[SCRIPT.index("function t("):SCRIPT.index("function displayNumber(")]
 
 
-def run_graph_script(code):
+def run_graph_script(code, region="en-US"):
+    locale = f"const displayRegion = {json.dumps(region)}; const displayMessages = {{}};\n"
     result = subprocess.run(
-        [NODE], input=HELPERS + RENDERER + ZONES + code, text=True,
+        [NODE], input=locale + TRANSLATE + HELPERS + RENDERER + ZONES + code, text=True,
         capture_output=True, check=True,
     )
     return json.loads(result.stdout)
+
+
+def test_graph_formats_numbers_for_the_viewer_region():
+    assert run_graph_script("console.log(JSON.stringify(fullGraphValue(12.5, 1)));", "es-AR") == "12,5"
 
 
 @pytest.mark.parametrize("metric_count, expected_lines", [(1, 5), (2, 0), (4, 0)])

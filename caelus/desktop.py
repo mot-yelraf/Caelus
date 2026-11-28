@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ctypes
 import os
+import platform
 import plistlib
 import shutil
 import signal
@@ -446,6 +447,19 @@ def set_windows_app_icon(window: Any) -> None:
         print(f"Caelus could not set its Windows application icon: {exc}", file=sys.stderr)
 
 
+def _configure_linux_rendering() -> None:
+    os.environ.setdefault("GDK_BACKEND", "wayland,x11")
+    try:
+        model = Path("/proc/device-tree/model").read_text(encoding="utf-8")
+        release = platform.freedesktop_os_release()
+    except (OSError, UnicodeError):
+        return
+    if "Raspberry Pi" in model and release.get("VERSION_CODENAME") == "trixie":
+        # Match the software rendering path used by Sensorius on Pi/Trixie.
+        os.environ.setdefault("WEBKIT_SKIA_ENABLE_CPU_RENDERING", "1")
+        os.environ.setdefault("WEBKIT_DISABLE_DMABUF_RENDERER", "1")
+
+
 def main() -> int:
     """Start or attach to Caelus and open its native desktop window."""
     relaunch_with_macos_app_identity()
@@ -454,7 +468,7 @@ def main() -> int:
     os.environ.setdefault("WEBKIT_DISABLE_COMPOSITING_MODE", "1")
 
     if sys.platform.startswith("linux"):
-        os.environ.setdefault("GDK_BACKEND", "wayland,x11")
+        _configure_linux_rendering()
         if not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"):
             print("Caelus GUI not started: no DISPLAY or WAYLAND_DISPLAY is set.", file=sys.stderr)
             return 1

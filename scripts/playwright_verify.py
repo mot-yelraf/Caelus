@@ -377,7 +377,7 @@ def verify_metric_finishes(page: Page, base_url: str) -> None:
     page.locator('[data-open-settings]').click()
     page.locator('[data-settings-pane="appearance"]').click()
     headings = page.locator('.appearance-section summary strong').all_text_contents()
-    assert headings == ["Metrics", "Display Style", "Theme", "Metric Tile Style"]
+    assert headings == ["Language & Region", "Metrics", "Display Style", "Theme", "Metric Tile Style"]
     page.locator('.appearance-section').last.locator('summary').click()
     finish = page.locator('[name="metric_tile_style"]')
     finish.select_option("chrome")
@@ -390,7 +390,7 @@ def verify_metric_finishes(page: Page, base_url: str) -> None:
     page.locator('[data-settings-pane="station"]').click()
     page.locator('[data-station-card="ecowitt"] > summary').click()
     page.locator('[data-settings-pane="appearance"]').click()
-    page.locator('.appearance-section').nth(1).locator('summary').click()
+    page.locator('.appearance-section').filter(has_text="Display Style").locator('summary').click()
     disclosure_states = page.locator('#settingsDialog details').evaluate_all('nodes => nodes.map(node => node.open)')
     page.locator('[data-save-pane="appearance"]').click()
     expect(page.locator('[data-settings-status]')).to_have_text('Appearance saved.')
@@ -472,7 +472,14 @@ def verify_metric_finishes(page: Page, base_url: str) -> None:
             expect(wind.locator('.metric-visual.is-gauge')).to_have_count(0)
             assert abs(wind.locator('.metric-visual').bounding_box()['height'] - graph_height) < 1
             wind.screenshot(path=RESULTS / f'wind-rose-{hours}-{tile_finish}.png')
-        wind.click()
+        # The next iteration reloads the page after writing its fixture settings.
+        # Let the final UI save finish before either operation.
+        with page.expect_event("requestfinished", predicate=lambda request: (
+            request.method == "POST" and request.url == f"{base_url}/settings"
+        )) as persisted:
+            wind.click()
+        saved = persisted.value.response()
+        assert saved is not None and saved.ok
         expect(wind.locator('.metric-visual.is-gauge')).to_have_count(1)
 
 
@@ -680,6 +687,62 @@ def run_browser_check(base_url: str) -> None:
             verify_severe_weather(page)
             verify_station_footer(context.new_page(), base_url)
             verify_station_connections(context.new_page(), base_url)
+            language_checks = {
+                "es-AR": {
+                    "language": "es-419",
+                    "forecast": "Pronóstico de hoy",
+                    "range": "Intervalo",
+                    "metrics": "Mediciones",
+                    "settings": "Configuración",
+                    "language_section": "Idioma y región",
+                    "appearance_saved": "Apariencia guardada.",
+                    "translate": "Traducir pronóstico",
+                    "narrative": "Mayormente despejado",
+                },
+                "fr-CA": {
+                    "language": "fr-CA",
+                    "forecast": "Prévisions du jour",
+                    "range": "Période",
+                    "metrics": "Mesures",
+                    "settings": "Paramètres",
+                    "language_section": "Langue et région",
+                    "appearance_saved": "Apparence enregistrée.",
+                    "translate": "Traduire les prévisions",
+                    "narrative": "Généralement dégagé",
+                },
+            }
+            for locale, messages in language_checks.items():
+                with browser.new_context(locale=locale, viewport={"width": 390, "height": 844}) as localized:
+                    verify_language_preferences(localized.new_page(), base_url, messages)
+            new_locales = [
+                ("de-DE", "de-DE", "Heutige Vorhersage", "Zeitraum", "Sprache und Region", "Station sendet Daten"),
+                ("pt-BR", "pt-BR", "Previsão de hoje", "Intervalo de tempo", "Idioma e região", "Estação enviando dados"),
+                ("zh-CN", "zh-Hans-CN", "今日天气预报", "时间范围", "语言和地区", "气象站正在上报数据"),
+                ("ja-JP", "ja-JP", "今日の天気予報", "期間", "言語と地域", "観測データを受信中"),
+                ("it-IT", "it-IT", "Previsioni di oggi", "Intervallo di tempo", "Lingua e area geografica",
+                 "Stazione in trasmissione"),
+                ("nl-NL", "nl-NL", "Verwachting voor vandaag", "Tijdsbereik", "Taal en regio", "Station verzendt gegevens"),
+                ("pl-PL", "pl-PL", "Prognoza na dziś", "Zakres czasu", "Język i region", "Stacja przesyła dane"),
+                ("uk-UA", "uk-UA", "Прогноз на сьогодні", "Період", "Мова й регіон", "Станція передає дані"),
+            ]
+            for locale, language, forecast, graph_range, language_section, station_status in new_locales:
+                with browser.new_context(locale=locale, viewport={"width": 390, "height": 844}) as localized:
+                    localized_page = localized.new_page()
+                    localized_page.route("https://embed.windy.com/**", lambda route: route.abort())
+                    localized_page.route("**/api/station/status*", lambda route: route.fulfill(json={
+                        "enabled": True, "state": "online", "station": {"reporting": True, "battery_status": "OK"},
+                    }))
+                    with localized_page.expect_response("**/api/station/status*"):
+                        localized_page.goto(base_url, wait_until="domcontentloaded")
+                    expect(localized_page.locator("html")).to_have_attribute("lang", language)
+                    expect(localized_page.locator("[data-today-forecast] .eyebrow")).to_have_text(forecast)
+                    expect(localized_page.locator("[data-station-state-label]")).to_have_text(station_status)
+                    localized_page.locator("[data-open-graph]").click()
+                    expect(localized_page.locator("#graphRangeTitle")).to_have_text(graph_range)
+                    localized_page.locator("[data-close-graph]").click()
+                    localized_page.locator("[data-open-settings]").click()
+                    localized_page.locator('[data-settings-pane="appearance"]').click()
+                    expect(localized_page.get_by_text(language_section, exact=True)).to_be_visible()
         except Exception:
             page.screenshot(path=RESULTS / "failure.png", full_page=True)
             context.tracing.stop(path=RESULTS / "trace.zip")
@@ -688,6 +751,47 @@ def run_browser_check(base_url: str) -> None:
             context.tracing.stop()
         finally:
             browser.close()
+
+
+def verify_language_preferences(page: Page, base_url: str, messages: dict[str, str]) -> None:
+    """Verify localized controls, live readings, and settings reload on a narrow screen."""
+    page.route("https://embed.windy.com/**", lambda route: route.abort())
+    page.route("**/api/readings/current*", lambda route: route.fulfill(json={
+        "reading": {"temperature": 12.5}, "display_units": {"temperature": "°F"},
+        "poll_interval_seconds": 300,
+    }))
+    page.clock.install(time=datetime(2026, 10, 28, 12, 5, tzinfo=timezone.utc))
+    page.goto(base_url, wait_until="domcontentloaded")
+    expect(page.locator("html")).to_have_attribute("lang", messages["language"])
+    expect(page.locator("[data-today-forecast] .eyebrow")).to_have_text(messages["forecast"])
+    page.clock.fast_forward(301_000)
+    expect(page.locator('[data-reading-field="temperature"]')).to_have_text("12,5")
+    page.locator("[data-open-graph]").click()
+    expect(page.locator("#graphRangeTitle")).to_have_text(messages["range"])
+    expect(page.locator("#graphMetricsTitle")).to_have_text(messages["metrics"])
+    page.locator("[data-close-graph]").click()
+    page.locator("[data-open-settings]").click()
+    expect(page.locator("#settingsTitle")).to_have_text(messages["settings"])
+    page.locator('[data-settings-pane="appearance"]').click()
+    page.get_by_text(messages["language_section"], exact=True).click()
+    page.locator('[name="language_mode"]').select_option("english")
+    page.locator('[data-save-pane="appearance"]').click()
+    expect(page.locator("html")).to_have_attribute("lang", "en-US")
+    expect(page.locator("[data-settings-status]")).to_have_text("Appearance saved.")
+    page.locator('[name="language_mode"]').select_option("system")
+    page.locator('[data-save-pane="appearance"]').click()
+    expect(page.locator("html")).to_have_attribute("lang", messages["language"])
+    expect(page.locator("[data-settings-status]")).to_have_text(messages["appearance_saved"])
+    response = page.request.post(f"{base_url}/settings", form={
+        "csrf_token": "playwright-test-token", "settings_pane": "forecast", "forecast_provider": "us",
+    })
+    assert response.ok
+    page.reload(wait_until="domcontentloaded")
+    original = page.locator("[data-forecast-narrative]")
+    expect(original).to_contain_text("Mostly clear")
+    page.get_by_role("button", name=messages["translate"]).click()
+    expect(page.locator(".weather-translation")).to_contain_text(messages["narrative"])
+    expect(original).to_be_visible()
 
 
 def verify_station_footer(page: Page, base_url: str) -> None:
